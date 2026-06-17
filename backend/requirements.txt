@@ -2,3 +2,5 @@
 fastapi>=0.115
 uvicorn[standard]>=0.30
 pyyaml>=6.0
+pymodbus>=3.6          # async Modbus RTU/TCP client (Phase 1 real-hardware transport)
+pyserial>=3.5          # serial backend for pymodbus's RTU client (RS485 over /dev/ttyUSB*)

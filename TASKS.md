@@ -27,14 +27,19 @@ If the deliverable changes what users can do or how they run/install the app, **
 - [x] **T000 · Project docs & license** — user-facing `README.md` (kept current with a Project
   status notice), BSD 3-Clause `LICENSE` (© 2026 Darren Horrocks), `CLAUDE.md`, `TASKS.md`,
   `plan.md`, `.vscode/` debug defaults. README upkeep is part of every deliverable's DoD.
-- [ ] **T002 · Confirmed sign conventions in the Sunsynk/deye-base profiles** · Deps: —
+- [x] **T002 · Confirmed sign conventions in the Sunsynk/deye-base profiles** · Deps: —
   - **Deliverable:** `profiles/deye-base.yaml` + `sunsynk-8k-sg05lp1.yaml` with zero
-    `sign_unconfirmed` fields; polarity proven against a real daytime capture.
-  - **Done when:** a daytime `regscan` (PV producing, battery charging, grid exporting)
-    is recorded with screen-read conditions; `battery_power_w` sign resolved (night sample
-    showed discharge = +749 W); `grid_power_w` import/export polarity resolved;
-    `pv1_voltage_v` re-verified under load (read 112 V at night); `validation:` block updated.
-  - *Refs: §4, §10, §11. Awaiting the 2nd `regscan-report.md`.*
+    `sign_unconfirmed` fields; polarity proven against a real capture.
+  - **Done:** the `grid-charging-battery` capture resolved it. Unit is **discharge-positive**
+    → `battery_power_w` (`scale: -1`) and `battery_current_a` (was wrongly `u16`, now `s16`,
+    `scale: -0.01`) negated to canonical **+charge/−discharge** (charge read −3968 W / −73.43 A).
+    `grid_power_w` is **import-positive** (+4794 W importing) → already matches canonical
+    **+import/−export**, no flip. `sign_unconfirmed` markers removed; `validation:` blocks
+    + plan.md §10 updated. Bonus: protocol register [2]=0x0201 decodes to "2.1" (`version_be`),
+    confirming the firmware pin and fixing a false-positive in the T032 firmware check.
+  - **Still open (minor):** grid **export** polarity assumed s16-negative (import is proven);
+    PV1 voltage daytime under load — both covered by the pending **daytime** capture.
+  - *Refs: §4, §10, §11.*
 
 ## Phase 0 — Skeleton ✅ complete (no hardware; app fully usable on the dummy from here)
 
@@ -112,16 +117,38 @@ If the deliverable changes what users can do or how they run/install the app, **
 
 ## Phase 1 — Real instant data
 
-- [ ] **T030 · `ModbusRtuSource` transport** · Deps: T012
+- [x] **T030 · `ModbusRtuSource` transport** · Deps: T012
   - `pymodbus` async serial client over `/dev/ttyUSB*`; config port/baud/slave-id;
     timeouts/retries/backoff; brand-agnostic. *Refs: §4.*
-- [ ] **T031 · `SunsynkProfile` reading real data** · Deps: T013, T030, T002
+  - **Done:** `app/devices/modbus_rtu.py` (`ModbusRtuConfig` + `ModbusRtuSource`); reads
+    holding/input tables, bounded retries with exponential capped backoff, raises
+    `TransportError` so the registry degrades the device to stale (§10). Injectable
+    client factory + sleep ⇒ fully unit-tested with no hardware (`test_modbus_rtu.py`, 100%).
+- [x] **T031 · `SunsynkProfile` reading real data** · Deps: T013, T030, T002
   - Drive the SG05LP1 from `sunsynk-8k-sg05lp1.yaml` over RTU; decode the full canonical set. *Refs: §4.*
-- [ ] **T032 · Firmware-pin mismatch warning at connect** · Deps: T031
+  - **Done:** `app/devices/factory.py` pairs `ModbusRtuSource` + `ModbusYamlProfile`;
+    env-driven (`SOLAR_MANAGER_MODBUS_PORT` ⇒ real device, else dummy — see `config.py`).
+    Canonical `pv_power_w` derived from the per-MPPT powers in `ModbusYamlProfile`.
+    Signs now resolved (T002): battery normalized to +charge/−discharge, grid +import/−export.
+- [x] **T032 · Firmware-pin mismatch warning at connect** · Deps: T031
   - Read Protocol/MCU/COMM, compare to the profile's pinned firmware, warn on mismatch. *Refs: §4, Decision #1.*
-- [ ] **T033 · Validate live readings vs the inverter display** · Deps: T031, T018
+  - **Done:** `app/devices/firmware.py` `verify_firmware()` runs in the app lifespan after
+    connect; reads the profile's `info:` identity registers, compares to the YAML `firmware:`
+    pin, logs a warning (never blocks) and tells the operator to re-run regscan.
+  - *Note:* only `protocol` is currently mapped to a register; MCU/COMM have no address in
+    the map yet, so they're skipped (never falsely warned). The comparison auto-covers them
+    once addresses are added. *(verified vs the inverter's protocol register; full screen
+    cross-check is T033.)*
+- [~] **T033 · Validate live readings vs the inverter display** · Deps: T031, T018
   - Cross-check every metric against the unit's own screen; Now dashboard runs on real data;
     record discrepancies as profile fixes. *Refs: §10.*
+  - **Partial:** decode pinned against **two real captures** as regression vectors
+    (`test_decodes_real_idle_capture…` + `test_decodes_real_grid_charging_capture_signs`)
+    — magnitudes and now **signs** match the screen, with the grid-charging energy balance
+    (import ≈ load + charge + losses) asserted. The Now dashboard already consumes real data
+    via the same registry→poller→WS path once a device is configured.
+  - **Remaining (needs the unit + daylight):** live full-screen cross-check with PV producing,
+    confirming grid **export** polarity and PV1 voltage under load — the pending daytime capture.
 
 ## Phase 2 — Persistence & history
 

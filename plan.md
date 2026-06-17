@@ -202,7 +202,7 @@ All three still emit the **same normalized `Reading`**, so everything above the 
 - **32-bit word order is LOW-WORD-FIRST** (proven by rated power + energy counters; note `total_grid_import [78,80]` is non-adjacent — 79 is grid frequency).
 - **Temperatures use Sunsynk `(°C+100)×10`** — decode `raw/10 − 100` (battery 22.0, radiator 33.3, DC-xfmr 39.4 °C). The kellerza TSV's plain `×0.1` is wrong here; regscan's cell syntax now supports a trailing offset (`[182] * 0.1 - 100`) and the bundled `sunsynk-deye.tsv` carries it.
 - **Work-mode timer control map confirmed**: 6 slots at Time `[250-255]`, Power `[256-261]`, Capacity/target-SoC `[268-273]`, charge/mode bits `[274-279]`, plus `Use Timer [248]&0x01` and `Grid charge [232]&0x01`. Serial is ASCII at `[3-7]`.
-- **⚠ Still unconfirmed (single nighttime scan)**: the **sign conventions** of `battery_power_w` and `grid_power_w` (the night sample showed battery *discharging* as **+749 W**). A daytime PV-producing / charging / exporting scan will pin these; the profile marks them `sign_unconfirmed`.
+- **✓ Sign conventions resolved (grid-charging capture)**: while grid-charging the battery, `battery_power [190] = −3968 W` and `battery_current [191] = s16 −73.43 A` (−73.43 × 54.04 V = −3968 W ✓) → this unit is **discharge-positive**, so `battery_power_w`/`battery_current_a` are **negated** to the canonical **+charge/−discharge** (the latter was also wrongly typed `u16` — it is `s16`). `grid_power [169] = +4794 W` while importing → **import-positive**, which already matches canonical **+import/−export** (no flip). *Remaining:* grid **export** polarity is assumed to be the s16-negative complement — a daytime *exporting* scan would confirm it directly.
 
 ### Dummy / simulator profile — `DummyProfile` (build FIRST)
 - A built-in **fake inverter** that needs no hardware and no wiring — pairs with a `NullTransport` (or any transport, ignored).
@@ -469,7 +469,7 @@ Writing to the inverter is the one feature that can do harm, so it's deliberatel
 
 ### Still to confirm on-site (pre-Phase 1)
 - **Battery nominal/system voltage** (48 V vs 51.2 V class) to convert the inverter's **312 Ah** into kWh, and the **min-SoC / depth-of-discharge** setting to derive *usable* kWh.
-- **Battery & grid power sign conventions** — a **daytime scan** (PV producing, battery charging, grid exporting) to confirm the polarity of `battery_power_w` / `grid_power_w` and finalise `profiles/sunsynk-8k-sg05lp1.yaml` (currently `sign_unconfirmed` from a single night capture). Also re-check PV1 voltage by day (read 112 V at night).
+- **Battery & grid power sign conventions** — ✓ **resolved** by the grid-charging capture (battery is discharge-positive → negated to +charge/−discharge; grid is import-positive → matches canonical). Still open: a daytime **exporting** scan to confirm grid export polarity directly (currently assumed s16-negative), and a re-check of PV1 voltage by day under load (night residual only).
 
 ---
 

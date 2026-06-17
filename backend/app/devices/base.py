@@ -26,6 +26,11 @@ def system_clock() -> datetime:
     return datetime.now().astimezone()
 
 
+class TransportError(Exception):
+    """A transport failed to move bytes (connect/read/write). Raised by transports so
+    the registry can degrade that device to stale (plan.md §10) rather than crash."""
+
+
 @dataclass(frozen=True, slots=True)
 class RegBlock:
     """A contiguous run of registers to read in one transaction."""

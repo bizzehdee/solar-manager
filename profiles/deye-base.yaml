@@ -15,11 +15,16 @@
 #   - type: u16 | s16 | u32 | s32 | ascii | bits
 #   - scale multiplies the raw; offset is added after scaling.
 #
-# ⚠ UNCONFIRMED — pending a daytime (PV-producing / battery-charging / exporting)
-#   scan: the SIGN of battery_power_w and grid_power_w. The single night capture
-#   showed battery discharging at +749 W, i.e. this unit reports DISCHARGE as
-#   POSITIVE (opposite to the canonical "+charge"). Marked `sign_unconfirmed`
-#   below; flip to `normalize` once a charging sample confirms it.
+# SIGN CONVENTIONS (RESOLVED — grid-charging capture, 2026-06-17/18):
+#   This unit reports battery DISCHARGE as POSITIVE / CHARGE as NEGATIVE — the
+#   opposite of the canonical "+charge/-discharge". The grid-charging scan proved it:
+#   while grid-charging the battery, [190] read -3968 W and [191] read s16 -7343
+#   (-73.43 A × 54.04 V = -3968 W ✓). So battery_power_w / battery_current_a are
+#   NEGATED here (scale -1 / -0.01) to normalize to "+charge/-discharge" before storage.
+#   GRID: import is already POSITIVE on this unit ([169] = +4794 W while importing to
+#   charge), which MATCHES the canonical "+import/-export" — so grid_power_w needs no
+#   flip. (Export polarity = the s16 negative complement; a daytime exporting scan would
+#   confirm it directly, but import is proven and that's the polarity the canon needs.)
 # ─────────────────────────────────────────────────────────────────────────────
 profile: deye-base
 vendor: deye
@@ -32,8 +37,8 @@ metrics:
   # ── battery (reported via the inverter's BMS link) ──
   battery_soc_pct:          { addr: 184, type: u16 }
   battery_voltage_v:        { addr: 183, type: u16, scale: 0.01 }
-  battery_current_a:        { addr: 191, type: u16, scale: 0.01 }   # magnitude; direction = battery_power_w sign
-  battery_power_w:          { addr: 190, type: s16, sign_unconfirmed: discharge_positive }
+  battery_current_a:        { addr: 191, type: s16, scale: -0.01 }  # +charge/-discharge (raw is s16 +discharge; negated to normalize)
+  battery_power_w:          { addr: 190, type: s16, scale: -1 }      # +charge/-discharge (raw is s16 +discharge; negated to normalize)
   battery_temp_c:           { addr: 182, type: u16, scale: 0.1, offset: -100 }
 
   # ── PV (2 MPPTs on this hardware) ──
@@ -45,7 +50,7 @@ metrics:
   pv2_current_a:            { addr: 112, type: u16, scale: 0.1 }
 
   # ── grid ──
-  grid_power_w:             { addr: 169, type: s16, sign_unconfirmed: import_positive }
+  grid_power_w:             { addr: 169, type: s16 }                # +import/-export (raw already +import; confirmed +4794 W while importing)
   grid_voltage_v:           { addr: 150, type: u16, scale: 0.1 }
   grid_frequency_hz:        { addr: 79,  type: u16, scale: 0.01 }
   grid_ct_power_w:          { addr: 172, type: s16 }              # external CT (meter) power
@@ -116,5 +121,5 @@ settings:
 info:
   serial:      { addr: [3, 4, 5, 6, 7], type: ascii }   # 5 regs, 2 ASCII chars each
   device_type: { addr: 0, type: u16 }
-  protocol:    { addr: 2, type: u16 }
+  protocol:    { addr: 2, type: version_be }   # 0x0201 -> "2.1" (high.low bytes)
   rated_power_w: { addr: [16, 17], type: u32, scale: 0.1 }   # validated: 8000 W

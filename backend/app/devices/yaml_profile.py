@@ -32,6 +32,15 @@ def _signed(value: int, bits: int) -> int:
     return value
 
 
+def _norm_fw(value: Any) -> str:
+    """Normalize a firmware token for comparison: strip, lowercase, and drop a trailing
+    `.0` so an int register (21) and a string pin ("21") compare equal."""
+    s = str(value).strip().lower()
+    if s.endswith(".0"):
+        s = s[:-2]
+    return s
+
+
 class ModbusYamlProfile:
     """A register-map profile backed by YAML."""
 
@@ -41,6 +50,7 @@ class ModbusYamlProfile:
         self._word_order: str = spec.get("word_order", "low_first")
         self._table: str = spec.get("register_table", "holding")
         self._metrics: dict[str, dict[str, Any]] = spec.get("metrics", {})
+        self._identity: dict[str, dict[str, Any]] = spec.get("info", {})
 
     # --- loading + inheritance --------------------------------------------------
     @classmethod
@@ -86,7 +96,12 @@ class ModbusYamlProfile:
 
     # --- DeviceProfile protocol -------------------------------------------------
     def capabilities(self) -> set[str]:
-        return set(self._metrics.keys())
+        caps = set(self._metrics.keys())
+        # `pv_power_w` (sum of MPPTs, plan.md §4) is derived, not a raw register —
+        # advertise it whenever the per-MPPT powers are present.
+        if any(k.startswith("pv") and k.endswith("_power_w") and k != "pv_power_w" for k in caps):
+            caps.add("pv_power_w")
+        return caps
 
     @property
     def info(self) -> DeviceInfo:
@@ -97,8 +112,49 @@ class ModbusYamlProfile:
             ratings=self._spec.get("ratings"),
         )
 
+    # --- identity + firmware pin (plan.md §4, Decision #1; task T032) ------------
+    def pinned_firmware(self) -> dict[str, str] | None:
+        """The firmware the register map was validated against, or None if unpinned.
+        Mismatch ⇒ addresses may have shifted; re-run regscan to re-validate."""
+        fw = self._spec.get("firmware")
+        return dict(fw) if isinstance(fw, dict) else None
+
+    def identity_blocks(self) -> list[RegBlock]:
+        """Register blocks covering the `info:` identity fields (serial/protocol/…)."""
+        return self._blocks_for(self._addresses_of(self._identity))
+
+    def decode_identity(self, raw: Mapping[int, int]) -> dict[str, MetricValue]:
+        """Decode the `info:` identity registers (serial, protocol, device type, …)."""
+        out: dict[str, MetricValue] = {}
+        for key, spec in self._identity.items():
+            value = self._decode_one(spec, raw)
+            if value is not None:
+                out[key] = value
+        return out
+
+    def firmware_mismatches(self, observed: Mapping[str, MetricValue]) -> list[str]:
+        """Compare the pinned firmware against an observed identity map, returning a
+        human-readable mismatch per pinned key we could actually observe. Keys absent
+        from the identity map (e.g. mcu/comm have no register addr yet) are skipped —
+        we never warn about something we couldn't read. Comparison is string-wise so
+        `2.1` matches whether the register decoded to `2.1`, `"2.1"`, or `21`/`2.1`."""
+        pinned = self.pinned_firmware() or {}
+        mismatches: list[str] = []
+        for key, want in pinned.items():
+            if key not in observed:
+                continue
+            got = observed[key]
+            if _norm_fw(got) != _norm_fw(want):
+                mismatches.append(f"{key}: profile pinned {want!r} but device reports {got!r}")
+        return mismatches
+
     def register_blocks(self) -> list[RegBlock]:
-        addrs = sorted(self._all_addresses())
+        return self._blocks_for(self._all_addresses())
+
+    def _blocks_for(self, address_set: set[int]) -> list[RegBlock]:
+        """Cluster a set of addresses into contiguous-ish read transactions: split on a
+        gap > 8 registers or once a block reaches _MAX_BLOCK registers."""
+        addrs = sorted(address_set)
         blocks: list[RegBlock] = []
         if not addrs:
             return blocks
@@ -117,12 +173,31 @@ class ModbusYamlProfile:
             value = self._decode_one(spec, raw)
             if value is not None:
                 out[key] = value
+        self._derive(out)
         return out
+
+    @staticmethod
+    def _derive(out: dict[str, MetricValue]) -> None:
+        """Fill canonical totals that aren't single registers (plan.md §4).
+
+        `pv_power_w` is the sum of the per-MPPT powers. Single register maps rarely
+        expose a PV total, so derive it whenever at least one MPPT reported — keeping
+        the Now dashboard's headline PV figure identical across real + dummy devices.
+        Missing != zero: if no MPPT power was decoded, leave it absent."""
+        if "pv_power_w" not in out:
+            mppt = [v for k, v in out.items()
+                    if k.startswith("pv") and k.endswith("_power_w") and isinstance(v, (int, float))]
+            if mppt:
+                out["pv_power_w"] = round(sum(mppt), 1)
 
     # --- internals --------------------------------------------------------------
     def _all_addresses(self) -> set[int]:
+        return self._addresses_of(self._metrics)
+
+    @staticmethod
+    def _addresses_of(specs: Mapping[str, dict[str, Any]]) -> set[int]:
         addrs: set[int] = set()
-        for spec in self._metrics.values():
+        for spec in specs.values():
             addr = spec.get("addr")
             if isinstance(addr, list):
                 addrs.update(int(a) for a in addr)
@@ -146,6 +221,10 @@ class ModbusYamlProfile:
                     chars.append(chr((w >> 8) & 0xFF))
                     chars.append(chr(w & 0xFF))
                 return "".join(chars).strip("\x00 ").strip()
+            if t == "version_be":
+                # Firmware/protocol packed as high.low bytes: 0x0201 -> "2.1".
+                v = raw[addr] & 0xFFFF
+                return f"{(v >> 8) & 0xFF}.{v & 0xFF}"
             if t == "bits":
                 addrs = addr if isinstance(addr, list) else [addr]
                 mask = spec.get("mask")

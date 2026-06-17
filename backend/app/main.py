@@ -17,8 +17,9 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .config import Settings
-from .devices.base import Device, system_clock
-from .devices.dummy import DummyProfile, NullTransport
+from .devices.base import system_clock
+from .devices.factory import build_registry_from_settings
+from .devices.firmware import verify_firmware
 from .devices.registry import DeviceRegistry
 from .poller import Poller
 from .version import __version__
@@ -27,13 +28,10 @@ from .version import __version__
 _FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist" / "solar-manager" / "browser"
 
 
-def build_default_registry(clock=system_clock) -> DeviceRegistry:
-    """A fresh install has one device: the dummy inverter (plan.md §4)."""
-    registry = DeviceRegistry()
-    registry.add(
-        Device("dummy", NullTransport(), DummyProfile(clock=clock), clock=clock)
-    )
-    return registry
+def build_default_registry(clock=system_clock, settings: Settings | None = None) -> DeviceRegistry:
+    """The default registry: a real RTU device when a Modbus port is configured,
+    else the dummy inverter (plan.md §4/§13)."""
+    return build_registry_from_settings(settings or Settings.from_env(), clock=clock)
 
 
 @asynccontextmanager
@@ -41,6 +39,9 @@ async def lifespan(app: FastAPI):
     settings: Settings = app.state.settings
     registry: DeviceRegistry = app.state.registry
     await registry.connect_all()
+    # Warn (never block) if any device's firmware drifted from its profile pin (T032).
+    for device in registry.devices:
+        await verify_firmware(device)
     poller = Poller(registry, interval_s=settings.poll_interval_s)
     app.state.poller = poller
     await poller.start()
@@ -54,7 +55,7 @@ async def lifespan(app: FastAPI):
 def create_app(settings: Settings | None = None, registry: DeviceRegistry | None = None) -> FastAPI:
     app = FastAPI(title="Solar Manager", version=__version__, lifespan=lifespan)
     app.state.settings = settings or Settings.from_env()
-    app.state.registry = registry or build_default_registry()
+    app.state.registry = registry or build_default_registry(settings=app.state.settings)
 
     @app.get("/api/health")
     async def health() -> JSONResponse:
