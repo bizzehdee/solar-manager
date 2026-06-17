@@ -36,16 +36,16 @@ If the deliverable changes what users can do or how they run/install the app, **
     `pv1_voltage_v` re-verified under load (read 112 V at night); `validation:` block updated.
   - *Refs: §4, §10, §11. Awaiting the 2nd `regscan-report.md`.*
 
-## Phase 0 — Skeleton (no hardware; app fully usable on the dummy from here)
+## Phase 0 — Skeleton ✅ complete (no hardware; app fully usable on the dummy from here)
 
-- [ ] **T010 · FastAPI backend skeleton serving `/api/health`** · Deps: —
+- [x] **T010 · FastAPI backend skeleton serving `/api/health`** · Deps: —
   - Async FastAPI app; `/api/health` returns 200 + status payload; config from `.env`/env;
     `SOLAR_MANAGER_ENABLE_CONTROL` read at startup (default `false`); `requirements.txt` pinned;
     run/test commands recorded in `CLAUDE.md`.
   - **Runs from the working copy:** after `git pull` + venv + `pip install -r requirements.txt`,
     `uvicorn … --reload` from the repo root starts the app — no systemd/Docker/hardware; SQLite
     DB defaults to a local file. *Refs: §3, §12, §13.*
-- [ ] **T011 · Angular + Bootstrap 5.3 admin shell + ThemeService** · Deps: —
+- [x] **T011 · Angular + Bootstrap 5.3 admin shell + ThemeService** · Deps: —
   - Standalone-components scaffold builds; fixed header / offcanvas sidebar / fixed footer,
     content the only scroll region; `ThemeService` toggles `data-bs-theme`, persists to
     `localStorage`, defaults to `prefers-color-scheme`; sidebar routes to placeholder
@@ -53,54 +53,50 @@ If the deliverable changes what users can do or how they run/install the app, **
   - **Bootstrap 5.3 + Bootstrap Icons installed via npm and self-hosted — no CDN.** All CSS/JS/
     fonts/icon assets bundled by the Angular build; app must load with zero outbound requests
     (offline in-home LAN). *Refs: §8, §13.*
-- [ ] **T012 · Device abstraction interfaces** · Deps: —
+- [x] **T012 · Device abstraction interfaces** · Deps: —
   - `Transport`, `DeviceProfile`, `Device` protocols; `Reading` dataclass; canonical metric
     vocabulary (§4) as shared constants; register specifics confined to the Modbus family
     (no `dict[int,int]` above the driver). *Refs: §4, §20.*
-- [ ] **T013 · YAML profile loader (with `extends` inheritance)** · Deps: T012
+- [x] **T013 · YAML profile loader (with `extends` inheritance)** · Deps: T012
   - Parse `profiles/*.yaml` into a `DeviceProfile`; resolve `extends: deye-base`; support
     types/scale/offset/sign/word-order/masks/multi-register; expose `capabilities()` + `info()`.
     Loads `sunsynk-8k-sg05lp1.yaml` without error. *Refs: §4.*
-- [ ] **T014 · DummyProfile + NullTransport simulator** · Deps: T012
+- [x] **T014 · DummyProfile + NullTransport simulator** · Deps: T012
   - Built-in fake inverter, no hardware/wiring; time-of-day-aware synthetic readings (PV bell
     curve, plausible load, battery charge-by-day/discharge-by-night, occasional grid I/O);
     reports the **complete** canonical set; deterministic-seed option for tests; default device
     on a fresh install. (Write path added in T072.) *Refs: §4 (Dummy).*
-- [ ] **T015 · Device registry** · Deps: T012, T014
+- [x] **T015 · Device registry** · Deps: T012, T014
   - Hold N devices (each transport×profile), read concurrently, merge by `device_id` into one
     normalized snapshot; absent metrics stay absent. *Refs: §4, §5.*
-- [ ] **T016 · Async poller** · Deps: T015
+- [x] **T016 · Async poller** · Deps: T015
   - Polls the registry on an interval, emits a `Reading` stream; poll cadence decoupled from
     downstream consumers; honest stale-data handling on transport errors. *Refs: §10.*
-- [ ] **T017 · Live API: `/api/live` + `/ws/live`** · Deps: T010, T016
+- [x] **T017 · Live API: `/api/live` + `/ws/live`** · Deps: T010, T016
   - REST latest-reading endpoint and WebSocket that pushes each new `Reading`. *Refs: §7.*
-- [ ] **T018 · Live "Now" view end-to-end on the dummy** · Deps: T011, T017
+- [x] **T018 · Live "Now" view end-to-end on the dummy** · Deps: T011, T017
   - Angular WebSocket service (RxJS `Observable`); a SoC/power gauge updates live from the
     dummy; status pill green/amber/red from `/api/health`; falls back to polling `/api/live`
     if the socket drops. Proves the whole stack with zero hardware. *Refs: §8.*
-- [ ] **T024 · Playwright E2E harness (full app on the dummy)** · Deps: T018
+- [x] **T024 · Playwright E2E harness (full app on the dummy)** · Deps: T018
   - Playwright (TS) project with a fixture that boots the full stack in **dummy mode** on an
     ephemeral port (seed-deterministic) and tears it down; headless in CI. First spec proves the
     **live path**: a `Reading` pushed over the WebSocket updates the gauges in the DOM. Establishes
     the pattern later feature deliverables add E2E to.
   - **Scope rule:** E2E covers only cross-layer, user-observable flows unit tests can't reach;
     decode/encode/energy/forecast/stats/allow-list math stays unit-tested. *Refs: §21, §8.*
-- [ ] **T019a · `make dev` — one-command working-copy run** · Deps: T010, T011, T014
+- [x] **T019a · `make dev` — one-command working-copy run** · Deps: T010, T011, T014
   - `Makefile` target brings up backend (`uvicorn --reload`) + frontend (`ng serve` proxy, or
     `ng build` served by the backend) together from a fresh clone; dummy device default ⇒ live
     synthetic dashboard with zero config/hardware. This is the CI/contributor path — keep it
     working. *Refs: §13.*
-- [ ] **T019 · Native install path** · Deps: T010, T011
-  - `systemd` unit (`solar-manager.service`), `install.sh` (venv, frontend build, unit install,
-    `dialout` group, udev rule pinning the USB-RS485 adapter), `EnvironmentFile` config,
-    `Makefile`. FastAPI serves the built Angular static files (one process/port). *Refs: §13.*
-- [ ] **T023 · VSCode F5 debugging works for both tiers** · Deps: T010, T011
+- [x] **T023 · VSCode F5 debugging works for both tiers** · Deps: T010, T011
   - The committed `.vscode/` defaults (launch/tasks/extensions) actually work against the
     scaffold: **F5 → "Full Stack" compound** launches backend under `debugpy` (uvicorn
     `app.main:app`) and frontend in Chrome (after `ng serve` is up), and **breakpoints bind and
     hit on both sides**. Scaffold entry points (`backend/app/main.py`, `frontend/` dev server
     :4200, `./.venv`) match what the configs assume. *Refs: §13.*
-- [ ] **T021 · GitHub Actions CI with hard gates** · Deps: T010, T011, T014
+- [x] **T021 · GitHub Actions CI with hard gates** · Deps: T010, T011, T014
   - `.github/workflows/ci.yml` runs on every push + PR via the working-copy path (no hardware/
     Docker). Separate backend/frontend jobs. **Hard gates (red on failure, not warnings):**
     (1) build/compile — `pip install` + `ng build` succeed, lint/type errors fail;
@@ -113,18 +109,6 @@ If the deliverable changes what users can do or how they run/install the app, **
   - Establish the test harness here (`pytest`/`pytest-cov`/`pytest-asyncio`, frontend runner,
     deterministic dummy seed, `regscan` snapshot fixtures) so every later task inherits it.
     Activates once the repo is on GitHub; branch protection requires it. *Refs: §21, §8, §13.*
-- [ ] **T022 · Tag-triggered release workflow → GitHub Releases** · Deps: T021, T019
-  - `.github/workflows/release.yml` triggers on `push` of tags matching **`version/*`**
-    (e.g. `version/1.0`). Parses **`x.y`** from the tag as the single source of truth.
-  - **Re-runs the CI hard gates first** (build/tests/coverage/no-CDN, §21) — no release from a
-    red build. Then: stamp `x.y` into the app (footer §8 + `/api/health`); build the versioned
-    bundle `solar-manager-x.y.tar.gz` (prod `ng build` + backend + `install.sh` + systemd unit);
-    optionally push multi-arch Docker image to GHCR tagged `x.y`/`latest`.
-  - **Creates a GitHub Release titled `x.y`** with auto-generated notes (changelog since the
-    previous `version/*` tag) and uploads the artifacts. Activates once the repo is on GitHub. *Refs: §13, §21.*
-- [-] **T020 · Docker/Compose path (optional)** · Deps: T010, T011
-  - Multi-stage `Dockerfile` + `docker-compose.yml`, multi-arch (arm64+amd64), serial
-    passthrough, named volume for the DB, same env flags. *Refs: §13.*
 
 ## Phase 1 — Real instant data
 
@@ -260,6 +244,29 @@ If the deliverable changes what users can do or how they run/install the app, **
   - Tune PR empirically against measured history. *Refs: §6, §19.*
 - [ ] **T097 · Inverter clock sync** · Deps: T074
   - Read inverter time drift; optionally correct under control. *Refs: §19.*
+
+## Phase 8 — Deployment, packaging & release (ship to real hardware / users)
+
+*Not needed for dev on the dummy (the working-copy `make dev` path covers Phases 0–7) —
+relocated here from Phase 0. These matter once running unattended on a Pi or cutting
+versioned releases.*
+
+- [ ] **T019 · Native install path** · Deps: T010, T011
+  - `systemd` unit (`solar-manager.service`), `install.sh` (venv, frontend build, unit install,
+    `dialout` group, udev rule pinning the USB-RS485 adapter), `EnvironmentFile` config,
+    `Makefile`. FastAPI serves the built Angular static files (one process/port). *Refs: §13.*
+- [-] **T020 · Docker/Compose path (optional)** · Deps: T010, T011
+  - Multi-stage `Dockerfile` + `docker-compose.yml`, multi-arch (arm64+amd64), serial
+    passthrough, named volume for the DB, same env flags. *Refs: §13.*
+- [ ] **T022 · Tag-triggered release workflow → GitHub Releases** · Deps: T021, T019
+  - `.github/workflows/release.yml` triggers on `push` of tags matching **`version/*`**
+    (e.g. `version/1.0`). Parses **`x.y`** from the tag as the single source of truth.
+  - **Re-runs the CI hard gates first** (build/tests/coverage/no-CDN, §21) — no release from a
+    red build. Then: stamp `x.y` into the app (footer §8 + `/api/health`); build the versioned
+    bundle `solar-manager-x.y.tar.gz` (prod `ng build` + backend + `install.sh` + systemd unit);
+    optionally push multi-arch Docker image to GHCR tagged `x.y`/`latest`.
+  - **Creates a GitHub Release titled `x.y`** with auto-generated notes (changelog since the
+    previous `version/*` tag) and uploads the artifacts. Activates once the repo is on GitHub. *Refs: §13, §21.*
 
 ## Later — More vendors, transports & automation (on demand)
 

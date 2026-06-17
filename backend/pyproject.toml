@@ -1,0 +1,21 @@
+[project]
+name = "solar-manager"
+version = "0.0.0"
+description = "Vendor-agnostic monitoring, forecast and control for home solar/battery systems"
+requires-python = ">=3.11"
+license = { text = "BSD-3-Clause" }
+authors = [{ name = "Darren Horrocks" }]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "--cov=app --cov-report=term-missing"
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["tests/*"]
+
+[tool.coverage.report]
+# The §21 critical-logic modules are held higher in CI via a separate per-package check;
+# this is the overall floor. CI passes --cov-fail-under=80 explicitly (plan.md §21).
+show_missing = true

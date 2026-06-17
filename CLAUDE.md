@@ -16,8 +16,9 @@ internet-exposed.** One household, no accounts/roles.
 ## Tech stack
 - **Backend:** Python 3.11+, FastAPI (async), `pymodbus` for Modbus, `asyncio`.
 - **Storage:** SQLite + rollup schema behind a repository abstraction; Alembic migrations.
-- **Frontend:** Angular (standalone components, latest LTS) + Bootstrap 5.3 (SCSS, no admin
+- **Frontend:** Angular 21 (standalone components) + Bootstrap 5.3 (SCSS, no admin
   template), `ng-bootstrap`, icons via Bootstrap Icons, charts via `ng2-charts` (Chart.js).
+  Unit tests run on Angular 21's default **vitest + jsdom** runner (headless, no browser).
   Live data over WebSocket. **No CDN — all assets (Bootstrap, Bootstrap Icons, Chart.js,
   fonts) are installed via npm and bundled/self-hosted** so the app loads with zero outbound
   requests (offline in-home LAN). Never reference an external URL from the frontend.
@@ -30,12 +31,15 @@ internet-exposed.** One household, no accounts/roles.
 - `plan.md` — design spec / source of truth for *what* to build.
 - `TASKS.md` — ordered deliverables with done-criteria and dependencies.
 - `profiles/` — device profiles as YAML (`deye-base.yaml`, `sunsynk-8k-sg05lp1.yaml`).
+- `backend/` — FastAPI app (`app/main.py` → `app.main:app`), device abstraction (`app/devices/`),
+  dummy simulator, YAML profile loader, poller; tests in `backend/tests/` (pytest).
+- `frontend/` — Angular 21 app (standalone, `app/` shell + `core/` services + `shared/` + `pages/`);
+  Bootstrap 5.3 + Bootstrap Icons self-hosted; unit tests via vitest/jsdom (no browser needed).
+- `e2e/` — Playwright integration tests (drive the full app on the dummy).
 - `tools/regscan.py` — read-only Modbus register-discovery CLI (Phase −1). See `tools/README.md`.
 - `.vscode/` — committed debug defaults (launch/tasks/extensions). **F5 → compound "Full Stack"
-  debugs backend (debugpy) + frontend (Chrome) with breakpoints.** The Phase 0 scaffold must
-  match the entry points these assume: `backend/` (FastAPI ASGI app `app.main:app`), `frontend/`
-  (Angular, dev server on :4200), venv at repo-root `.venv/`. Keep them in sync or F5 breaks.
-- (backend / frontend dirs land in Phase 0 — confirm/adjust this layout when they exist.)
+  debugs backend (debugpy) + frontend (Chrome) with breakpoints.** Entry points match the
+  scaffold: `backend/` (`app.main:app`), `frontend/` (dev server :4200 via `npm start`), `.venv/`.
 
 ## Commands
 - **Run from the working copy (dev/test) — must always work after `git pull`:** create a
@@ -43,9 +47,14 @@ internet-exposed.** One household, no accounts/roles.
   frontend via `ng serve` (dev proxy) or a one-off `ng build` served by the backend. A
   `make dev` target brings both up. No systemd/Docker/hardware needed — the **dummy device
   is the default**, so a fresh clone gives a live synthetic dashboard. (See `plan.md` §13.)
+- **Established commands (from repo root):**
+  - `make install` — venv + `backend/requirements-dev.txt` + `frontend` npm deps.
+  - `make dev` — backend (uvicorn `--reload`, :8000) + frontend (`ng serve` proxy, :4200) together.
+  - `make test` — backend `pytest --cov-fail-under=80` + frontend vitest.
+  - `make build` — production `ng build` (output `frontend/dist/solar-manager/browser`, served by the backend).
+  - `make e2e` — Playwright suite (run `make build` first; it boots the backend serving the built UI).
+  - Backend-only tests: `cd backend && ../.venv/bin/python -m pytest`.
 - Register scan (real): see `tools/README.md`. `--mock` runs with no hardware.
-- Exact backend/frontend build/test/run invocations: **establish in the Phase 0 tasks and
-  record them here** (and in the `make dev` target) so future sessions don't re-derive them.
 
 ## The two load-bearing contracts — do not break these
 

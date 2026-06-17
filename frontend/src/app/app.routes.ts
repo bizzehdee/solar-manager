@@ -1,0 +1,12 @@
+import { Routes } from '@angular/router';
+
+// Lazy standalone pages. Now is the default view (plan.md §8).
+export const routes: Routes = [
+  { path: '', pathMatch: 'full', redirectTo: 'now' },
+  { path: 'now', loadComponent: () => import('./pages/now/now').then((m) => m.NowPage), title: 'Now' },
+  { path: 'history', loadComponent: () => import('./pages/placeholder').then((m) => m.HistoryPage), title: 'History' },
+  { path: 'forecast', loadComponent: () => import('./pages/placeholder').then((m) => m.ForecastPage), title: 'Forecast' },
+  { path: 'control', loadComponent: () => import('./pages/placeholder').then((m) => m.ControlPage), title: 'Control' },
+  { path: 'settings', loadComponent: () => import('./pages/placeholder').then((m) => m.SettingsPage), title: 'Settings' },
+  { path: '**', redirectTo: 'now' },
+];

@@ -1,0 +1,53 @@
+// Bootstrap 5.3 + Bootstrap Icons, compiled and SELF-HOSTED (no CDN — plan.md §8/§13).
+// Importing the .scss (not the .css) inlines the icon @font-face and lets the Angular
+// build emit the woff2 fonts as local assets, so the app loads with zero outbound requests.
+@import 'bootstrap/scss/bootstrap';
+@import 'bootstrap-icons/font/bootstrap-icons';
+
+// ── Fixed admin layout (header / sidebar / footer; content is the only scroll region) ──
+$header-h: 56px;
+$footer-h: 32px;
+$sidebar-w: 220px;
+
+html, body { height: 100%; }
+body { overflow: hidden; }
+
+.app-header { height: $header-h; }
+.app-footer { height: $footer-h; font-size: .8rem; }
+
+.app-sidebar {
+  position: fixed;
+  top: $header-h;
+  bottom: $footer-h;
+  left: 0;
+  width: $sidebar-w;
+  overflow-y: auto;
+  background: var(--bs-secondary-bg);
+  border-right: 1px solid var(--bs-border-color);
+  transition: transform .2s ease;
+  z-index: 1030;
+}
+.app-sidebar .nav-link { border-radius: .375rem; color: var(--bs-body-color); }
+.app-sidebar .nav-link.active { background: var(--bs-primary); color: #fff; }
+
+.app-content {
+  position: fixed;
+  top: $header-h;
+  bottom: $footer-h;
+  right: 0;
+  left: $sidebar-w;
+  overflow-y: auto;
+  padding: 1rem;
+}
+
+// Collapsed: slide the sidebar away and reclaim the content width.
+.sidebar-collapsed {
+  .app-sidebar { transform: translateX(-#{$sidebar-w}); }
+  .app-content { left: 0; }
+}
+
+@media (max-width: 768px) {
+  .app-sidebar { transform: translateX(-#{$sidebar-w}); }
+  .app-content { left: 0; }
+  .sidebar-open .app-sidebar { transform: translateX(0); }
+}

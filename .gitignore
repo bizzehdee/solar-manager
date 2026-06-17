@@ -1,0 +1,27 @@
+.claude
+.venv
+node_modules
+.pytest_cache
+.coverage
+
+# Python
+__pycache__/
+*.py[cod]
+htmlcov/
+
+# Databases / runtime data
+*.db
+solar-manager.db
+
+# Builds
+dist/
+
+# Playwright
+e2e/test-results/
+e2e/playwright-report/
+
+# Register-scan output (regenerable evidence)
+tools/regscan-output/
+
+# OS
+.DS_Store

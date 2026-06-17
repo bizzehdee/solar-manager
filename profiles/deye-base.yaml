@@ -1,0 +1,120 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# deye-base — shared base profile for the Deye-built single-phase hybrid family
+# (Sunsynk = Sol-Ark = Deye, "1PH" firmware). See plan.md §4.
+#
+# Brands extend this (profiles/<brand>-<model>.yaml) and override only ratings /
+# the odd address. Derived from the kellerza/sunsynk 1PH map and VALIDATED against
+# a real SYNK-8K-SG05LP1 scan (tools/regscan-output, label "10pm", 2026-06-17).
+#
+# Conventions:
+#   - All registers are HOLDING registers.
+#   - 32-bit values are LOW WORD FIRST  (confirmed: rated_power [16,17]=8000 W,
+#     energy counters). i.e. value = regs[addr] | (regs[addr+1] << 16).
+#   - Temperatures use the Sunsynk (°C + 100) × 10 convention -> decode = raw/10 - 100
+#     (validated: battery 22.0 °C, radiator 33.3 °C, DC-xfmr 39.4 °C).
+#   - type: u16 | s16 | u32 | s32 | ascii | bits
+#   - scale multiplies the raw; offset is added after scaling.
+#
+# ⚠ UNCONFIRMED — pending a daytime (PV-producing / battery-charging / exporting)
+#   scan: the SIGN of battery_power_w and grid_power_w. The single night capture
+#   showed battery discharging at +749 W, i.e. this unit reports DISCHARGE as
+#   POSITIVE (opposite to the canonical "+charge"). Marked `sign_unconfirmed`
+#   below; flip to `normalize` once a charging sample confirms it.
+# ─────────────────────────────────────────────────────────────────────────────
+profile: deye-base
+vendor: deye
+phases: 1
+register_table: holding
+word_order: low_first
+
+# raw registers -> normalized canonical metrics (plan.md §4).
+metrics:
+  # ── battery (reported via the inverter's BMS link) ──
+  battery_soc_pct:          { addr: 184, type: u16 }
+  battery_voltage_v:        { addr: 183, type: u16, scale: 0.01 }
+  battery_current_a:        { addr: 191, type: u16, scale: 0.01 }   # magnitude; direction = battery_power_w sign
+  battery_power_w:          { addr: 190, type: s16, sign_unconfirmed: discharge_positive }
+  battery_temp_c:           { addr: 182, type: u16, scale: 0.1, offset: -100 }
+
+  # ── PV (2 MPPTs on this hardware) ──
+  pv1_power_w:              { addr: 186, type: s16 }
+  pv1_voltage_v:            { addr: 109, type: u16, scale: 0.1 }
+  pv1_current_a:            { addr: 110, type: u16, scale: 0.1 }
+  pv2_power_w:              { addr: 187, type: s16 }
+  pv2_voltage_v:            { addr: 111, type: u16, scale: 0.1 }
+  pv2_current_a:            { addr: 112, type: u16, scale: 0.1 }
+
+  # ── grid ──
+  grid_power_w:             { addr: 169, type: s16, sign_unconfirmed: import_positive }
+  grid_voltage_v:           { addr: 150, type: u16, scale: 0.1 }
+  grid_frequency_hz:        { addr: 79,  type: u16, scale: 0.01 }
+  grid_ct_power_w:          { addr: 172, type: s16 }              # external CT (meter) power
+
+  # ── load / inverter output ──
+  load_power_w:             { addr: 178, type: s16 }
+  inverter_power_w:         { addr: 175, type: s16 }
+  inverter_voltage_v:       { addr: 154, type: u16, scale: 0.1 }
+  inverter_current_a:       { addr: 164, type: u16, scale: 0.01 }
+  inverter_frequency_hz:    { addr: 193, type: u16, scale: 0.01 }
+  inverter_temp_c:          { addr: 91,  type: u16, scale: 0.1, offset: -100 }   # radiator/heatsink
+  dc_transformer_temp_c:    { addr: 90,  type: u16, scale: 0.1, offset: -100 }
+  inverter_status:          { addr: 59,  type: u16 }              # "overall state" enum (decode TBD)
+  grid_connected:           { addr: 194, type: u16 }              # 1 = on-grid
+
+  # ── faults / alarms (plan.md §16) ──
+  inverter_fault_codes:     { addr: [103, 104, 105, 106], type: bits }   # 4×16-bit fault bitfield
+
+  # ── daily energy counters (raw is kWh ×0.1; ×100 -> Wh per canonical keys) ──
+  today_pv_wh:              { addr: 108, type: u16, scale: 100 }
+  today_load_wh:            { addr: 84,  type: u16, scale: 100 }
+  today_grid_import_wh:     { addr: 76,  type: u16, scale: 100 }
+  today_grid_export_wh:     { addr: 77,  type: u16, scale: 100 }
+  today_batt_charge_wh:     { addr: 70,  type: u16, scale: 100 }
+  today_batt_discharge_wh:  { addr: 71,  type: u16, scale: 100 }
+
+  # ── lifetime energy totals (32-bit, low word first; kWh ×0.1 -> Wh) ──
+  total_pv_wh:              { addr: [96, 97], type: u32, scale: 100 }
+  total_load_wh:            { addr: [85, 86], type: u32, scale: 100 }
+  total_grid_import_wh:     { addr: [78, 80], type: u32, scale: 100 }   # note: NON-adjacent (79 is grid freq)
+  total_grid_export_wh:     { addr: [81, 82], type: u32, scale: 100 }
+  total_batt_charge_wh:     { addr: [72, 73], type: u32, scale: 100 }
+  total_batt_discharge_wh:  { addr: [74, 75], type: u32, scale: 100 }
+
+# Writable control settings -> SettingsSchema (plan.md §4/§12). The work-mode
+# timer is 6 repeating slots; slot i uses base_addr + i.
+settings:
+  globals:
+    timer_enabled:   { addr: 248, type: bool, mask: 0x01 }
+    grid_charge:     { addr: 232, type: bool, mask: 0x01 }
+    work_mode:       { addr: 244, type: enum }                  # "Load Limit" / priority mode (values TBD)
+  timer_slots:
+    count: 6
+    fields:
+      start_time:        { base_addr: 250, type: time_hhmm }    # 250..255  (e.g. 1300 -> 13:00)
+      power_w:           { base_addr: 256, type: u16 }          # 256..261
+      target_soc_pct:    { base_addr: 268, type: u16 }          # 268..273
+      voltage_v:         { base_addr: 262, type: u16, scale: 0.01 }  # 262..267
+      charge_from_grid:  { base_addr: 274, type: bool, mask: 0x01 }  # 274..279 bit0
+      charge_from_gen:   { base_addr: 274, type: bool, mask: 0x02 }  #          bit1
+      mode:              { base_addr: 274, type: bits, mask: 0x1C }  #          bits 2-4
+  # Battery protection / charge settings (writable holding registers; °×0.01 V).
+  battery:
+    equalization_voltage_v:  { addr: 201, type: u16, scale: 0.01 }
+    absorption_voltage_v:    { addr: 202, type: u16, scale: 0.01 }
+    float_voltage_v:         { addr: 203, type: u16, scale: 0.01 }
+    shutdown_soc_pct:        { addr: 217, type: u16 }
+    restart_soc_pct:         { addr: 218, type: u16 }
+    low_soc_pct:             { addr: 219, type: u16 }
+    shutdown_voltage_v:      { addr: 220, type: u16, scale: 0.01 }
+    restart_voltage_v:       { addr: 221, type: u16, scale: 0.01 }
+    low_voltage_v:           { addr: 222, type: u16, scale: 0.01 }
+    max_charge_current_a:    { addr: 210, type: u16 }
+    max_discharge_current_a: { addr: 211, type: u16 }
+    grid_charge_current_a:   { addr: 230, type: u16 }
+
+# Device identity.
+info:
+  serial:      { addr: [3, 4, 5, 6, 7], type: ascii }   # 5 regs, 2 ASCII chars each
+  device_type: { addr: 0, type: u16 }
+  protocol:    { addr: 2, type: u16 }
+  rated_power_w: { addr: [16, 17], type: u32, scale: 0.1 }   # validated: 8000 W

@@ -1,0 +1,4 @@
+# Runtime dependencies (plan.md §3). Kept lean so the native Pi install stays trivial.
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pyyaml>=6.0

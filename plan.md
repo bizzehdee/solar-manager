@@ -339,7 +339,7 @@ A classic fixed admin layout built on **Bootstrap 5.3** (no heavyweight admin te
 5. **Settings** — **Devices** (add/edit/remove; pick vendor profile + transport + connection params; the dummy inverter is preconfigured), system spec, location, tariffs. UI panels driven by each device's advertised capabilities.
 
 ### Build approach
-- **Angular (standalone components, latest LTS) + TypeScript**, Bootstrap 5.3 added via styles (SCSS) rather than a heavyweight admin template.
+- **Angular 21 (standalone components) + TypeScript**, Bootstrap 5.3 added via styles (SCSS) rather than a heavyweight admin template.
 - Bootstrap components via **`ng-bootstrap`** (native Angular widgets, no jQuery) — offcanvas sidebar, modals, toasts for alerts.
 - Icons via **Bootstrap Icons** (`bootstrap-icons` npm package), used as the self-hosted SVG sprite / webfont — pairs natively with Bootstrap 5.3.
 - Charts via **`ng2-charts`** (the Angular wrapper around Chart.js).
@@ -657,7 +657,7 @@ What stays **out** of Playwright: register decode/scaling/sign math, settings en
 
 ### Mechanics
 - **Backend:** `pytest` + `pytest-cov` (coverage gate), `pytest-asyncio` for async, deterministic **dummy with a fixed seed** for reproducible readings; `regscan` snapshots checked in as decode fixtures.
-- **Frontend:** the Angular test runner (Jasmine/Karma or Jest) for component/service specs; optional Storybook (§8) doubling as visual regression.
+- **Frontend:** Angular 21's default **vitest + jsdom** runner for component/service specs — headless, no browser needed (good for CI); optional Storybook (§8) doubling as visual regression.
 - **Integration/E2E:** **Playwright** (TS) driving the full app in dummy mode (above); a fixture boots backend+frontend on an ephemeral port, seed-deterministic, torn down after.
 - **CI = GitHub Actions** (`.github/workflows/ci.yml`), runs on every push and pull request using the **working-copy run path** (§13) — no hardware, no Docker required. Tests live alongside code and land in the same PR as the feature. (The workflow file lives in-repo and activates once the repo is on GitHub.)
 
