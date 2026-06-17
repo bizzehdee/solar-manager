@@ -14,6 +14,8 @@ reach); the full suite is green; coverage stays within the §21 gates (backend �
 critical-logic modules ≥ 90%, frontend ~70%); the GitHub Actions CI (T021) passes — build
 errors, unit-test failures, below-threshold coverage, and **Playwright E2E failures** are all
 **hard gates**. See `plan.md` §21 and `CLAUDE.md`.
+If the deliverable changes what users can do or how they run/install the app, **update `README.md`
+(incl. its Project status notice) in the same PR** — keep the user-facing front door current.
 
 ---
 
@@ -22,6 +24,9 @@ errors, unit-test failures, below-threshold coverage, and **Playwright E2E failu
 
 - [x] **T001 · Register-discovery CLI (`regscan.py`)** — scan/report/verify, `--map`,
   `--passive`, `--mock`. Built and documented.
+- [x] **T000 · Project docs & license** — user-facing `README.md` (kept current with a Project
+  status notice), BSD 3-Clause `LICENSE` (© 2026 Darren Horrocks), `CLAUDE.md`, `TASKS.md`,
+  `plan.md`, `.vscode/` debug defaults. README upkeep is part of every deliverable's DoD.
 - [ ] **T002 · Confirmed sign conventions in the Sunsynk/deye-base profiles** · Deps: —
   - **Deliverable:** `profiles/deye-base.yaml` + `sunsynk-8k-sg05lp1.yaml` with zero
     `sign_unconfirmed` fields; polarity proven against a real daytime capture.

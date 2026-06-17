@@ -592,6 +592,8 @@ Cross-cutting items expected of a polished self-hosted app:
 - **Grid-outage / backup-power event log** — detect and log loss/return of grid (islanding) from grid metrics — a commonly-wanted timeline for hybrid/backup systems.
 - **Environmental & ROI stats** — **CO₂ avoided** and **savings / payback (ROI)** on the History view, reusing existing energy + tariff data.
 - **Inverter clock sync** — optionally read and (under control) correct inverter time drift; a frequent real-world annoyance.
+- **Free & open source (BSD 3-Clause, © Darren Horrocks)** — the whole project is BSD-3 licensed (`LICENSE`); keep dependencies license-compatible.
+- **User-facing `README.md`, kept current** — the front door for home users: how simple it is to run, the feature set, and that it's free/open-source. It carries a **Project status** notice that's updated as the app progresses, and is the primary "get people running it at home" surface (design detail stays in `plan.md`).
 
 ---
 

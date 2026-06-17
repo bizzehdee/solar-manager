@@ -25,6 +25,8 @@ internet-exposed.** One household, no accounts/roles.
   path; Docker/Compose is the maintained alternative.
 
 ## Repo layout
+- `README.md` — **user-facing** front door (home users running the app); keep it current.
+- `LICENSE` — BSD 3-Clause, © 2026 Darren Horrocks. The whole project is BSD-3 licensed.
 - `plan.md` — design spec / source of truth for *what* to build.
 - `TASKS.md` — ordered deliverables with done-criteria and dependencies.
 - `profiles/` — device profiles as YAML (`deye-base.yaml`, `sunsynk-8k-sg05lp1.yaml`).
@@ -78,6 +80,13 @@ Per-phase suffixes (`grid_power_l1_w`) collapse to the unsuffixed total for sing
   COMM e43d. Warn on mismatch at connect — firmware updates can shift addresses.
 - **Egress/integrations are off the hot path.** A failing integration degrades to a
   warning, never blocks polling/persistence.
+- **Keep `README.md` current.** It's the user-facing front door — aimed at home users, focused on
+  how simple it is to run, the feature set, and that it's free/open-source (BSD-3). When a change
+  affects what users can do or how they run/install it, update the README in the same PR, including
+  its **Project status** notice. Don't let the README drift behind reality. (Design detail lives in
+  `plan.md`, roadmap in `TASKS.md` — README stays user-focused, not a spec dump.)
+- **License: BSD 3-Clause, © 2026 Darren Horrocks** — the whole project. New source files inherit it;
+  don't introduce dependencies or code under incompatible licenses.
 - **Tests are part of "done" (§21).** No deliverable is complete without tests in the same PR.
   Use the deterministic dummy (fixed seed) and checked-in `regscan` snapshots as fixtures — no
   hardware needed. Test the gnarly pure logic hardest: profile decode/normalization, sign
