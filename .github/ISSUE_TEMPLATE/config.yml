@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 📟 Register Discovery guide (tools/regscan.py)
+    url: https://github.com/bizzehdee/solar-manager/blob/main/tools/README.md
+    about: "How to capture the register data a new-hardware request needs — read this before filing one."
+  - name: 📖 Design spec (plan.md)
+    url: https://github.com/bizzehdee/solar-manager/blob/main/plan.md
+    about: "How the device seam, profiles and canonical metrics work — useful background for hardware requests."

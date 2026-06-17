@@ -1,0 +1,185 @@
+name: "🔌 New hardware support request"
+description: "Ask for support for an inverter / battery / meter not yet covered, and supply the register data needed to build a profile."
+title: "[Hardware] <vendor> <model> — support request"
+labels: ["enhancement", "hardware"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping grow the hardware list! Solar Manager is **vendor-agnostic** —
+        adding a device is *writing a profile (YAML), not patching core code* — but a profile
+        is only as good as the **register data** behind it. This form collects that data.
+
+        ### Is your device a candidate?
+        The maintained transports speak **Modbus** today, so your device is a good fit if it's
+        reachable over one of:
+        - **Modbus RTU** over RS485 (a USB–RS485 adapter on `/dev/ttyUSB*`) — the primary path.
+        - **Modbus TCP** over the network.
+        - **SolarmanV5** (the common Wi-Fi logger dongle) — wraps the *same* Modbus payload, so the
+          register map is reused (transport support is on the roadmap).
+
+        If your device only speaks a text/ASCII protocol (some Voltronic/MPP/Victron gear), it can
+        still be supported eventually but needs a new transport family first — open the request
+        anyway and say so in **Transport** below.
+
+        > ⚠️ **You do not need to know the register map.** That's exactly what the bundled
+        > `tools/regscan.py` discovers. The steps below walk you through producing the report we need.
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Before you start
+      options:
+        - label: I searched existing issues and this device isn't already requested or supported.
+          required: true
+        - label: My device is reachable over Modbus (RTU/TCP) or SolarmanV5 — or I've said otherwise under **Transport**.
+          required: true
+        - label: I understand `regscan.py` is **read-only** (it never writes to the inverter) and I'm OK running it.
+          required: false
+  - type: input
+    id: vendor
+    attributes:
+      label: Vendor / brand
+      placeholder: "e.g. Sunsynk, Sol-Ark, Deye, Growatt, Solis, Victron…"
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Model
+      placeholder: "e.g. SYNK-8K-SG05LP1"
+    validations:
+      required: true
+  - type: dropdown
+    id: transport
+    attributes:
+      label: How is it connected (transport)?
+      multiple: true
+      options:
+        - "Modbus RTU (RS485 / USB adapter)"
+        - "Modbus TCP (network)"
+        - "SolarmanV5 (Wi-Fi logger dongle)"
+        - "Other / text protocol (please describe in Additional context)"
+        - "Not sure"
+    validations:
+      required: true
+  - type: dropdown
+    id: phases
+    attributes:
+      label: Single- or three-phase?
+      options:
+        - "Single-phase (1PH)"
+        - "Three-phase (3PH)"
+        - "Not sure"
+    validations:
+      required: true
+  - type: input
+    id: firmware
+    attributes:
+      label: Firmware / protocol identifiers (if known)
+      description: "Register maps are pinned to firmware — these let us warn on mismatch. Read them off the inverter screen / app if you can."
+      placeholder: "e.g. Protocol 2.1, MCU 5386, COMM e43d"
+    validations:
+      required: false
+  - type: textarea
+    id: system
+    attributes:
+      label: Battery & system details
+      description: "Helps us interpret SoC/voltage/capacity and energy maths."
+      placeholder: |
+        - Battery: e.g. LiFePO4, 51.2 V nominal, 16 kWh, CAN BMS
+        - PV: e.g. 2 MPPTs, ~6.5 kWp
+        - Meter / CT: e.g. external CT on grid tie
+    validations:
+      required: false
+  - type: input
+    id: community_map
+    attributes:
+      label: Existing community register map? (optional)
+      description: "If a map already exists (e.g. kellerza/sunsynk), name it + the variant — it's a head start we can verify rather than discover from scratch."
+      placeholder: "e.g. kellerza/sunsynk, variant 1PH"
+    validations:
+      required: false
+  - type: markdown
+    attributes:
+      value: |
+        ## 📟 Capture the register data with `tools/regscan.py`
+
+        `regscan.py` reverse-engineers the map by **differential scanning** — it reads the device in
+        several known states and the registers that *change in the expected direction* reveal the live
+        measurements and their sign conventions. Full guide: **[`tools/README.md`](https://github.com/bizzehdee/solar-manager/blob/main/tools/README.md)**.
+
+        ```bash
+        # 1. Get the tool (read-only; needs only the tools/ dir)
+        git clone https://github.com/bizzehdee/solar-manager.git
+        cd solar-manager/tools
+        python3 -m venv .venv && source .venv/bin/activate
+        pip install -r requirements.txt          # pymodbus + pyserial (real scans only)
+
+        # 2. Scan the device in a known state. Read your inverter's OWN SCREEN and record what it
+        #    shows as --condition values (this is the ground truth we match registers against).
+        ./regscan.py scan --port /dev/ttyUSB0 --slave 1 --start 0 --end 512 \
+            --vendor "<vendor>" --model "<model>" \
+            --label midday-full-sun \
+            --condition pv_w=6100 --condition soc_pct=78 --condition grid_w=0 \
+            --note "clear sky, no big loads"
+
+        # 3. Change exactly ONE thing and scan again with a new --label. Repeat for a few
+        #    distinct states — the more contrast, the better the map:
+        #      high-PV, low-PV (cover a panel), battery charging, battery discharging,
+        #      and (important) EXPORTING to grid + a night/idle state.
+        ./regscan.py scan --port /dev/ttyUSB0 --label exporting --condition pv_w=5000 --condition grid_w=-3000
+
+        # 4. Consolidate everything into the paste/attach-to-issue report:
+        ./regscan.py report
+        #   -> regscan-output/regscan-report.md     <-- attach this file
+        #   -> regscan-output/regscan-report.json   <-- attach this too
+        ```
+
+        **Helpful variants:**
+        - **No hardware yet / just trying it:** add `--mock` to any `scan` (synthetic device, no deps).
+        - **Port already in use** by a logger/dongle? Don't add a second master — **sniff** it:
+          `./regscan.py scan --port /dev/ttyUSB0 --passive --duration 120 --label passive-midday`.
+        - **Known family (Sunsynk/Deye)?** Annotate + verify a candidate map:
+          `./regscan.py report --map sunsynk-deye.tsv --variant 1PH`, or
+          `./regscan.py verify --map sunsynk-deye.tsv --from regscan-output/snapshot-*.json`.
+  - type: textarea
+    id: reports
+    attributes:
+      label: "📎 Attach your regscan output"
+      description: |
+        **Drag-and-drop the files into this box** (GitHub uploads them and inserts a link):
+        `regscan-report.md`, `regscan-report.json`, and the per-state `snapshot-*.json` files.
+        If you ran `verify`/`--map`, attach `verify-report.md` / `verify-matrix.csv` too.
+        (If you can't attach, paste the contents of `regscan-report.md` here instead.)
+      placeholder: "Drop regscan-report.md + regscan-report.json + snapshot-*.json here…"
+    validations:
+      required: true
+  - type: textarea
+    id: screen_conditions
+    attributes:
+      label: What the inverter's screen showed during each scan (ground truth)
+      description: "For each --label, list the values you read off the device's own display/app. This is how we confirm each register's address, scale and sign."
+      placeholder: |
+        midday-full-sun: PV 6100 W, SoC 78 %, battery 52.8 V / charging ~3 kW, grid 0 W, load 900 W
+        exporting:       PV 5000 W, SoC 95 %, grid -3000 W (exporting), load 800 W
+        night-idle:      PV 0 W, SoC 70 %, battery discharging ~800 W, grid +900 W (importing)
+    validations:
+      required: true
+  - type: dropdown
+    id: can_help
+    attributes:
+      label: Can you run follow-up scans / help validate?
+      description: "Building a correct profile is iterative — we may ask for one more labelled capture (a daytime exporting scan is the usual one)."
+      options:
+        - "Yes — I have ongoing access to the device and can run more scans"
+        - "Once — I can do a one-off additional scan if asked"
+        - "No — this is the only data I can provide"
+    validations:
+      required: true
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: "Anything else — manuals, register-map PDFs, links, quirks, or a text-protocol description if it's not Modbus."
+    validations:
+      required: false
