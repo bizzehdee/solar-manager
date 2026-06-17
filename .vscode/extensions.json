@@ -1,0 +1,12 @@
+{
+  // Recommended extensions so F5 debugging works out of the box.
+  // (The Chrome/Edge JS debugger is built into VSCode — no extension needed.)
+  "recommendations": [
+    "ms-python.python",
+    "ms-python.debugpy",
+    "ms-python.vscode-pylance",
+    "angular.ng-template",
+    "dbaeumer.vscode-eslint",
+    "esbenp.prettier-vscode"
+  ]
+}

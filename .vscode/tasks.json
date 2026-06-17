@@ -1,0 +1,44 @@
+{
+  // Tasks backing the debug profiles in launch.json.
+  "version": "2.0.0",
+  "tasks": [
+    {
+      // Starts the Angular dev server for the "Frontend: Angular (Chrome)" launch.
+      // It's a background task: the problemMatcher below holds the launch until the
+      // dev server reports it is serving, then Chrome attaches.
+      "label": "ng: serve",
+      "type": "npm",
+      "script": "start",
+      "path": "frontend",
+      "isBackground": true,
+      "presentation": { "reveal": "always", "panel": "dedicated" },
+      "problemMatcher": {
+        "owner": "angular",
+        "fileLocation": "relative",
+        "pattern": {
+          "regexp": "^(ERROR|WARNING) in (.+?):(\\d+):(\\d+) - (.+)$",
+          "severity": 1,
+          "file": 2,
+          "line": 3,
+          "column": 4,
+          "message": 5
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".*(Building|Generating|Compiling|Changes detected).*",
+          // Matches both the legacy webpack output and the newer esbuild builder.
+          "endsPattern": ".*(Compiled successfully|Application bundle generation complete|Local:\\s+http).*"
+        }
+      }
+    },
+    {
+      // Convenience: run the backend test suite from the Tasks menu / Test Explorer.
+      "label": "pytest",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/bin/python -m pytest",
+      "options": { "cwd": "${workspaceFolder}/backend" },
+      "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": []
+    }
+  ]
+}

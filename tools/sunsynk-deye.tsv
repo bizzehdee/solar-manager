@@ -1,0 +1,316 @@
+name	1PH	1PH-16kw	3PH	3PH-hv	group
+Device type	[0]	[0]	[0]	[0]
+Protocol	[2]	[2]	[2]	[2]
+Serial	[3,4,5,6,7]	[3,4,5,6,7]	[3,4,5,6,7]	[3,4,5,6,7]
+Battery temperature	[182] * 0.1 - 100	[182] * 0.1 - 100	[586] * 0.1 - 100		diagnostics
+Battery voltage	[183] * 0.01	[183] * 0.01	[587] * 0.01		diagnostics;power_flow_card
+Battery SOC	[184]	[184]	[588]		diagnostics;power_flow_card
+Battery power	[190] S	[190] S	[590] S		diagnostics;power_flow_card
+Battery current	[191] * 0.01	[191] * 0.01	[591] * 0.01		diagnostics;power_flow_card
+Battery charge limit current	[314] S	[314] S
+Battery discharge limit current	[315] S	[315] S
+Inverter power	[175] S	[175] S	[636,694] S	[636,694] S	power_flow_card
+Inverter voltage	[154] * 0.1	[154] * 0.1			power_flow_card
+Inverter current	[164] * 0.01	[164] * 0.01			power_flow_card
+Inverter frequency	[193] * 0.01	[193] * 0.01	[638] * 0.01	[638] * 0.01
+Grid frequency	[79] * 0.01	[79] * 0.01	[609] * 0.01	[609] * 0.01	power_flow_card
+Grid power	[169] S	[169] * 10	[625,690] S	[625,690] S	power_flow_card
+Grid LD power	[167] S	[167] S
+Grid L2 power	[168] S	[168] S	[623,688] S	[623,688] S	power_flow_card
+Grid voltage	[150] * 0.1	[150] * 0.1			diagnostics;power_flow_card
+Grid current	[160,161]	[160,161]	[610,611,612]	[610,611,612]	power_flow_card
+Grid CT power	[172] S	[172] * 10	[619,708] S	[619,708] S	power_flow_card
+Load power	[178] S	[178] S	[653,659] S	[653,659] S	power_flow_card
+Load L1 power	[176] S	[176] S	[650,656] S	[650,656] S	power_flow_card
+Load L2 power	[177] S	[177] S	[651,657] S	[651,657] S	power_flow_card
+Load frequency	[192] * 0.01	[192] * 0.01	[655] * 0.01	[655] * 0.01	power_flow_card
+Generator input	[235]	[235]	[133]	[133]	generator
+Gen/AUX power	[166] S	[166] S	[667,671] S	[667,671] S	power_flow_card
+Gen/AUX L1 voltage	[181] * 0.1	[181] * 0.1	[661] * 0.1	[661] * 0.1
+Gen/AUX L2 voltage	[182] * 0.1	[182] * 0.1	[662] * 0.1	[662] * 0.1
+Gen/AUX L3 voltage	[183] * 0.1	[183] * 0.1	[663] * 0.1	[663] * 0.1
+Gen/AUX L1 current	[184] * 0.01	[184] * 0.01	[671] * 0.01	[671] * 0.01
+Gen/AUX L2 current	[185] * 0.01	[185] * 0.01	[672] * 0.01	[672] * 0.01
+Gen/AUX L3 current	[186] * 0.01	[186] * 0.01	[673] * 0.01	[673] * 0.01
+PV1 power	[186] S	[186] S	[672] S	[672] * 10	power_flow_card
+PV1 voltage	[109] * 0.1	[109] * 0.1	[676] * 0.1	[676] * 0.1	power_flow_card
+PV1 current	[110] * 0.1	[110] * 0.1	[677] * 0.1	[677] * 0.1	power_flow_card
+PV2 power	[187] S	[187] S	[673] S	[673] * 10	power_flow_card
+PV2 voltage	[111] * 0.1	[111] * 0.1	[678] * 0.1	[678] * 0.1	power_flow_card
+PV2 current	[112] * 0.1	[112] * 0.1	[679] * 0.1	[679] * 0.1	power_flow_card
+PV3 power	[188] S	[188] S	[674] S	[674] * 10	power_flow_card
+PV3 voltage	[113] * 0.1	[113] * 0.1	[680] * 0.1	[680] * 0.1	power_flow_card
+PV3 current	[114] * 0.1	[114] * 0.1	[681] * 0.1	[681] * 0.1	power_flow_card
+Essential power	[175,169,166]	[175,169,166]			power_flow_card
+Essential 1 power	[175,167,166]	[175,167,166]
+Essential 2 power	[175,169,166]	[175,169,166]
+Non-essential power	[172,167]	[172,167]			power_flow_card
+Day active energy	[60] * 0.1	[60] * 0.1	[502] * 0.1	[502] * 0.1
+Day battery charge	[70] * 0.1	[70] * 0.1	[514] * 0.1	[514] * 0.1	power_flow_card
+Day battery Discharge	[71] * 0.1	[71] * 0.1	[515] * 0.1	[515] * 0.1	power_flow_card
+Day grid import	[76] * 0.1	[76] * 0.1	[520] * 0.1	[520] * 0.1	power_flow_card
+Day grid export	[77] * 0.1	[77] * 0.1	[521] * 0.1	[521] * 0.1	power_flow_card
+Day load energy	[84] * 0.1	[84] * 0.1	[526] * 0.1	[526] * 0.1	power_flow_card
+Day PV energy	[108] * 0.1	[108] * 0.1	[529] * 0.1	[529] * 0.1	power_flow_card
+Day reactive energy	[61] * 0.1	[61] * 0.1
+Month grid energy	[67] * 0.1	[67] * 0.1
+Month load energy	[66] * 0.1	[66] * 0.1
+Month PV energy	[65] * 0.1	[65] * 0.1
+Total active energy	[63,64] * 0.1	[63,64] * 0.1	[506,507] * 0.1	[506,507] * 0.1
+Total battery charge	[72,73] * 0.1	[72,73] * 0.1	[516,517] * 0.1	[516,517] * 0.1	energy_management
+Total battery discharge	[74,75] * 0.1	[74,75] * 0.1	[518,519] * 0.1	[518,519] * 0.1	energy_management
+Total grid export	[81,82] * 0.1	[81,82] * 0.1	[524,525] * 0.1	[524,525] * 0.1	energy_management
+Total grid import	[78,80] * 0.1	[78,80] * 0.1	[522,523] * 0.1	[522,523] * 0.1	energy_management
+Total load energy	[85,86] * 0.1	[85,86] * 0.1	[527,528] * 0.1	[527,528] * 0.1
+Total PV energy	[96,97] * 0.1	[96,97] * 0.1	[534,535] * 0.1	[534,535] * 0.1	energy_management
+Year grid export	[98,99] * 0.1	[98,99] * 0.1
+Year load energy	[87,88] * 0.1	[87,88] * 0.1
+Year PV energy	[68,69] * 0.1	[68,69] * 0.1
+Rated power	[16,17] * 0.1	[16,17] * 0.1	[20,21] * 0.1	[20,21] * 0.1
+Fault	[103,104,105,106]	[103,104,105,106]	[555,556,557,558]	[555,556,557,558]	diagnostics
+Overall state	[59]	[59]	[500]	[500]	power_flow_card
+SD status	[92]	[92]
+DC transformer temperature	[90] * 0.1 - 100	[90] * 0.1 - 100	[540] * 0.1 - 100	[540] * 0.1 - 100	diagnostics
+Environment temperature	[95] * 0.1 - 100	[95] * 0.1 - 100
+Radiator temperature	[91] * 0.1 - 100	[91] * 0.1 - 100	[541] * 0.1 - 100	[541] * 0.1 - 100	diagnostics
+Grid connected	[194]	[194]	[552] & 0x04	[552] & 0x04	power_flow_card
+Date time (R/W)	[22,23,24]	[22,23,24]	[62,63,64]	[62,63,64]	advanced
+Inverter enabled (R/W)	[43]	[43]	[80]	[80]
+Control mode	[200]	[200]
+Grid charge enabled (R/W)	[232] & 0x01	[232] & 0x01	[130]	[130]	settings
+Battery charging voltage	[312] * 0.01	[312] * 0.01
+Bat1 SOC	[603]	[603]
+Bat1 Cycle	[611]	[611]
+Battery Equalization voltage (R/W)	[201] * 0.01	[201] * 0.01	[99] * 0.01	[99] * 0.01	battery
+Battery Absorption voltage (R/W)	[202] * 0.01	[202] * 0.01	[100] * 0.01	[100] * 0.01	battery
+Battery Float voltage (R/W)	[203] * 0.01	[203] * 0.01	[101] * 0.01	[101] * 0.01	battery
+Battery shutdown capacity (R/W)	[217]	[217]	[115]	[115]	advanced;battery
+Battery restart capacity (R/W)	[218]	[218]	[116]	[116]	advanced;battery
+Battery low capacity (R/W)	[219]	[219]	[117]	[117]	advanced;battery
+Battery shutdown voltage (R/W)	[220] * 0.01	[220] * 0.01	[118] * 0.01	[118] * 0.01	battery
+Battery restart voltage (R/W)	[221] * 0.01	[221] * 0.01	[119] * 0.01	[119] * 0.01	battery
+Battery low voltage (R/W)	[222] * 0.01	[222] * 0.01	[120] * 0.01	[120] * 0.01	battery
+Priority Load (R/W)	[243] & 0x01	[243] & 0x01	[141]	[141]	power_flow_card
+Load Limit (R/W)	[244]	[244]	[142]	[142]	settings
+Max Solar power (R/W)	[53]	[53]	[340]	[340] * 10
+Max Sell power (R/W)	[245]	[245]
+Solar Export (R/W)	[247] & 0x01	[247] & 0x01	[145]	[145]	settings
+Use Timer (R/W)	[248] & 0x01	[248] & 0x01	[146]	[146]	power_flow_card;settings
+Peak shaving (R/W)	[280] & 0x0F	[280] & 0x0F
+Gen peak shaving (R/W)	[280] & 0xF0	[280] & 0xF0	[178] & 0x0C	[178] & 0x0C
+Grid peak shaving (R/W)	[280] & 0xF00	[280] & 0xF00	[178] & 0x30	[178] & 0x30
+Grid always on (R/W)	[280] & 0xF000	[280] & 0xF000
+Gen peak shaving power (R/W)	[292]	[292]
+Grid peak shaving power (R/W)	[293]	[293]	[191]	[191] * 10
+Prog1 Time (R/W)	[250]	[250]	[148]	[148]	settings
+Prog2 Time (R/W)	[251]	[251]	[149]	[149]	settings
+Prog3 Time (R/W)	[252]	[252]	[150]	[150]	settings
+Prog4 Time (R/W)	[253]	[253]	[151]	[151]	settings
+Prog5 Time (R/W)	[254]	[254]	[152]	[152]	settings
+Prog6 Time (R/W)	[255]	[255]	[153]	[153]	settings
+Prog1 power (R/W)	[256]	[256]	[154]	[154] * 10	settings
+Prog2 power (R/W)	[257]	[257]	[155]	[155] * 10	settings
+Prog3 power (R/W)	[258]	[258]	[156]	[156] * 10	settings
+Prog4 power (R/W)	[259]	[259]	[157]	[157] * 10	settings
+Prog5 power (R/W)	[260]	[260]	[158]	[158] * 10	settings
+Prog6 power (R/W)	[261]	[261]	[159]	[159] * 10	settings
+Prog1 Capacity (R/W)	[268]	[268]	[166]	[166]	settings
+Prog2 Capacity (R/W)	[269]	[269]	[167]	[167]	settings
+Prog3 Capacity (R/W)	[270]	[270]	[168]	[168]	settings
+Prog4 Capacity (R/W)	[271]	[271]	[169]	[169]	settings
+Prog5 Capacity (R/W)	[272]	[272]	[170]	[170]	settings
+Prog6 Capacity (R/W)	[273]	[273]	[171]	[171]	settings
+Prog1 charge (R/W)	[274] & 0x03	[274] & 0x03	[172] & 0x03	[172] & 0x03	settings
+Prog2 charge (R/W)	[275] & 0x03	[275] & 0x03	[173] & 0x03	[173] & 0x03	settings
+Prog3 charge (R/W)	[276] & 0x03	[276] & 0x03	[174] & 0x03	[174] & 0x03	settings
+Prog4 charge (R/W)	[277] & 0x03	[277] & 0x03	[175] & 0x03	[175] & 0x03	settings
+Prog5 charge (R/W)	[278] & 0x03	[278] & 0x03	[176] & 0x03	[176] & 0x03	settings
+Prog6 charge (R/W)	[279] & 0x03	[279] & 0x03	[177] & 0x03	[177] & 0x03	settings
+Prog1 mode (R/W)	[274] & 0x1C	[274] & 0x1C	[172] & 0x1C	[172] & 0x1C
+Prog2 mode (R/W)	[275] & 0x1C	[275] & 0x1C	[173] & 0x1C	[173] & 0x1C
+Prog3 mode (R/W)	[276] & 0x1C	[276] & 0x1C	[174] & 0x1C	[174] & 0x1C
+Prog4 mode (R/W)	[277] & 0x1C	[277] & 0x1C	[175] & 0x1C	[175] & 0x1C
+Prog5 mode (R/W)	[278] & 0x1C	[278] & 0x1C	[176] & 0x1C	[176] & 0x1C
+Prog6 mode (R/W)	[279] & 0x1C	[279] & 0x1C	[177] & 0x1C	[177] & 0x1C
+Prog1 voltage (R/W)	[262] * 0.01	[262] * 0.01	[160] * 0.01	[160] * 0.01
+Prog2 voltage (R/W)	[263] * 0.01	[263] * 0.01	[161] * 0.01	[161] * 0.01
+Prog3 voltage (R/W)	[264] * 0.01	[264] * 0.01	[162] * 0.01	[162] * 0.01
+Prog4 voltage (R/W)	[265] * 0.01	[265] * 0.01	[163] * 0.01	[163] * 0.01
+Prog5 voltage (R/W)	[266] * 0.01	[266] * 0.01	[164] * 0.01	[164] * 0.01
+Prog6 voltage (R/W)	[267] * 0.01	[267] * 0.01	[165] * 0.01	[165] * 0.01
+Grid Charge Battery current (R/W)	[230]	[230]	[128]	[128]	advanced
+Battery Max Charge current (R/W)	[210]	[210]	[108]	[108]	advanced;battery
+Battery Max Discharge current (R/W)	[211]	[211]	[109]	[109]	advanced;battery
+BMS Protocol (R/W)	[325]	[325]
+Inverter L1 power			[633,691] S	[633,691] S	diagnostics
+Inverter L2 power			[634,692] S	[634,692] S	diagnostics
+Inverter L3 power			[635,693] S	[635,693] S	diagnostics
+Inverter L1 voltage			[627] * 0.1	[627] * 0.1
+Inverter L2 voltage			[628] * 0.1	[628] * 0.1
+Inverter L3 voltage			[629] * 0.1	[629] * 0.1
+Inverter L1 current			[630] * 0.01	[630] * 0.01
+Inverter L2 current			[631] * 0.01	[631] * 0.01
+Inverter L3 current			[632] * 0.01	[632] * 0.01
+Grid L1 power			[622,687] S	[622,687] S	power_flow_card
+Grid L3 power			[624,689] S	[624,689] S	power_flow_card
+Grid L1 voltage			[598] * 0.1	[598] * 0.1	diagnostics
+Grid L2 voltage			[599] * 0.1	[599] * 0.1	diagnostics
+Grid L3 voltage			[600] * 0.1	[600] * 0.1	diagnostics
+Grid L1 inner side power			[604,700] S	[604,700] S
+Grid L2 inner side power			[605,701] S	[605,701] S
+Grid L3 inner side power			[606,702] S	[606,702] S
+Total Active Power Side to Side Grid			[607,703] S	[607,703] S
+Grid Side - Inside Total Apparent Power			[608,704] S	[608,704] S
+Grid CT L1 power			[616,705] S	[616,705] S
+Grid CT L2 power			[617,706] S	[617,706] S
+Grid CT L3 power			[618,707] S	[618,707] S
+Grid CT current			[613,614,615]	[613,614,615]
+Load L3 power			[652,658] S	[652,658] S	power_flow_card
+Load L1 voltage			[644] * 0.1	[644] * 0.1	power_flow_card
+Load L2 voltage			[645] * 0.1	[645] * 0.1	power_flow_card
+Load L3 voltage			[646] * 0.1	[646] * 0.1	power_flow_card
+Generator Port Usage			[133]	[133]	generator
+Gen/AUX L1 power			[664,668] S	[664,668] S
+Gen/AUX L2 power			[665,669] S	[665,669] S
+Gen/AUX L3 power			[666,670] S	[666,670] S
+UPS Load L1 power			[640,696]	[640,696]	ups
+UPS Load L2 power			[641,697]	[641,697]	ups
+UPS Load L3 power			[642,698]	[642,698]	ups
+UPS Load total power			[643,699]	[643,699]	ups
+PV power			[672,673,674,675]	[672,673,674,675]	power_flow_card
+PV4 power			[675] S	[675] * 10	power_flow_card
+PV4 voltage			[682] * 0.1	[682] * 0.1	power_flow_card
+PV4 current			[683] * 0.1	[683] * 0.1	power_flow_card
+Day Gen Energy			[536] * 0.1	[536] * 0.1
+INV Relay Status			[552] & 0x01	[552] & 0x01
+Undefined Load Relay Status			[552] & 0x02	[552] & 0x02
+Grid Relay Status			[552] & 0x04	[552] & 0x04	diagnostics
+Generator Relay Status			[552] & 0x08	[552] & 0x08
+Grid Give Power to Relay Status			[552] & 0x10	[552] & 0x10
+Dry Contact1 Status			[552] & 0x20	[552] & 0x20
+Dry Contact2 Status			[552] & 0x40	[552] & 0x40
+Off Grid mode (R/W)			[179] & 0x01	[179] & 0x01
+Grid Charge Start Battery Voltage (R/W)			[126] * 0.01	[126] * 0.01	advanced
+Grid Charge Start Battery SOC (R/W)			[127]	[127]	advanced
+Export Limit power (R/W)			[143]	[143] * 10	settings
+Battery Capacity current (R/W)			[102]	[102]	advanced;battery
+System Zero Export power (R/W)			[104] S	[104] * 10
+Battery Equalization Days (R/W)			[105] S	[105] S	battery
+Battery Equalization Hours (R/W)			[106] S	[106] S	battery
+Generator Charge Battery current (R/W)			[125]	[125]	generator
+Generator Charge Start Battery Voltage (R/W)			[123] * 0.01	[123] * 0.01	generator
+Generator Charge Start Battery SOC (R/W)			[124]	[124]	generator
+Generator Charge enabled (R/W)			[129]	[129]	generator
+Battery Type (R/W)			[111]	[111]	advanced;battery
+Battery Wake Up (R/W)			[112] & 0x01	[112] & 0x01	advanced;battery
+Battery Resistance (R/W)			[113]	[113]	advanced;battery
+Battery Charge Efficiency			[114] * 0.1	[114] * 0.1	advanced;battery
+Battery min voltage			const	const
+Battery max voltage			const	const
+Battery 1 BMS charging voltage			[210] * 0.01	[210] * 0.1
+Battery 1 BMS discharging voltage			[211] * 0.01	[211] * 0.1
+Battery 1 BMS charging current limit			[212]	[212]
+Battery 1 BMS discharging current limit			[213]	[213]
+Battery 1 BMS SOC			[214]	[214]
+Battery 1 BMS voltage			[215] * 0.01	[215] * 0.1
+Battery 1 BMS current			[216] * 0.01	[216] * 0.1
+Battery 1 BMS temperature			[217] * 0.1	[217] * 0.1
+Battery 1 BMS max charge current limit			[218]	[218]
+Battery 1 BMS max discharge current limit			[219]	[219]
+Battery 1 BMS alarm flag			[220]	[220]
+Prog Time Of Use Enabled (R/W)			[146] & 0x01	[146] & 0x01
+Prog Monday Enabled (R/W)			[146] & 0x02	[146] & 0x02
+Prog Tuesday Enabled (R/W)			[146] & 0x04	[146] & 0x04
+Prog Wednesday Enabled (R/W)			[146] & 0x08	[146] & 0x08
+Prog Thursday Enabled (R/W)			[146] & 0x10	[146] & 0x10
+Prog Friday Enabled (R/W)			[146] & 0x20	[146] & 0x20
+Prog Saturday Enabled (R/W)			[146] & 0x40	[146] & 0x40
+Prog Sunday Enabled (R/W)			[146] & 0x80	[146] & 0x80
+Microinverter export to grid cutoff (R/W)			[178] & 0x03	[178] & 0x03
+On Grid always on (R/W)			[178] & 0xC0	[178] & 0xC0
+External relay (R/W)			[178] & 0x300	[178] & 0x300
+Loss of lithium battery report fault (R/W)			[178] & 0xC00	[178] & 0xC00
+DRM (R/W)			[178] & 0x3000	[178] & 0x3000
+US version grounding fault (R/W)			[178] & 0xC000	[178] & 0xC000
+Generator AC Couple Frz High (R/W)			[131] * 0.01	[131] * 0.01
+Generator Off SOC (R/W)			[135]	[135]	generator
+Generator On SOC (R/W)			[137]	[137]	generator
+Generator Max Operating Time (R/W)			[121] * 0.1	[121] * 0.1	generator
+Generator Cooling Time (R/W)			[122] * 0.1	[122] * 0.1	generator
+Min PV Power for Gen Start (R/W)			[139]	[139]	generator
+Grid Signal On (R/W)			[140] & 0x01	[140] & 0x01
+Gen Signal On (R/W)			[140] & 0x02	[140] & 0x02	generator
+Force on generator as load function (R/W)			[132]	[132]	generator
+Generator connected to grid input (R/W)			[189]	[189]	generator
+Parallel Enable (R/W)			[336] & 0x01	[336] & 0x01	parallel
+Parallel Mode (R/W)			[336] & 0x02	[336] & 0x02	parallel
+Parallel Phase (R/W)			[336] & 0x300	[336] & 0x300	parallel
+Parallel Modbus SN (R/W)			[336] & 0xFC00	[336] & 0xFC00	parallel
+Grid Standard (R/W)			[182]	[182]	advanced
+Configured Grid Frequency (R/W)			[183]	[183]	advanced
+Configured Grid Phases (R/W)			[184]	[184]	advanced
+Time synchronization (R/W)			[228] & 0x03	[228] & 0x03
+Beep (R/W)			[228] & 0x0C	[228] & 0x0C
+AM PM (R/W)			[228] & 0x30	[228] & 0x30
+Auto dim (R/W)			[228] & 0xC0	[228] & 0xC0
+Allow Remote (R/W)			[228] & 0xC000	[228] & 0xC000
+Track Grid Phase (R/W)			[235]	[235]	advanced
+UPS delay time (R/W)			[209]	[209]	advanced;ups
+DRM0 Code			[544] & 0x01	[544] & 0x01
+DRM1 Code			[544] & 0x02	[544] & 0x02
+DRM2 Code			[544] & 0x04	[544] & 0x04
+DRM3 Code			[544] & 0x08	[544] & 0x08
+DRM4 Code			[544] & 0x10	[544] & 0x10
+DRM5 Code			[544] & 0x20	[544] & 0x20
+DRM6 Code			[544] & 0x40	[544] & 0x40
+DRM7 Code			[544] & 0x80	[544] & 0x80
+DRM8 Code			[544] & 0x100	[544] & 0x100
+Battery 1 Manufacturer (R/W)			[229]	[229]
+Battery 1 temperature				[586] * 0.1 - 100
+Battery 1 voltage				[587] * 0.1	power_flow_card
+Battery 1 SOC				[588]	power_flow_card
+Battery 1 power				[590] * 10
+Battery 1 current				[591] * 0.01
+Battery 2 SOC				[589]
+Battery 2 voltage				[593] * 0.1
+Battery 2 current				[594] * 0.01
+Battery 2 power				[595] * 10
+Battery 2 temperature				[596] * 0.1 - 100
+Parallel Bat1&Bat2 (R/W)				[110]
+Fan Warning				[553] & 0x02	diagnostics
+Grid Phase Warning				[553] & 0x04	diagnostics
+Lithium Battery Loss Warning				[554] & 0x4000	diagnostics
+Parallel Communication Quality Warning				[554] & 0x8000	diagnostics
+Battery 1 Wake Up (R/W)				[112] & 0x01
+Battery 2 Wake Up (R/W)				[112] & 0x100
+Lithium HV BMS Protocol (R/W)				[223]
+Battery 1 BMS fault flag				[221]
+Battery 1 BMS other flag - Battery 1 Force charge (R/W)				[222] & 0x02
+Battery 1 BMS other flag - Battery 2 Force charge (R/W)				[222] & 0x04
+Battery 1 BMS other flag - Battery 1 Sleep (R/W)				[222] & 0x08
+Battery 1 BMS type				[223]
+Battery 1 BMS SOH				[224]
+Battery 1 BMS software version				[225]
+Battery 1 BMS rated AH				[226]
+Battery 1 BMS hardware version				[227]
+Battery 2 Manufacturer				[230]
+Battery 2 BMS charging voltage				[241] * 0.1
+Battery 2 BMS discharging voltage				[242] * 0.1
+Battery 2 BMS charging current limit				[243]
+Battery 2 BMS discharging current limit				[244]
+Battery 2 BMS SOC				[245]
+Battery 2 BMS voltage				[246] * 0.1
+Battery 2 BMS current				[247] * 0.1
+Battery 2 BMS temperature				[248] * 0.1
+Battery 2 BMS max charge current limit				[249]
+Battery 2 BMS max discharge current limit				[250]
+Battery 2 BMS alarm flag				[251]
+Battery 2 BMS fault flag				[252]
+Battery 2 BMS other flag - Battery 1 Force charge (R/W)				[253] & 0x02
+Battery 2 BMS other flag - Battery 2 Force charge (R/W)				[253] & 0x04
+Battery 2 BMS other flag - Battery 1 Sleep (R/W)				[253] & 0x08
+Battery 2 BMS type				[254]
+Battery 2 BMS SOH				[255]
+Battery 2 BMS software version				[256]
+Battery 2 BMS rated AH				[257]
+Battery 2 BMS hardware version				[258]

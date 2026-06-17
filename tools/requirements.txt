@@ -1,0 +1,4 @@
+# Register discovery tool (regscan.py) — real scans only.
+# Not needed for --mock mode.
+pymodbus>=3.0
+pyserial>=3.5

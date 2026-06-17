@@ -1,0 +1,56 @@
+{
+  // Default debug profiles for Solar Manager — hit F5 to debug.
+  //
+  // Pick "Full Stack: Backend + Frontend (F5)" from the debug dropdown once;
+  // VSCode remembers it, so F5 then launches both with breakpoints working.
+  //
+  // Paths assume the Phase 0 repo layout (keep the scaffold in sync with these):
+  //   backend/   FastAPI app, ASGI entry point  app.main:app
+  //   frontend/  Angular app, dev server on :4200  (npm start -> ng serve)
+  //   .venv/     Python venv at the repo root  (Windows: .venv\Scripts\python.exe)
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Backend: FastAPI (debug)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      // No --reload here on purpose: uvicorn's reloader runs the app in a CHILD
+      // process, so breakpoints in the worker won't bind. This plain launch is
+      // the reliable "set a breakpoint and hit it" path. Use `make dev` when you
+      // want hot-reload without the debugger. (To debug WITH reload, add
+      // "subProcess": true and "--reload" to args — less reliable.)
+      "args": ["app.main:app", "--host", "127.0.0.1", "--port", "8000"],
+      "cwd": "${workspaceFolder}/backend",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "env": {
+        "SOLAR_MANAGER_ENABLE_CONTROL": "false",
+        "PYTHONUNBUFFERED": "1"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "Frontend: Angular (Chrome)",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://localhost:4200",
+      "webRoot": "${workspaceFolder}/frontend",
+      // Starts the Angular dev server first and waits until it's serving
+      // (see the "ng: serve" background task in tasks.json) before attaching.
+      "preLaunchTask": "ng: serve",
+      "sourceMaps": true,
+      "sourceMapPathOverrides": {
+        "webpack:///./*": "${workspaceFolder}/frontend/*",
+        "webpack:///src/*": "${workspaceFolder}/frontend/src/*"
+      }
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Full Stack: Backend + Frontend (F5)",
+      "configurations": ["Backend: FastAPI (debug)", "Frontend: Angular (Chrome)"],
+      "stopAll": true
+    }
+  ]
+}
