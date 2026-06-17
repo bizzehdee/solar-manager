@@ -47,8 +47,12 @@ jobs:
       # GATE: no CDN — the built app must reference zero external URLs (offline, §8/§13).
       - name: No-CDN check
         run: |
+          # Allow-listed false positives — string literals baked into framework/build
+          # output, never fetched at runtime: w3.org XML/SVG/MathML namespace URIs,
+          # sass-lang source-map refs, localhost, and angular.dev (the doc pointer
+          # Angular embeds in its DOM-sanitizer warning messages).
           if grep -rEoh "https?://[^ )\"']+" dist/solar-manager/browser/*.css dist/solar-manager/browser/*.js \
-             | grep -viE "www\.w3\.org|sass-lang\.com|localhost"; then
+             | grep -viE "www\.w3\.org|sass-lang\.com|localhost|angular\.dev"; then
             echo "::error::External URL found in built frontend — assets must be self-hosted (no CDN)."
             exit 1
           fi
