@@ -379,6 +379,7 @@ The UI is built as **small, self-contained, reusable components**, not page-spec
 - **Phase 8 — Polish & operational (§19):** energy-flow UI, first-run setup wizard, backup/restore & CSV export, diagnostics page, installable PWA, calibrate PR factor.
 - **Later — Smart automation (§18):** tariff + forecast-driven auto-scheduling of the work-mode timer, opt-in and built on the Phase-6 control safeguards (Predbat-style). Listed last; the architecture is laid so it slots in without core changes.
 - **Later — More vendors & transports:** `SolarmanV5Source`; **Sol-Ark & Deye profiles are near-free** (thin extends of the shared `deye-base` map validated in Phase 1); further families (Growatt, Victron, SunSpec) as demand arises — each a new YAML (+ its own settings schema for control), not a core change.
+- **Later — Post-MVP features (on request):** **import historical data from a Solar Assistant backup** (map its series → canonical vocabulary, bulk-load + re-roll-up, idempotent) for people migrating in; **customisable dashboards** — widget-based, user-arrangeable, including the home/Now view (layout persisted in the config DB; built on the existing canonical metrics + reusable components). See `TASKS.md` L05/L06.
 
 ---
 

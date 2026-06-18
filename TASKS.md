@@ -395,3 +395,30 @@ versioned releases.*
 - [-] **L04 · More vendors / protocol families** — Growatt/Solis/Sungrow/… (new YAML each);
   generic SunSpec profile; text-command family (Voltronic/Must) + Victron family each carry a
   one-time transport+profile-contract cost, then siblings are cheap. *Refs: §20.*
+
+## Later — Post-MVP features (on request)
+
+*Captured ideas, not yet scheduled. Both assume the core (Phases 0–4) is in.*
+
+- [-] **L05 · Import historical data from a Solar Assistant backup** · Deps: T040, T043, T046
+  - **Deliverable:** a one-off importer (CLI + an upload in Settings) that ingests a
+    [Solar Assistant](https://solar-assistant.io) export/backup, maps its series to our
+    **canonical metric vocabulary** (§4), bulk-loads into `samples`, and re-runs the rollups —
+    so people migrating off Solar Assistant keep their history.
+  - **Done when:** a real SA backup imports into a fresh DB and the History/Stats views show the
+    back-filled data; import is **idempotent** (re-running doesn't double-count) and reports
+    rows imported / skipped / unmapped.
+  - *First step:* inspect a real backup to pin the **format** (its time-series store and/or CSV
+    export) and the SA→canonical field-name mapping — don't assume; verify against a sample.
+    Reuse the energy-counter handling (§5) for cumulative series. *Refs: §5, §19.*
+
+- [-] **L06 · Customisable dashboards (incl. the home/Now dashboard)** · Deps: T018, T045, T047
+  - **Deliverable:** a widget-based dashboard the user can arrange — pick which cards / gauges /
+    charts appear, reorder/resize them, and **edit the home (Now) view itself**; optionally
+    multiple named dashboards. Layout persists in the config DB (`app_config`) — single
+    household, no auth, so one layout set per install (§3).
+  - **Done when:** a user can add/remove/rearrange widgets on the Now page and the layout
+    survives reload; widgets are driven by the canonical metrics + existing reusable components
+    (`metric-card`, `soc-gauge`, `time-series-chart`, `stat-card`) via a small widget registry.
+  - *Notes:* larger UX effort (edit mode + layout model + a drag/grid lib, self-hosted per §8 —
+    no CDN). Keep presentational widgets dumb; the dashboard config is just data. *Refs: §8.*
