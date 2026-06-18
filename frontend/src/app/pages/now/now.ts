@@ -4,12 +4,13 @@ import { LiveService } from '../../core/live.service';
 import { MetricValue } from '../../core/models';
 import { MetricCard } from '../../shared/metric-card';
 import { SocGauge } from '../../shared/soc-gauge';
+import { PowerGauge } from '../../shared/power-gauge';
 
 // "Now" view (plan.md §8): live energy snapshot driven by the WebSocket. A container
 // component — it subscribes to LiveService and feeds the presentational gauge/cards.
 @Component({
   selector: 'app-now',
-  imports: [MetricCard, SocGauge],
+  imports: [MetricCard, SocGauge, PowerGauge],
   template: `
     <h4 class="mb-3 d-flex align-items-center gap-2">
       Now
@@ -27,39 +28,50 @@ import { SocGauge } from '../../shared/soc-gauge';
     }
 
     @if (metrics(); as m) {
-      <div class="row g-3 align-items-stretch">
-        <div class="col-12 col-lg-3">
-          <div class="card h-100"><div class="card-body d-flex flex-column justify-content-center">
-            <app-soc-gauge [value]="num(m['battery_soc_pct']) ?? 0" label="Battery" />
+      <!-- Live flows as circular gauges (battery SoC + the four power flows). -->
+      <div class="row row-cols-2 row-cols-md-3 row-cols-xl-5 g-3 mb-3">
+        <div class="col">
+          <div class="card h-100"><div class="card-body d-flex justify-content-center align-items-center">
+            <app-soc-gauge [value]="num(m['battery_soc_pct']) ?? 0" label="Battery SoC" />
           </div></div>
         </div>
-        <div class="col-12 col-lg-9">
-          <div class="row g-3">
-            <div class="col-6 col-md-3">
-              <app-metric-card label="Solar" [value]="num(m['pv_power_w'])" unit="W" icon="bi-sun" role="warning" />
-            </div>
-            <div class="col-6 col-md-3">
-              <app-metric-card label="Load" [value]="num(m['load_power_w'])" unit="W" icon="bi-house" role="primary" />
-            </div>
-            <div class="col-6 col-md-3">
-              <app-metric-card label="Battery" [value]="num(m['battery_power_w'])" unit="W" icon="bi-battery-half" role="success" />
-            </div>
-            <div class="col-6 col-md-3">
-              <app-metric-card [label]="gridLabel()" [value]="gridAbs()" unit="W" icon="bi-plug" [role]="gridRole()" />
-            </div>
-            <div class="col-6 col-md-3">
-              <app-metric-card label="Grid V" [value]="num(m['grid_voltage_v'])" unit="V" icon="bi-lightning" role="info" />
-            </div>
-            <div class="col-6 col-md-3">
-              <app-metric-card label="Grid Hz" [value]="num(m['grid_frequency_hz'])" unit="Hz" icon="bi-activity" role="info" />
-            </div>
-            <div class="col-6 col-md-3">
-              <app-metric-card label="Inverter" [value]="num(m['inverter_temp_c'])" unit="°C" icon="bi-thermometer-half" role="danger" />
-            </div>
-            <div class="col-6 col-md-3">
-              <app-metric-card label="Today solar" [value]="kwh(m['today_pv_wh'])" unit="kWh" icon="bi-graph-up" role="warning" />
-            </div>
-          </div>
+        <div class="col">
+          <div class="card h-100"><div class="card-body d-flex justify-content-center align-items-center">
+            <app-power-gauge [value]="num(m['pv_power_w']) ?? 0" [max]="ratedW" label="Solar" role="warning" />
+          </div></div>
+        </div>
+        <div class="col">
+          <div class="card h-100"><div class="card-body d-flex justify-content-center align-items-center">
+            <app-power-gauge [value]="num(m['load_power_w']) ?? 0" [max]="ratedW" label="Load" role="primary" />
+          </div></div>
+        </div>
+        <div class="col">
+          <div class="card h-100"><div class="card-body d-flex justify-content-center align-items-center">
+            <app-power-gauge [value]="batteryAbs() ?? 0" [max]="ratedW" label="Battery"
+              [sublabel]="batteryDir()" [role]="batteryRole()" />
+          </div></div>
+        </div>
+        <div class="col">
+          <div class="card h-100"><div class="card-body d-flex justify-content-center align-items-center">
+            <app-power-gauge [value]="gridAbs() ?? 0" [max]="ratedW" label="Grid"
+              [sublabel]="gridDir()" [role]="gridRole()" />
+          </div></div>
+        </div>
+      </div>
+
+      <!-- Secondary instantaneous readings. -->
+      <div class="row g-3">
+        <div class="col-6 col-md-3">
+          <app-metric-card label="Grid V" [value]="num(m['grid_voltage_v'])" unit="V" icon="bi-lightning" role="info" />
+        </div>
+        <div class="col-6 col-md-3">
+          <app-metric-card label="Grid Hz" [value]="num(m['grid_frequency_hz'])" unit="Hz" icon="bi-activity" role="info" />
+        </div>
+        <div class="col-6 col-md-3">
+          <app-metric-card label="Inverter" [value]="num(m['inverter_temp_c'])" unit="°C" icon="bi-thermometer-half" role="danger" />
+        </div>
+        <div class="col-6 col-md-3">
+          <app-metric-card label="Today solar" [value]="kwh(m['today_pv_wh'])" unit="kWh" icon="bi-graph-up" role="warning" />
         </div>
       </div>
 
@@ -123,13 +135,39 @@ export class NowPage {
     return this.num(m?.['battery_soh_pct']) !== undefined || this.num(m?.['battery_cycles']) !== undefined;
   });
 
+  // Full-scale for the power gauges — the inverter's rated AC power (the 8 kW SG05LP1 /
+  // dummy). Flows rarely exceed it; the gauge ring caps at 100% if they do.
+  readonly ratedW = 8000;
+
+  // Grid: + = importing (drawing from grid), − = exporting (selling). Magnitude on the ring.
   readonly gridPower = computed(() => this.num(this.metrics()?.['grid_power_w']));
   readonly gridAbs = computed(() => {
     const v = this.gridPower();
     return v === undefined ? undefined : Math.abs(v);
   });
-  readonly gridLabel = computed(() => ((this.gridPower() ?? 0) >= 0 ? 'Grid import' : 'Grid export'));
+  readonly gridDir = computed(() => {
+    const v = this.gridPower();
+    if (v === undefined || Math.abs(v) < 1) return 'idle';
+    return v > 0 ? 'importing' : 'exporting';
+  });
   readonly gridRole = computed(() => ((this.gridPower() ?? 0) >= 0 ? 'danger' : 'info'));
+
+  // Battery: + = charging, − = discharging. Magnitude on the ring.
+  readonly batteryPower = computed(() => this.num(this.metrics()?.['battery_power_w']));
+  readonly batteryAbs = computed(() => {
+    const v = this.batteryPower();
+    return v === undefined ? undefined : Math.abs(v);
+  });
+  readonly batteryDir = computed(() => {
+    const v = this.batteryPower();
+    if (v === undefined || Math.abs(v) < 1) return 'idle';
+    return v > 0 ? 'charging' : 'discharging';
+  });
+  readonly batteryRole = computed(() => {
+    const v = this.batteryPower() ?? 0;
+    if (Math.abs(v) < 1) return 'secondary';
+    return v > 0 ? 'success' : 'warning';
+  });
 
   num(v: MetricValue | undefined): number | undefined {
     return typeof v === 'number' ? v : undefined;

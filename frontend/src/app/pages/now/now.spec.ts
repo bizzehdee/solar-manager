@@ -59,6 +59,26 @@ describe('NowPage', () => {
     expect(text).toContain('120');
   });
 
+  it('renders circular gauges for SoC + the four power flows with directions', () => {
+    const fixture = TestBed.createComponent(NowPage);
+    live.set({
+      battery_soc_pct: 60, pv_power_w: 6500, load_power_w: 1200,
+      battery_power_w: 3000, grid_power_w: -2000, // battery charging, grid exporting
+    });
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    // 5 gauge SVGs: 1 SoC + 4 power.
+    expect(el.querySelectorAll('app-soc-gauge svg').length).toBe(1);
+    expect(el.querySelectorAll('app-power-gauge svg').length).toBe(4);
+    // Directions derived from sign.
+    expect(fixture.componentInstance.batteryDir()).toBe('charging');
+    expect(fixture.componentInstance.gridDir()).toBe('exporting');
+    expect(fixture.componentInstance.batteryAbs()).toBe(3000);
+    expect(fixture.componentInstance.gridAbs()).toBe(2000);
+    expect(el.textContent).toContain('6.5 kW'); // solar gauge
+  });
+
   it('hides the battery health panel when neither soh nor cycles present (T055)', () => {
     const fixture = TestBed.createComponent(NowPage);
     live.set({ battery_soc_pct: 50 });
