@@ -18,6 +18,7 @@ import {
   Health,
   HistoryMetrics,
   HistoryResponse,
+  Preferences,
   SettingsSchemaResponse,
   Snapshot,
   StatsConfig,
@@ -31,6 +32,15 @@ export class ApiService {
 
   getHealth(): Observable<Health> {
     return this.http.get<Health>('/api/health');
+  }
+
+  // --- Formatting preferences (plan.md §19 / T093) ---
+  getPreferences(): Observable<Preferences> {
+    return this.http.get<Preferences>('/api/preferences');
+  }
+
+  putPreferences(prefs: Preferences): Observable<Preferences> {
+    return this.http.put<Preferences>('/api/preferences', prefs);
   }
 
   /** Operational diagnostics (build/schema, DB size, rollup lag, per-device comms). */

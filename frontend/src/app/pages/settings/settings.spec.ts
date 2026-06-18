@@ -64,6 +64,23 @@ describe('SettingsPage', () => {
     http.expectOne('/api/forecast/config').flush(forecastConfig());
   }
 
+  it('saveLocale() persists the locale via /api/preferences (T093)', () => {
+    const fixture = TestBed.createComponent(SettingsPage);
+    fixture.componentInstance.reloadApp = () => {}; // don't navigate in tests
+    fixture.detectChanges();
+    http.expectOne('/api/devices').flush({ devices: [] });
+    flushConfig();
+
+    fixture.componentInstance.localeChoice = 'en-GB';
+    fixture.componentInstance.saveLocale();
+
+    const req = http.expectOne('/api/preferences');
+    expect(req.request.method).toBe('PUT');
+    expect(req.request.body).toEqual({ locale: 'en-GB' });
+    req.flush({ locale: 'en-GB' });
+    expect(fixture.componentInstance.localeSaved()).toBe(true);
+  });
+
   it('calibratePr() fetches a suggestion and pre-fills the performance ratio (T096)', () => {
     const fixture = TestBed.createComponent(SettingsPage);
     fixture.detectChanges();

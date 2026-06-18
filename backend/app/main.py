@@ -371,6 +371,21 @@ def create_app(
         svc: ForecastService = app.state.forecast
         return JSONResponse(await svc.config())
 
+    # ---- formatting preferences (Phase 8 / T093) ------------------------------
+    @app.get("/api/preferences")
+    async def get_preferences() -> JSONResponse:
+        cfg: AppConfigRepository = app.state.app_config
+        prefs = await cfg.get("preferences", None) or {"locale": "en-US"}
+        return JSONResponse(prefs)
+
+    @app.put("/api/preferences")
+    async def put_preferences(body: dict = Body(...)) -> JSONResponse:
+        cfg: AppConfigRepository = app.state.app_config
+        # Persist a small allow-list of display preferences (English ships first).
+        prefs = {k: body[k] for k in ("locale", "currency", "timezone") if k in body}
+        await cfg.set("preferences", prefs)
+        return JSONResponse(prefs)
+
     @app.get("/api/forecast/calibrate")
     async def calibrate_forecast(device_id: str | None = None) -> JSONResponse:
         svc: ForecastService = app.state.forecast

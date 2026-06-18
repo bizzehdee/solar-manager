@@ -344,7 +344,7 @@ deferred — tracked under "Later — Integrations & notifications" below.*
 - [x] **T085 · Prometheus `/metrics` endpoint** · Deps: T016
   - Exposes live numeric metrics (`solarvolt_<metric>{device=…}`) for Grafana users. *Refs: §7, §14.*
 
-## Phase 8 — Polish & operational
+## Phase 8 — Polish & operational ✅ complete (first-run wizard moved to Later/L13)
 
 - [x] **T091 · Backup/restore + CSV/Excel export** · Deps: T044
   - `/api/backup` (VACUUM-INTO snapshot download), `/api/restore` (validated upload → atomic
@@ -354,8 +354,11 @@ deferred — tracked under "Later — Integrations & notifications" below.*
   - `/api/diagnostics` + Diagnostics page: build/schema version, DB size, rollup lag, active
     alerts, and per-device online + Modbus comms stats (transactions/failures/retries, last
     error, RTT — tracked in `ModbusRtuSource`). *Refs: §7, §19.*
-- [ ] **T093 · Localization & formatting** · Deps: T011
-  - Configurable currency, units, date/time format, timezone; i18n scaffolding (English ships first). *Refs: §19.*
+- [x] **T093 · Localization & formatting** · Deps: T011
+  - Configurable **locale** (drives date/number formatting) persisted in `app_config` +
+    localStorage; `LOCALE_ID` resolved at bootstrap, formatting data for en-US/en-GB/de/fr/es
+    bundled (no CDN). `/api/preferences` + a Formatting card in Settings. Currency stays with
+    the tariff; UI strings remain English (scaffolding in place). *Refs: §19.*
 - [x] **T094 · Installable PWA** · Deps: T018
   - Self-hosted `manifest.webmanifest` + SVG icon + hand-written `sw.js` (network-first
     navigations, stale-while-revalidate assets, never caches /api·/ws); registered in

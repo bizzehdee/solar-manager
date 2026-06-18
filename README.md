@@ -48,6 +48,11 @@ and watch your panels, battery and grid in real time.
   (more channels coming). All off the hot path — a failing notifier never disrupts monitoring.
 - **Integrations** — a **Prometheus `/metrics`** endpoint exposes live readings for Grafana users.
   (MQTT / Home-Assistant discovery and PVOutput are on the roadmap.)
+- **Operational niceties** — **backup / restore** the database and **export any metric to CSV**;
+  a **Diagnostics** page (DB size, rollup lag, per-device Modbus comms health, grid-outage log);
+  **inverter clock drift** with one-click sync; a **performance-ratio calibration** that tunes the
+  forecast from measured history; selectable **locale** for date/number formatting; and an
+  **installable PWA** (add to home screen, rides out brief network blips) — all self-hosted.
 - *Coming:* more notification channels (email/Telegram/…), MQTT + Home Assistant, PVOutput. See `TASKS.md`.
 
 ## Try it (no hardware needed)

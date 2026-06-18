@@ -2,6 +2,7 @@ import { Component, inject, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 
 import { ApiService } from '../../core/api.service';
+import { PreferencesService } from '../../core/preferences.service';
 import { ArraySpec, DeviceConfig, ForecastConfig, StatsConfig } from '../../core/models';
 
 // Settings › Devices (plan.md §6, §11): the device registry. Lists configured devices and
@@ -247,6 +248,35 @@ import { ArraySpec, DeviceConfig, ForecastConfig, StatsConfig } from '../../core
       </div>
     </div>
 
+    <!-- Formatting & locale (T093): drives date/number formatting (applied on reload). -->
+    <div class="card mt-3">
+      <div class="card-header"><i class="bi bi-translate"></i> Formatting &amp; locale</div>
+      <div class="card-body">
+        @if (localeSaved()) {
+          <div class="alert alert-success">Saved — reloading to apply the new locale…</div>
+        }
+        <div class="row g-3 align-items-end">
+          <div class="col-12 col-md-5">
+            <label class="form-label small text-secondary" for="loc">Locale (date &amp; number format)</label>
+            <select id="loc" class="form-select" [(ngModel)]="localeChoice" name="locale">
+              @for (l of prefs.supported; track l.id) {
+                <option [value]="l.id">{{ l.label }}</option>
+              }
+            </select>
+          </div>
+          <div class="col-12 col-md-4">
+            <button type="button" class="btn btn-primary" (click)="saveLocale()">
+              <i class="bi bi-save"></i> Save locale
+            </button>
+          </div>
+        </div>
+        <p class="small text-secondary mt-2 mb-0">
+          Currency is configured with the tariff above. Only English UI strings ship today;
+          the locale controls how dates and numbers are formatted.
+        </p>
+      </div>
+    </div>
+
     <!-- Solar array & site (T064): drives the Phase 4 forecast model. Site location + overall
          derating, the PV array geometry (one row per string), and the battery operating window. -->
     <div class="card mt-3">
@@ -376,6 +406,11 @@ export class SettingsPage implements OnInit {
   readonly restoring = signal(false);
   readonly restoreMsg = signal<{ cls: string; text: string } | null>(null);
 
+  // Locale (T093).
+  readonly prefs = inject(PreferencesService);
+  localeChoice = this.prefs.locale();
+  readonly localeSaved = signal(false);
+
   // Forecast config form (T064) — site/array/battery driving the Phase 4 forecast.
   readonly forecastSaved = signal(false);
   readonly calibrateMsg = signal<{ cls: string; text: string } | null>(null);
@@ -440,6 +475,24 @@ export class SettingsPage implements OnInit {
       },
       error: () => this.calibrateMsg.set({ cls: 'danger', text: 'Could not calibrate.' }),
     });
+  }
+
+  /** Persist the chosen locale and reload so LOCALE_ID re-resolves (T093). */
+  saveLocale(): void {
+    this.localeSaved.set(false);
+    this.prefs.save(this.localeChoice).subscribe(() => {
+      this.localeSaved.set(true);
+      this.reloadApp();
+    });
+  }
+
+  /** Isolated so tests don't trigger a real navigation. */
+  reloadApp(): void {
+    try {
+      location.reload();
+    } catch {
+      /* not available in tests */
+    }
   }
 
   private loadTariff(): void {

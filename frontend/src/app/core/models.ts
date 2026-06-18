@@ -3,6 +3,14 @@
 
 export type MetricValue = number | string | string[];
 
+/** Display/formatting preferences (plan.md §19 / T093). `locale` drives date/number
+ *  formatting; English ships first. */
+export interface Preferences {
+  locale: string;
+  currency?: string;
+  timezone?: string;
+}
+
 export interface DeviceSnapshot {
   ts: string;
   metrics: Record<string, MetricValue>;

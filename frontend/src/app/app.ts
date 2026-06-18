@@ -5,6 +5,7 @@ import { DatePipe } from '@angular/common';
 import { ThemeService } from './core/theme.service';
 import { LiveService } from './core/live.service';
 import { ApiService } from './core/api.service';
+import { PreferencesService } from './core/preferences.service';
 import { StatusPill } from './shared/status-pill';
 
 // Fixed admin shell (plan.md §8): header / sidebar / footer; content is the only
@@ -66,6 +67,7 @@ export class App implements OnInit {
   readonly theme = inject(ThemeService);
   readonly live = inject(LiveService);
   private readonly api = inject(ApiService);
+  private readonly prefs = inject(PreferencesService);
 
   // Open by default on desktop, closed on mobile (where the sidebar is an off-canvas
   // overlay). The hamburger toggles it; on mobile it slides in over a backdrop.
@@ -86,6 +88,7 @@ export class App implements OnInit {
 
   ngOnInit(): void {
     this.live.start();
+    this.prefs.load(); // sync the saved locale from the backend (applies next reload)
     this.api.getHealth().subscribe({ next: (h) => this.version.set(h.version) });
     setInterval(() => this.now.set(new Date()), 1000);
     // Poll the active-alert count for the header bell (the alert engine runs server-side).
