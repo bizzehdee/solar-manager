@@ -22,8 +22,9 @@ and watch your panels, battery and grid in real time.
 - **Multiple devices** — add, edit and remove devices from **Settings › Devices**; mix
   brands/models freely (each is just a profile).
 - **Statistics** — daily energy totals, self-consumption & self-sufficiency, battery
-  round-trip efficiency, and **cost / savings / CO₂** from a configurable tariff (flat or
-  time-of-use, with seasonal variants).
+  round-trip efficiency, and **cost / savings / CO₂** from a configurable tariff: a fixed
+  **standing charge**, **flat or time-of-use** import rates (multiple daily windows, e.g. a
+  cheap overnight rate), a flat export rate, and optional seasonal variants.
 - **Fault & battery-health surfacing** — decoded inverter fault codes shown as a banner;
   battery State-of-Health / cycles panel when the BMS reports them.
 - **Inverter settings — view & (optionally) edit** — the Control page shows every decoded

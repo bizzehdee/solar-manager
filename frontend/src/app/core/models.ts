@@ -62,6 +62,7 @@ export interface HistoryMetrics {
 export interface EconomicsResult {
   import_cost: number;
   export_revenue: number;
+  standing_charge: number; // fixed daily charge folded into net_cost & baseline_cost
   net_cost: number;
   baseline_cost: number;
   savings: number;
@@ -97,6 +98,7 @@ export interface RateScheduleDict {
 
 export interface TariffDict {
   currency: string;
+  standing_charge: number; // fixed cost per day (currency), independent of energy
   import_rate: RateScheduleDict;
   export_rate: RateScheduleDict;
   seasons: unknown[];

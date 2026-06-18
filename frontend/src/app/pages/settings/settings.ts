@@ -133,8 +133,9 @@ import { ArraySpec, DeviceConfig, ForecastConfig, StatsConfig } from '../../core
       </div>
     </div>
 
-    <!-- Tariff & economics (T051/T052): flat rates + currency + CO₂ intensity. The backend
-         accepts a bare number for import_rate/export_rate (treated as flat) — no TOU editor needed. -->
+    <!-- Tariff & economics (T051/T052): standing charge + import (flat or time-of-use windows)
+         + flat export + CO₂/system cost. Rates are per kWh and the standing charge per day, in
+         major currency units (e.g. enter 0.293 for 29.3p, 0.6075 for 60.75p). -->
     <div class="card mt-3">
       <div class="card-header"><i class="bi bi-cash-coin"></i> Tariff &amp; economics</div>
       <div class="card-body">
@@ -148,8 +149,8 @@ import { ArraySpec, DeviceConfig, ForecastConfig, StatsConfig } from '../../core
               <input id="t-currency" class="form-control" [(ngModel)]="tariff.currency" name="currency" />
             </div>
             <div class="col-6 col-md-3">
-              <label class="form-label small text-secondary" for="t-import">Import rate (/kWh)</label>
-              <input id="t-import" type="number" step="any" class="form-control" [(ngModel)]="tariff.importRate" name="importRate" />
+              <label class="form-label small text-secondary" for="t-standing">Standing charge (/day)</label>
+              <input id="t-standing" type="number" step="any" class="form-control" [(ngModel)]="tariff.standingCharge" name="standingCharge" />
             </div>
             <div class="col-6 col-md-3">
               <label class="form-label small text-secondary" for="t-export">Export rate (/kWh)</label>
@@ -164,6 +165,58 @@ import { ArraySpec, DeviceConfig, ForecastConfig, StatsConfig } from '../../core
               <input id="t-cost" type="number" step="any" class="form-control" [(ngModel)]="tariff.systemCost" name="systemCost" />
             </div>
           </div>
+
+          <!-- Import pricing: flat per-kWh, or time-of-use windows. -->
+          <h6 class="text-secondary mt-3">Import pricing</h6>
+          <div class="row g-3 align-items-end">
+            <div class="col-6 col-md-3">
+              <label class="form-label small text-secondary" for="t-import-mode">Mode</label>
+              <select id="t-import-mode" class="form-select" [(ngModel)]="tariff.importMode" name="importMode">
+                <option value="flat">Flat rate</option>
+                <option value="tou">Time of use</option>
+              </select>
+            </div>
+            <div class="col-6 col-md-3">
+              <label class="form-label small text-secondary" for="t-import-flat">
+                {{ tariff.importMode === 'tou' ? 'Fallback rate (/kWh)' : 'Import rate (/kWh)' }}
+              </label>
+              <input id="t-import-flat" type="number" step="any" class="form-control" [(ngModel)]="tariff.importFlat" name="importFlat" />
+            </div>
+          </div>
+
+          @if (tariff.importMode === 'tou') {
+            <p class="small text-secondary mt-2 mb-1">
+              Windows are applied in order; hours not covered by any window use the fallback rate.
+              A window may wrap midnight (e.g. 06:00 → 00:00).
+            </p>
+            @for (w of tariff.importWindows; track $index) {
+              <div class="row g-2 mb-2 align-items-end">
+                <div class="col-4 col-md-3">
+                  <label class="form-label small text-secondary" [attr.for]="'w-start-' + $index">From</label>
+                  <input [id]="'w-start-' + $index" type="time" class="form-control" [(ngModel)]="w.start" [name]="'wStart' + $index" />
+                </div>
+                <div class="col-4 col-md-3">
+                  <label class="form-label small text-secondary" [attr.for]="'w-end-' + $index">To</label>
+                  <input [id]="'w-end-' + $index" type="time" class="form-control" [(ngModel)]="w.end" [name]="'wEnd' + $index" />
+                </div>
+                <div class="col-4 col-md-3">
+                  <label class="form-label small text-secondary" [attr.for]="'w-rate-' + $index">Rate (/kWh)</label>
+                  <input [id]="'w-rate-' + $index" type="number" step="any" class="form-control" [(ngModel)]="w.rate" [name]="'wRate' + $index" />
+                </div>
+                <div class="col-12 col-md-3">
+                  <button type="button" class="btn btn-outline-danger" (click)="removeWindow($index)">
+                    <i class="bi bi-trash"></i> Remove
+                  </button>
+                </div>
+              </div>
+            }
+            <div class="mt-1 mb-2">
+              <button type="button" class="btn btn-sm btn-outline-secondary" (click)="addWindow()">
+                <i class="bi bi-plus-lg"></i> Add window
+              </button>
+            </div>
+          }
+
           <div class="mt-3">
             <button type="submit" class="btn btn-primary"><i class="bi bi-save"></i> Save tariff</button>
           </div>
@@ -273,11 +326,15 @@ export class SettingsPage implements OnInit {
     slaveId: 1,
   };
 
-  // Tariff form (T051/T052) — flat rates only; the backend treats bare numbers as flat.
+  // Tariff form (T051/T052): standing charge + flat-or-TOU import + flat export. Import
+  // windows use HH:MM strings in the form and convert to/from the backend's hour-floats.
   readonly tariffSaved = signal(false);
   tariff = {
     currency: 'GBP',
-    importRate: 0,
+    standingCharge: 0,
+    importMode: 'flat' as 'flat' | 'tou',
+    importFlat: 0,
+    importWindows: [] as { start: string; end: string; rate: number }[],
     exportRate: 0,
     co2Intensity: 0,
     systemCost: 0,
@@ -333,25 +390,56 @@ export class SettingsPage implements OnInit {
     this.api.getStatsConfig().subscribe((cfg) => this.applyStatsConfig(cfg));
   }
 
-  /** Map the API config into the flat-rate form fields. */
+  /** Map the API config into the tariff form fields (TOU windows ⇒ HH:MM). */
   private applyStatsConfig(cfg: StatsConfig): void {
+    const imp = cfg.tariff.import_rate;
+    const windows = imp?.windows ?? [];
     this.tariff = {
       currency: cfg.tariff.currency,
-      importRate: cfg.tariff.import_rate?.flat ?? 0,
+      standingCharge: cfg.tariff.standing_charge ?? 0,
+      importMode: windows.length ? 'tou' : 'flat',
+      importFlat: imp?.flat ?? 0,
+      importWindows: windows.map((w) => ({
+        start: hourToHHMM(w.start_hour),
+        end: hourToHHMM(w.end_hour),
+        rate: w.rate,
+      })),
       exportRate: cfg.tariff.export_rate?.flat ?? 0,
       co2Intensity: cfg.economics?.['co2_intensity_g_per_kwh'] ?? 0,
       systemCost: cfg.economics?.['system_cost'] ?? 0,
     };
   }
 
+  /** Append a blank time-of-use window (defaults to a full off-peak-ish midnight start). */
+  addWindow(): void {
+    this.tariff.importWindows = [...this.tariff.importWindows, { start: '00:00', end: '06:00', rate: 0 }];
+  }
+
+  removeWindow(index: number): void {
+    this.tariff.importWindows = this.tariff.importWindows.filter((_, i) => i !== index);
+  }
+
   saveTariff(): void {
     this.tariffSaved.set(false);
+    // Bare number ⇒ flat (backend treats it as such); object ⇒ flat fallback + TOU windows.
+    const importRate =
+      this.tariff.importMode === 'tou'
+        ? {
+            flat: Number(this.tariff.importFlat),
+            windows: this.tariff.importWindows.map((w) => ({
+              start_hour: hhmmToHour(w.start),
+              end_hour: hhmmToHour(w.end),
+              rate: Number(w.rate),
+            })),
+          }
+        : Number(this.tariff.importFlat);
     this.api
       .putStatsConfig({
         tariff: {
-          import_rate: Number(this.tariff.importRate),
-          export_rate: Number(this.tariff.exportRate),
           currency: this.tariff.currency,
+          standing_charge: Number(this.tariff.standingCharge),
+          import_rate: importRate,
+          export_rate: Number(this.tariff.exportRate),
         },
         economics: {
           co2_intensity_g_per_kwh: Number(this.tariff.co2Intensity),
@@ -419,4 +507,22 @@ export class SettingsPage implements OnInit {
     if (!confirm(`Delete device "${d.name}"?`)) return;
     this.api.deleteDevice(d.id).subscribe({ next: () => this.refresh() });
   }
+}
+
+/** "HH:MM" → fractional hour-of-day (e.g. "06:30" → 6.5). Empty/garbage → 0. */
+function hhmmToHour(s: string): number {
+  const [h, m] = (s || '').split(':');
+  const hours = Number(h);
+  const mins = Number(m);
+  return (Number.isFinite(hours) ? hours : 0) + (Number.isFinite(mins) ? mins : 0) / 60;
+}
+
+/** Fractional hour-of-day → "HH:MM" (e.g. 6.5 → "06:30"; 24 wraps to "00:00"). */
+function hourToHHMM(hour: number): string {
+  const h = Math.floor(hour) % 24;
+  const m = Math.round((hour - Math.floor(hour)) * 60);
+  // Carry a rounded-up 60 minutes into the hour.
+  const hh = m === 60 ? (h + 1) % 24 : h;
+  const mm = m === 60 ? 0 : m;
+  return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
 }

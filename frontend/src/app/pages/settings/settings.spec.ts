@@ -9,6 +9,7 @@ function statsConfig(over: Partial<StatsConfig> = {}): StatsConfig {
   return {
     tariff: {
       currency: 'GBP',
+      standing_charge: 0.6075,
       import_rate: { flat: 0.3, windows: [] },
       export_rate: { flat: 0.15, windows: [] },
       seasons: [],
@@ -113,35 +114,113 @@ describe('SettingsPage', () => {
     http.expectOne('/api/devices').flush({ devices: [] });
     flushConfig();
     fixture.detectChanges();
-    expect(fixture.componentInstance.tariff.currency).toBe('GBP');
-    expect(fixture.componentInstance.tariff.importRate).toBe(0.3);
-    expect(fixture.componentInstance.tariff.exportRate).toBe(0.15);
-    expect(fixture.componentInstance.tariff.co2Intensity).toBe(200);
+    const t = fixture.componentInstance.tariff;
+    expect(t.currency).toBe('GBP');
+    expect(t.standingCharge).toBe(0.6075);
+    expect(t.importMode).toBe('flat'); // no windows ⇒ flat
+    expect(t.importFlat).toBe(0.3);
+    expect(t.exportRate).toBe(0.15);
+    expect(t.co2Intensity).toBe(200);
   });
 
-  it('saveTariff() PUTs flat rates + economics to /api/stats/config (T052)', () => {
+  it('loads a time-of-use import schedule into HH:MM windows', () => {
+    const fixture = TestBed.createComponent(SettingsPage);
+    fixture.detectChanges();
+    http.expectOne('/api/devices').flush({ devices: [] });
+    flushConfig({
+      tariff: {
+        currency: 'GBP', standing_charge: 0.6075,
+        import_rate: {
+          flat: 0.293,
+          windows: [
+            { start_hour: 0, end_hour: 6, rate: 0.09 },
+            { start_hour: 6, end_hour: 0, rate: 0.293 },
+          ],
+        },
+        export_rate: { flat: 0.175, windows: [] },
+        seasons: [],
+      },
+    });
+    fixture.detectChanges();
+    const t = fixture.componentInstance.tariff;
+    expect(t.importMode).toBe('tou');
+    expect(t.importWindows).toEqual([
+      { start: '00:00', end: '06:00', rate: 0.09 },
+      { start: '06:00', end: '00:00', rate: 0.293 },
+    ]);
+    expect(t.exportRate).toBe(0.175);
+  });
+
+  it('saveTariff() PUTs a flat import rate as a bare number + standing charge (T052)', () => {
     const fixture = TestBed.createComponent(SettingsPage);
     fixture.detectChanges();
     http.expectOne('/api/devices').flush({ devices: [] });
     flushConfig();
 
     fixture.componentInstance.tariff = {
-      currency: 'EUR',
-      importRate: 0.4,
-      exportRate: 0.2,
-      co2Intensity: 150,
-      systemCost: 6000,
+      currency: 'EUR', standingCharge: 0.5, importMode: 'flat', importFlat: 0.4,
+      importWindows: [], exportRate: 0.2, co2Intensity: 150, systemCost: 6000,
     };
     fixture.componentInstance.saveTariff();
 
     const put = http.expectOne((r) => r.method === 'PUT' && r.url === '/api/stats/config');
     expect(put.request.body).toEqual({
-      tariff: { import_rate: 0.4, export_rate: 0.2, currency: 'EUR' },
+      tariff: { currency: 'EUR', standing_charge: 0.5, import_rate: 0.4, export_rate: 0.2 },
       economics: { co2_intensity_g_per_kwh: 150, system_cost: 6000 },
     });
-    put.flush(statsConfig({ tariff: { currency: 'EUR', import_rate: { flat: 0.4, windows: [] }, export_rate: { flat: 0.2, windows: [] }, seasons: [] } }));
+    put.flush(statsConfig());
     fixture.detectChanges();
     expect(fixture.componentInstance.tariffSaved()).toBe(true);
+  });
+
+  it('saveTariff() PUTs TOU windows as {flat, windows} with hour-floats', () => {
+    const fixture = TestBed.createComponent(SettingsPage);
+    fixture.detectChanges();
+    http.expectOne('/api/devices').flush({ devices: [] });
+    flushConfig();
+
+    // The user's real Octopus-style tariff: cheap overnight, pricier by day.
+    fixture.componentInstance.tariff = {
+      currency: 'GBP', standingCharge: 0.6075, importMode: 'tou', importFlat: 0.293,
+      importWindows: [
+        { start: '00:00', end: '06:00', rate: 0.09 },
+        { start: '06:00', end: '00:00', rate: 0.293 },
+      ],
+      exportRate: 0.175, co2Intensity: 200, systemCost: 5000,
+    };
+    fixture.componentInstance.saveTariff();
+
+    const put = http.expectOne((r) => r.method === 'PUT' && r.url === '/api/stats/config');
+    expect(put.request.body).toEqual({
+      tariff: {
+        currency: 'GBP', standing_charge: 0.6075,
+        import_rate: {
+          flat: 0.293,
+          windows: [
+            { start_hour: 0, end_hour: 6, rate: 0.09 },
+            { start_hour: 6, end_hour: 0, rate: 0.293 },
+          ],
+        },
+        export_rate: 0.175,
+      },
+      economics: { co2_intensity_g_per_kwh: 200, system_cost: 5000 },
+    });
+    put.flush(statsConfig());
+    fixture.detectChanges();
+    expect(fixture.componentInstance.tariffSaved()).toBe(true);
+  });
+
+  it('addWindow/removeWindow manage the TOU window list', () => {
+    const fixture = TestBed.createComponent(SettingsPage);
+    fixture.detectChanges();
+    http.expectOne('/api/devices').flush({ devices: [] });
+    flushConfig();
+    const c = fixture.componentInstance;
+    c.addWindow();
+    c.addWindow();
+    expect(c.tariff.importWindows.length).toBe(2);
+    c.removeWindow(0);
+    expect(c.tariff.importWindows.length).toBe(1);
   });
 
   it('loads the forecast config from /api/forecast/config (T064)', () => {

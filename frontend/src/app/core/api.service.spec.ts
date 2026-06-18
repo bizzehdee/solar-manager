@@ -211,6 +211,7 @@ function sampleDailyStats(): DailyStats {
     economics: {
       import_cost: 0.03,
       export_revenue: 0.045,
+      standing_charge: 0.6075,
       net_cost: -0.015,
       baseline_cost: 0.24,
       savings: 0.255,
@@ -224,6 +225,7 @@ function sampleStatsConfig(): StatsConfig {
   return {
     tariff: {
       currency: 'GBP',
+      standing_charge: 0.6075,
       import_rate: { flat: 0.3, windows: [] },
       export_rate: { flat: 0.15, windows: [] },
       seasons: [],

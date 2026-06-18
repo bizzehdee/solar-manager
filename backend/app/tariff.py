@@ -88,11 +88,13 @@ class Season:
 
 @dataclass(frozen=True, slots=True)
 class Tariff:
-    """Default import/export schedules + optional seasonal overrides."""
+    """Default import/export schedules + optional seasonal overrides, plus a fixed daily
+    **standing charge** (currency/day) that applies regardless of usage."""
 
     import_rate: RateSchedule = field(default_factory=RateSchedule)
     export_rate: RateSchedule = field(default_factory=RateSchedule)
     currency: str = "GBP"
+    standing_charge: float = 0.0   # fixed cost per day (currency), independent of energy
     seasons: tuple[Season, ...] = ()
 
     def schedules_for(self, when: datetime) -> tuple[RateSchedule, RateSchedule]:
@@ -117,12 +119,14 @@ class Tariff:
             import_rate=RateSchedule.from_dict(d.get("import_rate")),
             export_rate=RateSchedule.from_dict(d.get("export_rate")),
             currency=d.get("currency", "GBP"),
+            standing_charge=float(d.get("standing_charge", 0.0)),
             seasons=seasons,
         )
 
     def to_dict(self) -> dict:
         return {
             "currency": self.currency,
+            "standing_charge": self.standing_charge,
             "import_rate": self.import_rate.to_dict(),
             "export_rate": self.export_rate.to_dict(),
             "seasons": [

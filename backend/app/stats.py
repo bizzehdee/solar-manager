@@ -103,6 +103,7 @@ class StatsService:
             pv_wh=e["pv"],
             export_wh=e["export"],
             co2_intensity_g_per_kwh=factors["co2_intensity_g_per_kwh"],
+            standing_charge=tariff.standing_charge,
         )
 
         sc = energy.self_consumption_ratio(e["pv"], e["export"])

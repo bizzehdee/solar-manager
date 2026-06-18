@@ -58,6 +58,29 @@ def test_tariff_roundtrips_through_dict():
     assert again.seasons[0].start_month == 11
 
 
+def test_standing_charge_roundtrips():
+    # The user's real tariff: 60.75p/day standing, TOU import (9p 00–06, 29.3p otherwise),
+    # flat 17.5p export. Stored/loaded losslessly.
+    t = Tariff(
+        import_rate=RateSchedule(
+            flat=0.293,
+            windows=(TouWindow(0, 6, 0.09), TouWindow(6, 0, 0.293)),
+        ),
+        export_rate=RateSchedule(flat=0.175),
+        currency="GBP",
+        standing_charge=0.6075,
+    )
+    again = Tariff.from_dict(t.to_dict())
+    assert again.standing_charge == 0.6075
+    assert again.import_rate.rate_at(3) == 0.09     # overnight cheap rate
+    assert again.import_rate.rate_at(18) == 0.293   # daytime rate
+    assert again.export_rate.rate_at(12) == 0.175
+
+
+def test_standing_charge_defaults_to_zero_when_absent():
+    assert Tariff.from_dict({}).standing_charge == 0.0
+
+
 def test_from_dict_accepts_bare_number_as_flat():
     assert RateSchedule.from_dict(0.25).flat == 0.25
     assert RateSchedule.from_dict(None).flat == 0.0

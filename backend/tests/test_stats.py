@@ -69,6 +69,29 @@ async def test_daily_economics_with_flat_tariff():
     assert s.currency == "GBP"
 
 
+async def test_daily_economics_with_standing_charge_and_tou_import():
+    history, _devices, cfg, _audit = await open_repositories(":memory:")
+    await _seed_day(history)
+    # TOU import (cheap 00–06, pricier after) + flat export + a 60.75p/day standing charge.
+    await cfg.set("tariff", {
+        "currency": "GBP",
+        "standing_charge": 0.6075,
+        "import_rate": {"flat": 0.30, "windows": [{"start_hour": 0, "end_hour": 6, "rate": 0.09}]},
+        "export_rate": 0.05,
+    })
+    stats = StatsService(history, cfg)
+
+    s = await stats.daily("d", DAY)
+    econ = s.economics
+    # Standing charge is surfaced and folded into the real bill + baseline, cancelling in savings.
+    assert econ["standing_charge"] == 0.6075
+    # All seeded import deltas land in the 00–06 cheap window → 2 kWh * 0.09 = 0.18.
+    assert econ["import_cost"] == 0.18
+    assert econ["net_cost"] == round(0.18 - 0.2 + 0.6075, 4)
+    # savings independent of the standing charge (it's in both net and baseline).
+    assert econ["savings"] == round(econ["baseline_cost"] - econ["net_cost"], 4)
+
+
 async def test_daily_empty_day_is_safe():
     history, _devices, cfg, _audit = await open_repositories(":memory:")
     stats = StatsService(history, cfg)

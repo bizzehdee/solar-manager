@@ -33,6 +33,7 @@ describe('HistoryPage', () => {
       economics: {
         import_cost: 0,
         export_revenue: 0,
+        standing_charge: 0,
         net_cost: 0,
         baseline_cost: 0,
         savings: 1.23,

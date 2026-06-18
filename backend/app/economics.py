@@ -25,17 +25,19 @@ def self_consumed_pv_wh(pv_wh: float, export_wh: float) -> float:
 
 @dataclass(frozen=True, slots=True)
 class Economics:
-    import_cost: float        # what was paid for grid import
+    import_cost: float        # what was paid for grid import (energy only)
     export_revenue: float     # feed-in revenue for exported energy
-    net_cost: float           # import_cost - export_revenue (what the period actually cost)
-    baseline_cost: float      # what the load would have cost with NO solar/battery
-    savings: float            # baseline_cost - net_cost
+    net_cost: float           # what the period actually cost: import - export + standing charge
+    baseline_cost: float      # what it would have cost with NO solar/battery (incl. standing charge)
+    savings: float            # baseline_cost - net_cost (standing charge cancels — solar can't avoid it)
     co2_avoided_kg: float     # CO₂ not emitted thanks to PV displacing grid
+    standing_charge: float = 0.0  # the fixed daily charge folded into net & baseline (shown for transparency)
 
     def as_dict(self) -> dict:
         return {
             "import_cost": round(self.import_cost, 4),
             "export_revenue": round(self.export_revenue, 4),
+            "standing_charge": round(self.standing_charge, 4),
             "net_cost": round(self.net_cost, 4),
             "baseline_cost": round(self.baseline_cost, 4),
             "savings": round(self.savings, 4),
@@ -51,25 +53,30 @@ def compute_economics(
     pv_wh: float,
     export_wh: float,
     co2_intensity_g_per_kwh: float,
+    standing_charge: float = 0.0,
 ) -> Economics:
     """Bring the priced flows together into the headline economics.
 
-    - net_cost = what you actually paid (import) minus what you earned (export).
-    - baseline_cost = the bill if every kWh of load had come from the grid (no PV/battery),
-      priced at the import schedule by the caller (so TOU is respected).
-    - savings = baseline_cost - net_cost.
+    - net_cost = what you actually paid: import − export + the fixed standing charge.
+    - baseline_cost = the bill with no PV/battery: every kWh of load bought from the grid
+      (priced at the import schedule by the caller, so TOU is respected) + the same standing
+      charge (you pay it either way).
+    - savings = baseline_cost − net_cost. The standing charge is in *both*, so it cancels —
+      solar can't save you a fixed daily charge — but it's surfaced for a truthful bill total.
     - CO₂ avoided = on-site-consumed PV (kWh) × grid carbon intensity (it displaced grid).
     """
-    net_cost = import_cost - export_revenue
+    net_cost = import_cost - export_revenue + standing_charge
+    baseline_total = baseline_cost + standing_charge
     self_consumed_kwh = self_consumed_pv_wh(pv_wh, export_wh) / 1000.0
     co2_avoided = self_consumed_kwh * co2_intensity_g_per_kwh / 1000.0  # g → kg
     return Economics(
         import_cost=import_cost,
         export_revenue=export_revenue,
         net_cost=net_cost,
-        baseline_cost=baseline_cost,
-        savings=baseline_cost - net_cost,
+        baseline_cost=baseline_total,
+        savings=baseline_total - net_cost,
         co2_avoided_kg=co2_avoided,
+        standing_charge=standing_charge,
     )
 
 

@@ -30,6 +30,32 @@ def test_compute_economics_savings_and_co2():
     assert econ.co2_avoided_kg == 1.2      # 6 kWh * 200 g/kWh = 1200 g = 1.2 kg
 
 
+def test_standing_charge_folds_into_net_and_baseline_but_cancels_in_savings():
+    # Same flows as above, plus a 60.75p/day standing charge.
+    econ = economics.compute_economics(
+        import_cost=2.0,
+        export_revenue=0.5,
+        baseline_cost=5.0,
+        pv_wh=10000.0,
+        export_wh=4000.0,
+        co2_intensity_g_per_kwh=200.0,
+        standing_charge=0.6075,
+    )
+    assert econ.standing_charge == 0.6075
+    assert econ.net_cost == 1.5 + 0.6075        # real bill includes the fixed charge
+    assert econ.baseline_cost == 5.0 + 0.6075   # so does the no-solar baseline
+    assert econ.savings == 3.5                  # …so solar savings are unchanged (it can't avoid it)
+    assert econ.as_dict()["standing_charge"] == 0.6075
+
+
+def test_standing_charge_defaults_to_zero():
+    econ = economics.compute_economics(
+        import_cost=2.0, export_revenue=0.5, baseline_cost=5.0,
+        pv_wh=0.0, export_wh=0.0, co2_intensity_g_per_kwh=0.0,
+    )
+    assert econ.standing_charge == 0.0 and econ.net_cost == 1.5
+
+
 def test_economics_as_dict_rounds():
     econ = economics.compute_economics(
         import_cost=1.23456, export_revenue=0.0, baseline_cost=2.0,
