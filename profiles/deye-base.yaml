@@ -97,18 +97,33 @@ metrics:
 # read-out + the grid-charging regscan dump). See validation block in the child profile.
 settings:
   # Sections mirror the inverter's own setting menus (the Control page lays them out 2-up).
-  # Only screen-validated registers are wired; sections/fields needing register addresses we
-  # haven't confirmed yet (Grid voltage/freq limits & peak-shaving, Aux/Generator, battery
-  # type & operation mode, remote switch, generator charge, force-gen, grid trickle feed) are
-  # intentionally absent until a regscan pins them — never guess a writable address (CLAUDE §12).
+  # POLICY (user 2026-06-18): EVERY setting is shown, but anything whose register isn't
+  # screen-confirmed is READ-ONLY (`writable: false`) — it is read/displayed but never
+  # written and excluded from the write allow-list (§12). A read-only field with a candidate
+  # `addr` (seeded from the kellerza/sunsynk map, marked "candidate") shows a live value to
+  # verify against the inverter screen; one with no `addr` is a visible placeholder ("—")
+  # until its register is pinned. Promote a field to read/write only once confirmed.
 
-  # Battery type / protocol (read/write). battery_type {lithium,agm} + battery_operation
-  # {voltage,soc,none} await confirmed addresses.
+  # Grid protection menu. grid_type / grid_frequency are read-only on the device itself; the
+  # limits are settable there but unconfirmed here, so read-only for now.
+  grid:
+    grid_type:               { type: enum, writable: false, values: { 0: single_phase, 1: split_phase, 2: three_phase, 3: single_phase_120v } }   # addr TBD
+    grid_voltage_high_v:     { type: u16, scale: 0.1, writable: false }   # addr TBD
+    grid_voltage_low_v:      { type: u16, scale: 0.1, writable: false }   # addr TBD
+    grid_frequency:          { type: enum, writable: false, values: { 0: hz_50, 1: hz_60 } }   # addr TBD
+    grid_frequency_high_hz:  { type: u16, scale: 0.01, writable: false }  # addr TBD
+    grid_frequency_low_hz:   { type: u16, scale: 0.01, writable: false }  # addr TBD
+    grid_peak_shaving:       { addr: 280, type: bool, mask: 0x100, writable: false }    # candidate (kellerza bit8)
+    grid_peak_shaving_power_w: { addr: 293, type: u16, writable: false }  # candidate (kellerza)
+
+  # Battery type / protocol. lithium_protocol + capacity confirmed; type & operation pending.
   battery_type:
+    battery_type:            { type: enum, writable: false, values: { 0: lithium, 1: agm } }   # addr TBD
     lithium_protocol:        { addr: 325, type: enum, values: { 0: can } }   # screen "Lithium protocol"; CAN
+    battery_operation:       { type: enum, writable: false, values: { 0: voltage, 1: state_of_charge, 2: none } }   # addr TBD
     battery_capacity_ah:     { addr: 204, type: u16 }                # confirmed 312 Ah (≈16 kWh @ 51.2 V)
 
-  # Battery charging limits (writable; voltages ×0.01 V).
+  # Battery charging limits (all confirmed → writable; voltages ×0.01 V).
   battery_charging:
     max_charge_current_a:    { addr: 210, type: u16 }                # confirmed 140 A
     max_discharge_current_a: { addr: 211, type: u16 }                # confirmed 180 A
@@ -121,17 +136,19 @@ settings:
     restart_voltage_v:       { addr: 221, type: u16, scale: 0.01 }
     low_voltage_v:           { addr: 222, type: u16, scale: 0.01 }
 
-  # Work-mode toggles + SoC thresholds (screen "Work mode" menu). remote switch / generator
-  # charge / force-generator-on await confirmed addresses.
+  # Work-mode toggles + SoC thresholds. remote switch / generator charge / force-gen pending.
   work_mode:
     timer_enabled:           { addr: 248, type: bool, mask: 0x01 }   # "Use Timer"
     grid_charge:             { addr: 232, type: bool, mask: 0x01 }   # confirmed Enabled = 1
+    remote_switch:           { type: bool, writable: false }         # addr TBD
+    generator_charge:        { type: bool, writable: false }         # addr TBD
+    force_generator_on:      { type: bool, writable: false }         # addr TBD
     shutdown_soc_pct:        { addr: 217, type: u16 }                # "Output shutdown capacity" (confirmed 5 %)
     low_soc_pct:             { addr: 219, type: u16 }                # "Stop battery discharge capacity" (confirmed 10 %)
     restart_soc_pct:         { addr: 218, type: u16 }                # "Start battery discharge capacity" (confirmed 25 %)
     start_grid_charge_soc_pct: { addr: 229, type: u16 }              # "Start grid charge capacity" (confirmed 30 %)
 
-  # Work-mode detail (screen "Work mode" detail page). grid trickle feed awaits its address.
+  # Work-mode detail. grid trickle feed pending its address.
   work_mode_detail:
     # "Work mode" / energy-management model. Canonical Deye/Sunsynk order; [244]=2 =
     # "Zero export to CT" is screen-confirmed on this unit, 0/1 are the standard family values.
@@ -140,6 +157,18 @@ settings:
     energy_pattern:          { addr: 243, type: enum, values: { 0: battery_first, 1: load_first } }  # confirmed 1 = Load first
     max_sell_power_w:        { addr: 245, type: u16 }                # confirmed 8000 W
     max_solar_power_w:       { addr: 53,  type: u16 }                # confirmed 4800 W
+    grid_trickle_feed_w:     { type: u16, writable: false }          # addr TBD
+
+  # Aux / Generator. kellerza candidates for aux port + peak-shaving; capacities/timers pending.
+  aux_gen:
+    auxiliary_port:          { addr: 235, type: enum, values: { 0: disable, 1: smartload, 2: generator }, writable: false }  # candidate (kellerza)
+    generator_connected_to_grid: { type: bool, writable: false }     # addr TBD
+    gen_peak_shaving:        { addr: 280, type: bool, mask: 0x10, writable: false }    # candidate (kellerza bit4)
+    gen_peak_shaving_power_w: { addr: 292, type: u16, writable: false }  # candidate (kellerza)
+    gen_start_soc_pct:       { type: u16, writable: false }          # addr TBD
+    gen_stop_soc_pct:        { type: u16, writable: false }          # addr TBD
+    gen_max_run_time_h:      { type: u16, writable: false }          # addr TBD
+    gen_down_time_h:         { type: u16, writable: false }          # addr TBD
 
   # Work-mode timer: 6 repeating slots, slot i = base_addr + i. ALL fields confirmed against
   # the screen. There is NO end-time register — a slot ends when the next begins (cyclic,
