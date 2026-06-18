@@ -1,8 +1,11 @@
 // Bootstrap 5.3 + Bootstrap Icons, compiled and SELF-HOSTED (no CDN — plan.md §8/§13).
-// Importing the .scss (not the .css) inlines the icon @font-face and lets the Angular
-// build emit the woff2 fonts as local assets, so the app loads with zero outbound requests.
-@import 'bootstrap/scss/bootstrap';
-@import 'bootstrap-icons/font/bootstrap-icons';
+// Using the .scss (not the .css) inlines the icon @font-face and lets the Angular build
+// emit the woff2 fonts as local assets, so the app loads with zero outbound requests.
+// `@use` (not `@import`) per the modern Sass module system. Bootstrap 5.3 still `@import`s
+// internally; those dependency warnings are silenced via stylePreprocessorOptions in
+// angular.json (quietDeps) until Bootstrap 6 (which is `@use`-native).
+@use 'bootstrap/scss/bootstrap' as *;
+@use 'bootstrap-icons/font/bootstrap-icons' as *;
 
 // ── Fixed admin layout (header / sidebar / footer; content is the only scroll region) ──
 $header-h: 56px;
