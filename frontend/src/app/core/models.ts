@@ -114,6 +114,7 @@ export interface GenerationPoint {
   ts: number;
   pv_w: number;
   ghi: number;
+  cloud_cover: number; // %, drives the forecast chart's second (right) Y axis
   temp_c: number;
 }
 

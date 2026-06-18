@@ -4,8 +4,9 @@
 
 PYTHON ?= python3
 VENV   := .venv
-PY     := $(VENV)/bin/python
-PIP    := $(VENV)/bin/pip
+# Absolute paths so `cd backend && $(PY)` doesn't trip Python's relative-prefix warning.
+PY     := $(CURDIR)/$(VENV)/bin/python
+PIP    := $(CURDIR)/$(VENV)/bin/pip
 
 .PHONY: help install install-backend install-frontend dev backend-dev frontend-dev \
         build test test-backend test-frontend e2e clean
@@ -31,12 +32,12 @@ install-frontend:
 dev:
 	@echo ">> backend http://localhost:8000   frontend http://localhost:4200"
 	@trap 'kill 0' EXIT; \
-	( cd backend && ../$(PY) -m uvicorn app.main:app --reload --port 8000 ) & \
+	( cd backend && $(PY) -m uvicorn app.main:app --reload --port 8000 ) & \
 	( cd frontend && npm start ) & \
 	wait
 
 backend-dev:
-	cd backend && ../$(PY) -m uvicorn app.main:app --reload --port 8000
+	cd backend && $(PY) -m uvicorn app.main:app --reload --port 8000
 
 frontend-dev:
 	cd frontend && npm start
@@ -48,7 +49,7 @@ test: test-backend test-frontend
 
 # 80% overall is the §21 floor; critical-logic modules are held higher in review.
 test-backend:
-	cd backend && ../$(PY) -m pytest --cov-fail-under=80
+	cd backend && $(PY) -m pytest --cov-fail-under=80
 
 test-frontend:
 	cd frontend && CI=true npm test -- --watch=false

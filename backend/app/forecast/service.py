@@ -69,7 +69,13 @@ class ForecastService:
             dt = datetime.fromtimestamp(wp.ts, tz=timezone.utc)
             pv_w = model.expected_power_w(segments, lat, lon, dt, wp.ghi, wp.temp_c, pr)
             load_w = profile.get(dt.hour, default_load)
-            generation.append({"ts": wp.ts, "pv_w": round(pv_w, 1), "ghi": wp.ghi, "temp_c": wp.temp_c})
+            generation.append({
+                "ts": wp.ts,
+                "pv_w": round(pv_w, 1),
+                "ghi": wp.ghi,
+                "cloud_cover": wp.cloud_cover,
+                "temp_c": wp.temp_c,
+            })
             hourly.append((wp.ts, pv_w, load_w))
 
         start_soc = await self._repo.latest(device_id, "battery_soc_pct")

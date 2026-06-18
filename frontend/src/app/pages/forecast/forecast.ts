@@ -65,14 +65,35 @@ type ScopeKey = 'today' | 'tomorrow' | '3d' | '7d';
         <div class="card mb-3">
           <div class="card-header"><i class="bi bi-sun"></i> Expected generation</div>
           <div class="card-body">
-            <app-time-series-chart [points]="generationPoints()" label="Expected PV" unit="W" kind="line" />
+            <app-time-series-chart
+              [points]="generationPoints()"
+              label="Expected PV"
+              unit="W"
+              kind="line"
+              [yMin]="0"
+              [ySuggestedMax]="installedWatts()"
+              [overlayPoints]="cloudPoints()"
+              overlayLabel="Cloud cover"
+              overlayUnit="%"
+              overlayColor="#6c757d"
+              [overlayMin]="0"
+              [overlayMax]="100"
+            />
           </div>
         </div>
 
         <div class="card mb-3">
           <div class="card-header"><i class="bi bi-battery-charging"></i> Projected battery SoC</div>
           <div class="card-body">
-            <app-time-series-chart [points]="socPoints()" label="Projected SoC" unit="%" kind="line" color="#198754" />
+            <app-time-series-chart
+              [points]="socPoints()"
+              label="Projected SoC"
+              unit="%"
+              kind="line"
+              color="#198754"
+              [yMin]="0"
+              [yMax]="100"
+            />
           </div>
         </div>
 
@@ -135,6 +156,11 @@ export class ForecastPage implements OnInit {
   readonly forecast = signal<ForecastResponse | null>(null);
   readonly loading = signal(true);
 
+  /** Total installed DC capacity in watts (Σ array kWp × 1000), the floor for the
+   *  generation chart's top value so output always reads against full capacity.
+   *  0 ⇒ no floor (chart auto-scales) until the config loads. */
+  readonly installedWatts = signal<number | undefined>(undefined);
+
   readonly scopeLabel = computed(() => this.scopes.find((s) => s.key === this.scope())!.label);
 
   /** Calendar dates (UTC) in the forecast, ascending; daily[0] is today. */
@@ -167,6 +193,14 @@ export class ForecastPage implements OnInit {
       .map((g) => ({ ts: g.ts, value: g.pv_w })),
   );
 
+  /** Cloud-cover (%) curve for the scope, aligned to the generation points by the same
+   *  date filter so the chart can overlay it on a second Y axis. */
+  readonly cloudPoints = computed<HistoryPoint[]>(() =>
+    (this.forecast()?.generation ?? [])
+      .filter((g) => this.selectedDates().has(utcDate(g.ts)))
+      .map((g) => ({ ts: g.ts, value: g.cloud_cover })),
+  );
+
   /** Projected SoC curve for the scope. */
   readonly socPoints = computed<HistoryPoint[]>(() =>
     (this.forecast()?.soc ?? [])
@@ -194,6 +228,16 @@ export class ForecastPage implements OnInit {
         this.forecast.set(null);
         this.loading.set(false);
       },
+    });
+
+    // Installed capacity drives the generation chart's axis floor — fetched alongside the
+    // forecast; failure just leaves the axis auto-scaled.
+    this.api.getForecastConfig().subscribe({
+      next: (cfg) => {
+        const watts = (cfg.arrays ?? []).reduce((sum, a) => sum + (a.kwp ?? 0) * 1000, 0);
+        this.installedWatts.set(watts > 0 ? watts : undefined);
+      },
+      error: () => this.installedWatts.set(undefined),
     });
   }
 

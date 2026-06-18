@@ -17,6 +17,9 @@ from pathlib import Path
 from fastapi import Body, FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.responses import Response
+from starlette.types import Scope
 
 from .config import Settings
 from .devices.base import TransportError, system_clock
@@ -338,10 +341,27 @@ def create_app(
         return JSONResponse(None, status_code=204)
 
     # Serve the built frontend if present (production / packaged run). Harmless in dev.
+    # /api and /ws routes are registered above, so they're matched before this mount;
+    # everything else is either a static asset or a client-side route (SPA fallback).
     if _FRONTEND_DIST.is_dir():
-        app.mount("/", StaticFiles(directory=str(_FRONTEND_DIST), html=True), name="frontend")
+        app.mount("/", SpaStaticFiles(directory=str(_FRONTEND_DIST), html=True), name="frontend")
 
     return app
+
+
+class SpaStaticFiles(StaticFiles):
+    """StaticFiles that falls back to index.html for unmatched paths, so the Angular
+    router's client-side routes (e.g. /now, /forecast) resolve on a hard refresh or
+    bookmark when the backend serves the built UI. Real missing assets (a path with a
+    file extension) still 404 rather than masquerading as the SPA shell."""
+
+    async def get_response(self, path: str, scope: Scope) -> Response:
+        try:
+            return await super().get_response(path, scope)
+        except StarletteHTTPException as exc:
+            if exc.status_code == 404 and "." not in path.rsplit("/", 1)[-1]:
+                return await super().get_response("index.html", scope)
+            raise
 
 
 def _validate_device_body(body: dict, *, require_id: bool) -> None:

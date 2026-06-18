@@ -4,15 +4,27 @@ import { provideHttpClientTesting, HttpTestingController } from '@angular/common
 import { provideCharts, withDefaultRegisterables } from 'ng2-charts';
 
 import { ForecastPage } from './forecast';
-import { ForecastResponse } from '../../core/models';
+import { ForecastConfig, ForecastResponse } from '../../core/models';
+
+function config(over: Partial<ForecastConfig> = {}): ForecastConfig {
+  return {
+    site: { lat: 51.5, lon: -0.13, performance_ratio: 0.8 },
+    arrays: [
+      { name: 'A', kwp: 3.5, tilt: 35, azimuth: 135 },
+      { name: 'B', kwp: 3.0, tilt: 35, azimuth: 225 },
+    ],
+    battery: { capacity_wh: 16000, min_soc_pct: 10, max_soc_pct: 100 },
+    ...over,
+  };
+}
 
 function forecast(over: Partial<ForecastResponse> = {}): ForecastResponse {
   return {
     device_id: 'd1',
     days: 7,
     generation: [
-      { ts: 1_700_000_000, pv_w: 4200, ghi: 800, temp_c: 22 },
-      { ts: 1_700_003_600, pv_w: 3800, ghi: 700, temp_c: 23 },
+      { ts: 1_700_000_000, pv_w: 4200, ghi: 800, cloud_cover: 20, temp_c: 22 },
+      { ts: 1_700_003_600, pv_w: 3800, ghi: 700, cloud_cover: 45, temp_c: 23 },
     ],
     soc: [
       { ts: 1_700_000_000, soc_pct: 65, pv_w: 4200, load_w: 600, battery_w: 3600, grid_w: 0 },
@@ -45,18 +57,35 @@ describe('ForecastPage', () => {
     http = TestBed.inject(HttpTestingController);
   });
 
+  afterEach(() => http.verify());
+
+  /** Flush the config request the page fires on init (alongside the forecast). */
+  function flushConfig(over: Partial<ForecastConfig> = {}): void {
+    http.expectOne((r) => r.url === '/api/forecast/config').flush(config(over));
+  }
+
   it('fetches /api/forecast on init', () => {
     const fixture = TestBed.createComponent(ForecastPage);
     fixture.detectChanges();
     const req = http.expectOne((r) => r.url === '/api/forecast');
     expect(req.request.method).toBe('GET');
     req.flush(forecast());
+    flushConfig();
+  });
+
+  it('derives the installed-capacity axis floor from the forecast config', () => {
+    const fixture = TestBed.createComponent(ForecastPage);
+    fixture.detectChanges();
+    http.expectOne((r) => r.url === '/api/forecast').flush(forecast());
+    flushConfig(); // 3.5 + 3.0 kWp → 6500 W
+    expect(fixture.componentInstance.installedWatts()).toBe(6500);
   });
 
   it('renders the KPI cards and charts after the forecast flushes', () => {
     const fixture = TestBed.createComponent(ForecastPage);
     fixture.detectChanges();
     http.expectOne((r) => r.url === '/api/forecast').flush(forecast());
+    flushConfig();
     fixture.detectChanges();
 
     const el = fixture.nativeElement as HTMLElement;
@@ -70,10 +99,23 @@ describe('ForecastPage', () => {
     expect(text).toContain('not projected'); // depletion_ts is null
   });
 
+  it('exposes a cloud-cover overlay aligned to the generation curve', () => {
+    const fixture = TestBed.createComponent(ForecastPage);
+    fixture.detectChanges();
+    http.expectOne((r) => r.url === '/api/forecast').flush(forecast());
+    flushConfig();
+    fixture.detectChanges();
+
+    // 'today' scope keeps the first calendar day (both points share 2023-11-14 UTC).
+    const cloud = fixture.componentInstance.cloudPoints();
+    expect(cloud.map((p) => p.value)).toEqual([20, 45]);
+  });
+
   it('shows the empty state when generation is empty', () => {
     const fixture = TestBed.createComponent(ForecastPage);
     fixture.detectChanges();
     http.expectOne((r) => r.url === '/api/forecast').flush(forecast({ generation: [] }));
+    flushConfig();
     fixture.detectChanges();
 
     const el = fixture.nativeElement as HTMLElement;
@@ -87,6 +129,7 @@ describe('ForecastPage', () => {
     const req = http.expectOne((r) => r.url === '/api/forecast');
     expect(req.request.params.get('days')).toBe('7'); // always fetch the full week
     req.flush(forecast());
+    flushConfig();
     fixture.detectChanges();
 
     const el = fixture.nativeElement as HTMLElement;
@@ -109,6 +152,7 @@ describe('ForecastPage', () => {
     const fixture = TestBed.createComponent(ForecastPage);
     fixture.detectChanges();
     http.expectOne((r) => r.url === '/api/forecast').flush(forecast());
+    flushConfig();
     fixture.detectChanges();
 
     // 7 days → both daily rows, including the depleted day 2. No new HTTP request

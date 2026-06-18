@@ -181,7 +181,7 @@ function sampleForecast(): ForecastResponse {
   return {
     device_id: 'd1',
     days: 7,
-    generation: [{ ts: 1_700_000_000, pv_w: 4200, ghi: 800, temp_c: 22 }],
+    generation: [{ ts: 1_700_000_000, pv_w: 4200, ghi: 800, cloud_cover: 20, temp_c: 22 }],
     soc: [{ ts: 1_700_000_000, soc_pct: 65, pv_w: 4200, load_w: 600, battery_w: 3600, grid_w: 0 }],
     daily: [{ date: '2023-11-14', expected_wh: 12000, min_soc_pct: 30, max_soc_pct: 90, battery_depleted: false }],
     depletion_ts: null,

@@ -31,8 +31,26 @@ export class TimeSeriesChart {
   readonly color = input<string | undefined>(undefined);
   /** Divide y-values by this for display (e.g. Wh → kWh). */
   readonly scale = input(1);
+  /** Fixed bounds for the primary (left) Y axis; auto when omitted (e.g. 0/100 for SoC %). */
+  readonly yMin = input<number | undefined>(undefined);
+  readonly yMax = input<number | undefined>(undefined);
+  /** Floor for the primary axis' top value — the axis grows past it if data exceeds it,
+   *  but never shrinks below it (e.g. installed array watts, so a cloudy day still reads
+   *  small against full capacity). */
+  readonly ySuggestedMax = input<number | undefined>(undefined);
+
+  // Optional second series drawn as a line on a right-hand Y axis (e.g. cloud cover %
+  // over expected PV). Sharing the x labels of `points`, it's aligned by index.
+  readonly overlayPoints = input<HistoryPoint[] | undefined>(undefined);
+  readonly overlayLabel = input('');
+  readonly overlayUnit = input('');
+  readonly overlayColor = input('#6c757d');
+  /** Fixed bounds for the overlay axis (e.g. 0/100 for a percentage); auto when omitted. */
+  readonly overlayMin = input<number | undefined>(undefined);
+  readonly overlayMax = input<number | undefined>(undefined);
 
   private readonly stroke = computed(() => this.color() ?? '#0d6efd');
+  private readonly hasOverlay = computed(() => (this.overlayPoints()?.length ?? 0) > 0);
 
   readonly data = computed<ChartData<ChartType, number[], string>>(() => {
     const pts = this.points();
@@ -44,34 +62,56 @@ export class TimeSeriesChart {
       return raw / div;
     });
     const c = this.stroke();
-    return {
-      labels,
-      datasets: [
-        {
-          data: values,
-          label: this.label(),
-          borderColor: c,
-          backgroundColor: this.kind() === 'bar' ? c : this.alpha(c),
-          pointRadius: 0,
-          borderWidth: 2,
-          fill: this.kind() === 'line',
-          tension: 0.2,
-        },
-      ],
-    };
+    const datasets: ChartData<ChartType, number[], string>['datasets'] = [
+      {
+        data: values,
+        label: this.label(),
+        yAxisID: 'y',
+        borderColor: c,
+        backgroundColor: this.kind() === 'bar' ? c : this.alpha(c),
+        pointRadius: 0,
+        borderWidth: 2,
+        fill: this.kind() === 'line',
+        tension: 0.2,
+      },
+    ];
+
+    const overlay = this.overlayPoints();
+    if (overlay && overlay.length) {
+      const oc = this.overlayColor();
+      datasets.push({
+        type: 'line',
+        data: overlay.map((p) => p.value),
+        label: this.overlayLabel(),
+        yAxisID: 'y1',
+        borderColor: oc,
+        backgroundColor: this.alpha(oc),
+        pointRadius: 0,
+        borderWidth: 1.5,
+        borderDash: [4, 3],
+        fill: false,
+        tension: 0.2,
+      });
+    }
+    return { labels, datasets };
   });
 
   readonly options = computed<ChartConfiguration['options']>(() => {
     const unit = this.unit();
+    const overlayUnit = this.overlayUnit();
+    const hasOverlay = this.hasOverlay();
     return {
       responsive: true,
       maintainAspectRatio: false,
       animation: false,
       plugins: {
-        legend: { display: false },
+        legend: { display: hasOverlay },
         tooltip: {
           callbacks: {
-            label: (ctx) => `${ctx.formattedValue}${unit ? ' ' + unit : ''}`,
+            label: (ctx) => {
+              const u = ctx.datasetIndex === 1 ? overlayUnit : unit;
+              return `${ctx.formattedValue}${u ? ' ' + u : ''}`;
+            },
           },
         },
       },
@@ -82,8 +122,23 @@ export class TimeSeriesChart {
         },
         y: {
           beginAtZero: false,
+          min: this.yMin(),
+          max: this.yMax(),
+          suggestedMax: this.ySuggestedMax(),
           title: { display: !!unit, text: unit },
         },
+        ...(hasOverlay
+          ? {
+              y1: {
+                position: 'right' as const,
+                beginAtZero: false,
+                min: this.overlayMin(),
+                max: this.overlayMax(),
+                title: { display: !!overlayUnit, text: overlayUnit },
+                grid: { drawOnChartArea: false },
+              },
+            }
+          : {}),
       },
     };
   });
