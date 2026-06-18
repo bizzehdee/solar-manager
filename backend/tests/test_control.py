@@ -189,8 +189,8 @@ async def test_apply_only_writes_allow_listed_registers():
 @pytest.mark.asyncio
 async def test_encode_u16_range_guard_rejects_overflow():
     device, _ = _yaml_device()
-    # max_solar_power_w has no explicit bounds, so validation passes a huge value through to
-    # the encoder, which refuses anything outside the register's 16-bit range (§12 safety).
+    # 70000 is above both the explicit YAML max (16000) and the u16 register range — either
+    # the bounds check or the encoder will reject it (§12 safety).
     with pytest.raises(control.SettingsError):
         await control.apply_settings(device, "work_mode_detail", {"max_solar_power_w": 70000})
 
@@ -307,6 +307,19 @@ def test_validate_int_field_coerces_float_and_string():
     assert validate_settings(_yaml_schema(), "timer_slots", {"mode": "3"}, index=0) == {"mode": 3}
     with pytest.raises(SettingsValidationError):
         validate_settings(_yaml_schema(), "timer_slots", {"mode": "x"}, index=0)
+
+
+def test_yaml_writable_numeric_fields_have_bounds():
+    """Every writable number/int field in the YAML profile must declare min and max so
+    the API never accepts physically-dangerous values (§12 rule 1)."""
+    schema = _yaml_schema()
+    missing = []
+    for section in schema.sections:
+        for f in section.fields:
+            if f.writable and f.type in ("number", "int"):
+                if f.min is None or f.max is None:
+                    missing.append(f"{section.key}.{f.key}")
+    assert missing == [], f"writable numeric fields missing bounds: {missing}"
 
 
 def test_validate_time_formats():

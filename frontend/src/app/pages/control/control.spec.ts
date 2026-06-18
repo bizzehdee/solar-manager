@@ -293,6 +293,129 @@ describe('ControlPage', () => {
     expect(c.edit()).toBeNull();
   });
 
+  // --- timer end_time virtual field ---
+
+  it('injects an End column into the timer-slots table header', () => {
+    const fixture = bootEditable();
+    const el = fixture.nativeElement as HTMLElement;
+    const tables = Array.from(el.querySelectorAll('table'));
+    const slotTable = tables.find((t) => t.querySelector('thead'))!;
+    const headers = Array.from(slotTable.querySelectorAll('thead th')).map((th) => th.textContent?.trim());
+    expect(headers).toContain('End');
+    // End comes right after Start
+    const startIdx = headers.indexOf('Start');
+    expect(headers[startIdx + 1]).toBe('End');
+  });
+
+  it('shows each slot end time as the next slot start time, wrapping the last to slot 1', () => {
+    // Give each slot a distinct start_time so the wrapping is observable.
+    const fixture = TestBed.createComponent(ControlPage);
+    fixture.detectChanges();
+    http.expectOne('/api/devices').flush({ devices: [device({ control: true })] });
+    http.expectOne('/api/devices/d1/settings/schema').flush(schema());
+    const startTimes = ['00:05', '05:55', '09:00', '13:00', '17:00', '21:00'];
+    const slotValues = startTimes.map((t) => ({ start_time: t, power_w: 8000, target_soc_pct: 10, charge_from_grid: false }));
+    http.expectOne('/api/devices/d1/settings').flush({ ...settings(), control_enabled: true, etag: 'abc', values: { ...settings().values, timer_slots: slotValues } });
+    http.expectOne((r) => r.url === '/api/audit').flush({ entries: [] });
+    fixture.detectChanges();
+
+    const c = fixture.componentInstance;
+    const timerSection = c.fullWidthSections()[0];
+    // End time of slot i = start_time of slot i+1; last slot wraps to slot 0.
+    for (let i = 0; i < 6; i++) {
+      const row = c.rowsFor(timerSection)[i];
+      const endTime = c.rowValue(timerSection, i, { key: 'end_time', label: 'End', type: 'time' }, row);
+      expect(endTime).toBe(startTimes[(i + 1) % 6]);
+    }
+  });
+
+  it('initialises end_time in the draft from the next slot start_time', () => {
+    const fixture = bootEditable();
+    const c = fixture.componentInstance;
+    const timerSection = c.fullWidthSections()[0]; // timer_slots with end_time injected
+
+    c.startEditRow(timerSection, 0);
+    // All slots share '00:05' in the default fixture, so end_time = slot 1 start_time = '00:05'.
+    expect(c.draft()['end_time']).toBe('00:05');
+
+    // Last slot wraps to slot 0.
+    c.cancelEdit();
+    c.startEditRow(timerSection, 5);
+    expect(c.draft()['end_time']).toBe('00:05');
+  });
+
+  it('dispatches a single write to the NEXT slot when only end_time changes', () => {
+    const fixture = bootEditable();
+    const c = fixture.componentInstance;
+    const timerSection = c.fullWidthSections()[0];
+
+    c.startEditRow(timerSection, 0);
+    c.setDraft('end_time', '06:00'); // change only end_time
+    c.review(timerSection, 0);
+    fixture.detectChanges();
+
+    expect(c.confirm()!.nextSlotIndex).toBe(1);
+    expect(c.confirm()!.rows.length).toBe(1);
+    expect(c.confirm()!.rows[0].field.key).toBe('end_time');
+
+    c.applyConfirmed();
+    // No primary write (nothing else changed) — goes directly to slot 1's start_time.
+    const req = http.expectOne('/api/devices/d1/settings');
+    expect(req.request.method).toBe('PUT');
+    expect(req.request.body).toEqual({ section: 'timer_slots', index: 1, values: { start_time: '06:00' } });
+    expect(req.request.headers.get('If-Match')).toBe('abc');
+    req.flush({ device_id: 'd1', ok: true, section: 'timer_slots', index: 1, changes: {}, mismatches: [], etag: 'def', values: settings().values });
+    http.expectOne((r) => r.url === '/api/audit').flush({ entries: [] });
+    fixture.detectChanges();
+
+    expect(c.feedback()!.cls).toBe('success');
+    expect(c.edit()).toBeNull();
+  });
+
+  it('dispatches two sequential writes when slot fields and end_time both change', () => {
+    const fixture = bootEditable();
+    const c = fixture.componentInstance;
+    const timerSection = c.fullWidthSections()[0];
+
+    c.startEditRow(timerSection, 2); // slot 3 (index 2)
+    c.setDraft('power_w', 4000);
+    c.setDraft('end_time', '09:00');
+    c.review(timerSection, 2);
+    fixture.detectChanges();
+
+    expect(c.confirm()!.nextSlotIndex).toBe(3);
+    expect(c.confirm()!.rows.length).toBe(2);
+
+    c.applyConfirmed();
+
+    // First: primary write for slot 2 (power_w only — end_time stripped out).
+    const req1 = http.expectOne('/api/devices/d1/settings');
+    expect(req1.request.body).toEqual({ section: 'timer_slots', index: 2, values: { power_w: 4000 } });
+    req1.flush({ device_id: 'd1', ok: true, section: 'timer_slots', index: 2, changes: {}, mismatches: [], etag: 'def2', values: settings().values });
+
+    // Second: cascade write to slot 3 start_time, using the etag from the first response.
+    const req2 = http.expectOne('/api/devices/d1/settings');
+    expect(req2.request.body).toEqual({ section: 'timer_slots', index: 3, values: { start_time: '09:00' } });
+    expect(req2.request.headers.get('If-Match')).toBe('def2');
+    req2.flush({ device_id: 'd1', ok: true, section: 'timer_slots', index: 3, changes: {}, mismatches: [], etag: 'def3', values: settings().values });
+    http.expectOne((r) => r.url === '/api/audit').flush({ entries: [] });
+    fixture.detectChanges();
+
+    expect(c.feedback()!.cls).toBe('success');
+  });
+
+  it('wraps the last slot end_time to slot 1 (nextSlotIndex = 0)', () => {
+    const fixture = bootEditable();
+    const c = fixture.componentInstance;
+    const timerSection = c.fullWidthSections()[0];
+
+    c.startEditRow(timerSection, 5); // last slot
+    c.setDraft('end_time', '23:30');
+    c.review(timerSection, 5);
+
+    expect(c.confirm()!.nextSlotIndex).toBe(0); // wraps to slot 0
+  });
+
   it('shows the "no settings" alert when the schema is unsupported', () => {
     const fixture = TestBed.createComponent(ControlPage);
     fixture.detectChanges();

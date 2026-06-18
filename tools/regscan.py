@@ -191,7 +191,14 @@ def _detect_id_kwarg(fn) -> str | None:
 class PymodbusReader(ModbusReader):
     def __init__(self, args):
         try:
+            import logging
             from pymodbus.client import ModbusSerialClient
+            # pymodbus logs "No response received" / "Repeating...." at WARNING
+            # level to its own loggers — suppress them so they don't litter stdout.
+            # Our read_block() already handles failures via return-None + caller retries.
+            for _log in ("pymodbus", "pymodbus.client", "pymodbus.transaction",
+                         "pymodbus.framer", "pymodbus.factory"):
+                logging.getLogger(_log).setLevel(logging.CRITICAL)
         except Exception as e:  # pragma: no cover - import guard
             sys.exit(
                 "ERROR: pymodbus is required for real scans.\n"
@@ -447,6 +454,9 @@ def _collect_active(args) -> tuple[dict, list, list]:
     reader: ModbusReader = MockReader() if args.mock else PymodbusReader(args)
     tables = ["holding", "input"] if args.table == "both" else [args.table]
     total = (args.end - args.start + 1) * len(tables)
+    src = "mock" if args.mock else args.port
+    print(f"Scanning {'/'.join(tables)} registers {args.start}..{args.end} "
+          f"({total} regs, block {args.block_size}) on {src}...", flush=True)
     vlog(f"active sweep: {tables} over {args.start}..{args.end} "
          f"({total} registers, {args.block_size}/read, "
          f"{'mock' if args.mock else f'{args.gap}s between reads'})")
@@ -455,6 +465,8 @@ def _collect_active(args) -> tuple[dict, list, list]:
     try:
         for table in tables:
             values: dict[int, int] = {}
+            if len(tables) > 1:
+                print(f"  [{table}] sweeping {args.start}..{args.end}...", flush=True)
             vlog(f"[{table}] sweeping {args.start}..{args.end}")
             addr = args.start
             while addr <= args.end:
@@ -1490,7 +1502,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--cluster-gap", type=int, default=8,
                    help="with --map: merge addresses within this gap into one read "
                         "(default 8; bigger = fewer reads but more filler registers)")
-    s.add_argument("--table", default="both", choices=["holding", "input", "both"])
+    s.add_argument("--table", default="holding", choices=["holding", "input", "both"])
     s.add_argument("--block-size", type=int, default=32, help="registers per read")
     s.add_argument("--gap", type=float, default=0.02, help="seconds between reads")
     s.add_argument("--retries", type=int, default=2)

@@ -75,6 +75,19 @@ metrics:
   # The F-number convention is standard; the per-bit meaning is verified against the screen.
   inverter_fault_codes:     { addr: [103, 104, 105, 106], type: bits, bit_prefix: "F" }
 
+  # ── BMS link (registers 312–319, from manufacturer table) ──
+  # 314 is confirmed accessible on SYNK-8K-SG05LP1 (CAN BMS). Observed to taper
+  # 211→195 raw (21.1→19.5A, ×0.1) over ~1 hr of charging as the pack fills —
+  # classic BMS CC→CV taper (scan 2026-06-18). 312 is definitively unresponsive
+  # on this unit (single-register read failed; addressed twice). Others are untested.
+  bms_charge_voltage_v:      { addr: 312, type: u16, scale: 0.01, absent_ok: true }   # NOT present on CAN BMS (SG05LP1 scan 2026-06-18)
+  bms_charge_current_limit_a: { addr: 314, type: u16, scale: 0.1 }   # CONFIRMED: tapers as battery fills (CAN BMS, 2026-06-18)
+  bms_discharge_current_limit_a: { addr: 315, type: u16, scale: 0.1, absent_ok: true }  # BMS max discharge current
+  bms_soc_pct:               { addr: 316, type: u16, absent_ok: true }                 # BMS reported SOC
+  bms_battery_voltage_v:     { addr: 317, type: u16, scale: 0.01, absent_ok: true }   # BMS reported pack voltage
+  bms_battery_current_a:     { addr: 318, type: s16, scale: 0.1, absent_ok: true }    # BMS reported current (sign TBC)
+  bms_battery_temp_c:        { addr: 319, type: u16, scale: 0.1, offset: -100, absent_ok: true }  # BMS temp
+
   # ── daily energy counters (raw is kWh ×0.1; ×100 -> Wh per canonical keys) ──
   today_pv_wh:              { addr: 108, type: u16, scale: 100 }
   today_load_wh:            { addr: 84,  type: u16, scale: 100 }
@@ -108,41 +121,46 @@ settings:
   # limits are settable there but unconfirmed here, so read-only for now.
   grid:
     grid_type:               { type: enum, writable: false, values: { 0: single_phase, 1: split_phase, 2: three_phase, 3: single_phase_120v } }   # addr TBD
-    grid_voltage_high_v:     { type: u16, scale: 0.1, writable: false }   # addr TBD
-    grid_voltage_low_v:      { type: u16, scale: 0.1, writable: false }   # addr TBD
+    grid_voltage_high_v:     { type: u16, scale: 0.1, min: 220.0, max: 270.0, writable: false }  # addr TBD; screen: 255 V; NOT in holding:0–611 (volt-change scan 2026-06-18 found no match)
+    grid_voltage_low_v:      { type: u16, scale: 0.1, min: 100.0, max: 230.0, writable: false }  # addr TBD; screen: 138 V; NOT in holding:0–611 (volt-change scan 2026-06-18 found no match)
     grid_frequency:          { type: enum, writable: false, values: { 0: hz_50, 1: hz_60 } }   # addr TBD
-    grid_frequency_high_hz:  { type: u16, scale: 0.01, writable: false }  # addr TBD
-    grid_frequency_low_hz:   { type: u16, scale: 0.01, writable: false }  # addr TBD
-    grid_peak_shaving:       { addr: 280, type: bool, mask: 0x100, writable: false }    # candidate (kellerza bit8)
-    grid_peak_shaving_power_w: { addr: 293, type: u16, writable: false }  # candidate (kellerza)
+    grid_frequency_high_hz:  { addr: 236, type: u16, scale: 0.01, min: 49.0, max: 55.0 }  # addr confirmed; scan 2026-06-18 reads 51.0 Hz — verify screen (earlier screen-read was 52.0 Hz)
+    grid_frequency_low_hz:   { addr: 228, type: u16, scale: 0.01, min: 45.0, max: 51.0 }  # addr confirmed; scan 2026-06-18 reads 49.0 Hz — verify screen (earlier screen-read was 48.0 Hz)
+    grid_peak_shaving:       { addr: 280, type: bool, mask: 0x100 }   # bit 8 of reg 280 (ESPHome community map confirms)
+    grid_peak_shaving_power_w: { addr: 293, type: u16, min: 0, max: 8000 }  # confirmed writable (ESPHome community map)
 
-  # Battery type / protocol. lithium_protocol + capacity confirmed; type & operation pending.
+  # Battery type / protocol / calibration.
   battery_type:
-    battery_type:            { type: enum, writable: false, values: { 0: lithium, 1: agm } }   # addr TBD
+    battery_type:            { addr: 200, type: enum, writable: false, values: { 0: lithium, 1: agm } }    # table entry 200
     lithium_protocol:        { addr: 325, type: enum, values: { 0: can } }   # screen "Lithium protocol"; CAN
-    battery_operation:       { type: enum, writable: false, values: { 0: voltage, 1: state_of_charge, 2: none } }   # addr TBD
-    battery_capacity_ah:     { addr: 204, type: u16 }                # confirmed 312 Ah (≈16 kWh @ 51.2 V)
+    battery_operation:       { addr: 213, type: enum, writable: false, values: { 0: voltage, 1: state_of_charge, 2: none } }   # table entry 213; "use SOC or V?"
+    battery_activation_flag: { addr: 214, type: u16, writable: false }  # table entry 214; purpose unconfirmed
+    battery_charging_efficiency_pct: { addr: 216, type: u16, writable: false }  # table entry 216; % (raw value unconfirmed)
+    battery_capacity_ah:     { addr: 204, type: u16, min: 1, max: 9999 }  # confirmed 312 Ah (≈16 kWh @ 51.2 V)
+    battery_empty_voltage_v: { addr: 205, type: u16, scale: 0.01, writable: false }  # table entry 205; candidate — verify vs screen
+    equalization_day_cycle:  { addr: 207, type: u16, writable: false }  # table entry 207; days between cycles (unconfirmed scale)
+    equalization_time_h:     { addr: 208, type: u16, writable: false }  # table entry 208; equalization duration in hours (unconfirmed)
 
   # Battery charging limits (all confirmed → writable; voltages ×0.01 V).
   battery_charging:
-    max_charge_current_a:    { addr: 210, type: u16 }                # confirmed 140 A
-    max_discharge_current_a: { addr: 211, type: u16 }                # confirmed 180 A
-    grid_charge_current_a:   { addr: 230, type: u16 }                # confirmed 80 A
-    gen_charge_current_a:    { addr: 227, type: u16 }                # confirmed 40 A
-    float_voltage_v:         { addr: 203, type: u16, scale: 0.01 }   # confirmed 53.6 V
-    absorption_voltage_v:    { addr: 202, type: u16, scale: 0.01 }   # confirmed 56.0 V
-    equalization_voltage_v:  { addr: 201, type: u16, scale: 0.01 }   # confirmed 56.0 V
-    shutdown_voltage_v:      { addr: 220, type: u16, scale: 0.01 }
-    restart_voltage_v:       { addr: 221, type: u16, scale: 0.01 }
-    low_voltage_v:           { addr: 222, type: u16, scale: 0.01 }
+    max_charge_current_a:    { addr: 210, type: u16, min: 0, max: 200 }              # confirmed 140 A
+    max_discharge_current_a: { addr: 211, type: u16, min: 0, max: 200 }              # confirmed 180 A
+    grid_charge_current_a:   { addr: 230, type: u16, min: 0, max: 200 }              # confirmed 80 A
+    gen_charge_current_a:    { addr: 227, type: u16, min: 0, max: 200 }              # confirmed 40 A
+    float_voltage_v:         { addr: 203, type: u16, scale: 0.01, min: 44.0, max: 60.0 }  # confirmed 53.6 V
+    absorption_voltage_v:    { addr: 202, type: u16, scale: 0.01, min: 44.0, max: 60.0 }  # confirmed 56.0 V
+    equalization_voltage_v:  { addr: 201, type: u16, scale: 0.01, min: 44.0, max: 60.0 }  # confirmed 56.0 V
+    shutdown_voltage_v:      { addr: 220, type: u16, scale: 0.01, min: 40.0, max: 58.0 }
+    restart_voltage_v:       { addr: 221, type: u16, scale: 0.01, min: 40.0, max: 58.0 }
+    low_voltage_v:           { addr: 222, type: u16, scale: 0.01, min: 40.0, max: 58.0 }
 
   # Work-mode toggles + SoC thresholds. remote switch / generator charge / force-gen pending.
   work_mode:
     timer_enabled:           { addr: 248, type: bool, mask: 0x01 }   # "Use Timer"
     grid_charge:             { addr: 232, type: bool, mask: 0x01 }   # confirmed Enabled = 1
-    remote_switch:           { type: bool, writable: false }         # addr TBD
-    generator_charge:        { type: bool, writable: false }         # addr TBD
-    force_generator_on:      { type: bool, writable: false }         # addr TBD
+    remote_switch:           { addr: 20, type: bool, mask: 0x01, writable: false }  # 020-Remote_Control; observed 0xFF = all control bits on (scan 2026-06-18); bit0=1 = remote enabled
+    generator_charge:        { addr: 231, type: bool, mask: 0x01 }   # confirmed (ESPHome community map)
+    force_generator_on:      { addr: 326, type: bool, mask: 0x2000 } # bit 13 of reg 326 (ESPHome community map)
     shutdown_soc_pct:        { addr: 217, type: u16 }                # "Output shutdown capacity" (confirmed 5 %)
     low_soc_pct:             { addr: 219, type: u16 }                # "Stop battery discharge capacity" (confirmed 10 %)
     restart_soc_pct:         { addr: 218, type: u16 }                # "Start battery discharge capacity" (confirmed 25 %)
@@ -155,16 +173,22 @@ settings:
     work_mode:               { addr: 244, type: enum, values: { 0: selling_first, 1: zero_export_to_load, 2: zero_export_to_ct } }
     solar_export:            { addr: 247, type: bool, mask: 0x01 }   # "Solar export when battery full" — TOGGLE-CONFIRMED 0→1
     energy_pattern:          { addr: 243, type: enum, values: { 0: battery_first, 1: load_first } }  # confirmed 1 = Load first
-    max_sell_power_w:        { addr: 245, type: u16 }                # confirmed 8000 W
-    max_solar_power_w:       { addr: 53,  type: u16 }                # confirmed 4800 W
-    grid_trickle_feed_w:     { type: u16, writable: false }          # addr TBD
+    max_sell_power_w:        { addr: 245, type: u16, min: 0, max: 16000 }  # confirmed 8000 W
+    max_solar_power_w:       { addr: 53,  type: u16, min: 0, max: 16000 }  # confirmed 4800 W
+    grid_trickle_feed_w:     { addr: 206, type: u16, min: 0, max: 500 }  # confirmed writable, W, max 500 (ESPHome community map)
+
+  # External meter / CT clamp. Reg 326 is a multi-function bitfield: bits 2+3 = meter phases,
+  # bit 13 = force generator (force_generator_on in work_mode maps here too).
+  meter:
+    meter_phases:            { addr: 326, type: u16, mask: 0x000C, writable: false }  # bits 2+3: 0=1phase, 12=3phase (ESPHome community map)
+    ct_ratio:                { addr: 327, type: u16, writable: false }  # table 327: CT clamp ratio (e.g. 3000/5 = 600)
 
   # Aux / Generator. kellerza candidates for aux port + peak-shaving; capacities/timers pending.
   aux_gen:
-    auxiliary_port:          { addr: 235, type: enum, values: { 0: disable, 1: smartload, 2: generator }, writable: false }  # candidate (kellerza)
+    auxiliary_port:          { addr: 235, type: enum, values: { 0: disable, 1: output, 2: input } }  # confirmed: 0=disable,1=output,2=input (ESPHome community map)
     generator_connected_to_grid: { type: bool, writable: false }     # addr TBD
-    gen_peak_shaving:        { addr: 280, type: bool, mask: 0x10, writable: false }    # candidate (kellerza bit4)
-    gen_peak_shaving_power_w: { addr: 292, type: u16, writable: false }  # candidate (kellerza)
+    gen_peak_shaving:        { addr: 280, type: bool, mask: 0x10 }   # bit 4 of reg 280 (ESPHome community map confirms)
+    gen_peak_shaving_power_w: { addr: 292, type: u16, writable: false }  # candidate addr (kellerza; not in ESPHome map)
     gen_start_soc_pct:       { type: u16, writable: false }          # addr TBD
     gen_stop_soc_pct:        { type: u16, writable: false }          # addr TBD
     gen_max_run_time_h:      { type: u16, writable: false }          # addr TBD
@@ -181,16 +205,18 @@ settings:
     count: 6
     fields:
       start_time:        { base_addr: 250, type: time_hhmm }    # 250..255  (raw 5 -> 00:05, 555 -> 05:55)
-      power_w:           { base_addr: 256, type: u16 }          # 256..261
+      power_w:           { base_addr: 256, type: u16, min: 0, max: 16000 }  # 256..261
       target_soc_pct:    { base_addr: 268, type: u16 }          # 268..273
-      voltage_v:         { base_addr: 262, type: u16, scale: 0.01 }  # 262..267 (unused in SoC mode)
+      voltage_v:         { base_addr: 262, type: u16, scale: 0.01, min: 44.0, max: 60.0 }  # 262..267 (unused in SoC mode)
       charge_from_grid:  { base_addr: 274, type: bool, mask: 0x01 }  # 274..279 bit0 (confirmed)
       charge_from_gen:   { base_addr: 274, type: bool, mask: 0x02 }  #          bit1
-      mode:              { base_addr: 274, type: bits, mask: 0x1C }  #          bits 2-4
+      mode:              { base_addr: 274, type: bits, mask: 0x1C, min: 0, max: 7 }  #  bits 2-4
 
-# Real-time clock (Phase 8 / T097). Candidate Deye/Sunsynk layout: regs 22–24 packed
-# (y-2000<<8|month, day<<8|hour, minute<<8|second). UNCONFIRMED on this unit → `writable:
-# false`, so drift is read/shown but sync (a write) stays disabled until the regs are pinned.
+# Real-time clock (Phase 8 / T097). Regs 22–24 packed (y-2000<<8|month, day<<8|hour,
+# minute<<8|second). CONFIRMED against volt-change scan 2026-06-18: [22]=0x1A06 → 2026-06,
+# [23]=0x1213 → day=18, hour=19 BST (=18 UTC ✓), [24]=0x0F12 → min=15, sec=18 (9 s behind
+# the snapshot timestamp — expected for a sequential block read taking ~10 s).
+# `writable: false` until sync write path is exercised end-to-end against the dummy.
 clock:
   base_addr: 22
   writable: false

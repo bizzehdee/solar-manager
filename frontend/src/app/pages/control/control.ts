@@ -15,6 +15,10 @@ import {
 import { SettingValue } from '../../shared/setting-value';
 import { SettingInput } from '../../shared/setting-input';
 
+// Virtual field injected into the timer_slots schema on the client side only.
+// The inverter has no end-time register; a slot's end is the next slot's start (cyclic).
+const END_TIME_FIELD: SettingsField = { key: 'end_time', label: 'End', type: 'time' };
+
 // Control — Phase 5 read-only display + Phase 6 write-back (plan.md §12). Editing is gated:
 // the backend reports `control_enabled` only when SOLARVOLT_ENABLE_CONTROL is on AND the
 // device is writable; the edit controls render solely in that case. Every write goes through
@@ -163,7 +167,7 @@ import { SettingInput } from '../../shared/setting-input';
                               (valueChange)="setDraft(f.key, $event)"
                             />
                           } @else {
-                            <app-setting-value [field]="f" [value]="row[f.key]" />
+                            <app-setting-value [field]="f" [value]="rowValue(section, ri, f, row)" />
                           }
                         </td>
                       }
@@ -226,6 +230,12 @@ import { SettingInput } from '../../shared/setting-input';
                 Writing to <strong>{{ c.sectionLabel }}</strong>{{ c.index !== null ? ' · slot ' + (c.index + 1) : '' }}.
                 Review the change{{ c.rows.length > 1 ? 's' : '' }}:
               </p>
+              @if (c.nextSlotIndex !== null && c.rows.some(r => r.field.key === 'end_time')) {
+                <p class="small text-info-emphasis mb-2">
+                  <i class="bi bi-arrow-right-circle"></i>
+                  Changing the end time will also update slot {{ c.nextSlotIndex + 1 }}'s start time.
+                </p>
+              }
               <table class="table table-sm align-middle mb-0">
                 <tbody>
                   @for (r of c.rows; track r.field.key) {
@@ -272,6 +282,7 @@ export class ControlPage implements OnInit {
     section: string;
     sectionLabel: string;
     index: number | null;
+    nextSlotIndex: number | null;  // set for timer_slots when end_time changed
     rows: { field: SettingsField; old: unknown; new: unknown }[];
   } | null>(null);
   readonly saving = signal(false);
@@ -284,7 +295,20 @@ export class ControlPage implements OnInit {
   // Layout: non-repeating sections fill a responsive 2-column grid (in schema order);
   // repeating sections (the work-mode timer) span the full width below.
   readonly gridSections = computed(() => (this.schema()?.sections ?? []).filter((s) => !s.repeating));
-  readonly fullWidthSections = computed(() => (this.schema()?.sections ?? []).filter((s) => s.repeating));
+  // For timer_slots, inject the synthetic end_time field immediately after start_time so the
+  // table column appears next to the start. The field is client-side only — the backend has no
+  // end-time register. Writing end_time writes the next slot's start_time instead.
+  readonly fullWidthSections = computed(() =>
+    (this.schema()?.sections ?? []).filter((s) => s.repeating).map((s) => {
+      if (s.key !== 'timer_slots') return s;
+      const idx = s.fields.findIndex((f) => f.key === 'start_time');
+      const fields =
+        idx < 0
+          ? [...s.fields, END_TIME_FIELD]
+          : [...s.fields.slice(0, idx + 1), END_TIME_FIELD, ...s.fields.slice(idx + 1)];
+      return { ...s, fields };
+    }),
+  );
 
   /** Device identity for the read-only "Inverter info" card (first grid cell). */
   readonly info = computed(() => this.values()?.info ?? null);
@@ -373,28 +397,76 @@ export class ControlPage implements OnInit {
       this.feedback.set({ cls: 'secondary', icon: 'bi-info-circle', text: 'No changes to apply.' });
       return;
     }
-    this.confirm.set({ section: section.key, sectionLabel: section.label, index, rows });
+    // For timer_slots, compute which slot will receive the cascading start_time write.
+    let nextSlotIndex: number | null = null;
+    if (section.key === 'timer_slots' && index !== null) {
+      const count = this.rowsFor(section).length || (section.count ?? 6);
+      nextSlotIndex = (index + 1) % count;
+    }
+    this.confirm.set({ section: section.key, sectionLabel: section.label, index, nextSlotIndex, rows });
   }
 
   applyConfirmed(): void {
     const c = this.confirm();
     const id = this.deviceId();
     if (!c || !id) return;
-    const values = Object.fromEntries(c.rows.map((r) => [r.field.key, r.new]));
+
+    // Split end_time (virtual, writes to next slot) from the real fields.
+    const endTimeRow = c.nextSlotIndex !== null ? c.rows.find((r) => r.field.key === 'end_time') : undefined;
+    const primaryRows = c.rows.filter((r) => r.field.key !== 'end_time');
+    const etag = this.values()?.etag;
     this.saving.set(true);
-    this.api.putDeviceSettings(id, { section: c.section, index: c.index, values }, this.values()?.etag).subscribe({
+
+    // After the primary write (or immediately if there are no primary fields), write the
+    // next slot's start_time if end_time changed.
+    const writeNextSlot = (newEtag?: string | null) => {
+      if (!endTimeRow || c.nextSlotIndex === null) return;
+      this.api
+        .putDeviceSettings(
+          id,
+          { section: c.section, index: c.nextSlotIndex, values: { start_time: endTimeRow.new } },
+          newEtag ?? null,
+        )
+        .subscribe({
+          next: (res2) => {
+            this.applyValues(id, res2.etag, res2.values);
+            this.finish(id);
+          },
+          error: (err: HttpErrorResponse) => {
+            this.handleWriteError(id, err);
+            this.saving.set(false);
+          },
+        });
+    };
+
+    if (primaryRows.length === 0) {
+      // Only end_time changed — no primary write needed, go straight to the next slot.
+      writeNextSlot(etag);
+      return;
+    }
+
+    const values = Object.fromEntries(primaryRows.map((r) => [r.field.key, r.new]));
+    this.api.putDeviceSettings(id, { section: c.section, index: c.index, values }, etag).subscribe({
       next: (res) => {
         this.applyValues(id, res.etag, res.values);
-        this.cancelEdit();
-        this.feedback.set({ cls: 'success', icon: 'bi-check-circle', text: 'Settings written and verified.' });
-        this.saving.set(false);
-        this.loadAudit(id);
+        if (endTimeRow) {
+          writeNextSlot(res.etag);
+        } else {
+          this.finish(id);
+        }
       },
       error: (err: HttpErrorResponse) => {
         this.handleWriteError(id, err);
         this.saving.set(false);
       },
     });
+  }
+
+  private finish(id: string): void {
+    this.cancelEdit();
+    this.feedback.set({ cls: 'success', icon: 'bi-check-circle', text: 'Settings written and verified.' });
+    this.saving.set(false);
+    this.loadAudit(id);
   }
 
   private handleWriteError(id: string, err: HttpErrorResponse): void {
@@ -441,12 +513,17 @@ export class ControlPage implements OnInit {
   }
 
   // --- value access helpers ---
-  /** Current decoded values for a group (a non-repeating section object, or one timer slot). */
+  /** Current decoded values for a group (a non-repeating section object, or one timer slot).
+   *  For timer_slots, injects the synthetic end_time = next slot's start_time (cyclic). */
   private groupValues(sectionKey: string, index: number | null): Record<string, unknown> {
     const v = this.values()?.values?.[sectionKey];
     if (index !== null) {
       const arr = (Array.isArray(v) ? v : []) as Record<string, unknown>[];
-      return arr[index] ?? {};
+      const slot = { ...(arr[index] ?? {}) };
+      if (sectionKey === 'timer_slots' && arr.length > 0) {
+        slot['end_time'] = arr[(index + 1) % arr.length]?.['start_time'];
+      }
+      return slot;
     }
     return (v && typeof v === 'object' && !Array.isArray(v) ? v : {}) as Record<string, unknown>;
   }
@@ -458,6 +535,15 @@ export class ControlPage implements OnInit {
   rowsFor(section: SettingsSection): Record<string, unknown>[] {
     const v = this.values()?.values?.[section.key];
     return (Array.isArray(v) ? v : []) as Record<string, unknown>[];
+  }
+
+  /** Display value for a cell — handles the synthetic end_time field for timer_slots. */
+  rowValue(section: SettingsSection, ri: number, f: SettingsField, row: Record<string, unknown>): unknown {
+    if (f.key === 'end_time' && section.key === 'timer_slots') {
+      const rows = (this.values()?.values?.['timer_slots'] as Record<string, unknown>[]) ?? [];
+      return rows.length > 0 ? rows[(ri + 1) % rows.length]?.['start_time'] : null;
+    }
+    return row[f.key];
   }
 
   headerFor(f: SettingsField): string {

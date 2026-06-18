@@ -34,7 +34,7 @@ def test_settings_schema_sections_and_types():
     # Sections mirror the inverter's menus (unconfirmed-register fields are shown read-only).
     assert set(sections) == {
         "grid", "battery_type", "battery_charging",
-        "work_mode", "work_mode_detail", "aux_gen", "timer_slots",
+        "work_mode", "work_mode_detail", "meter", "aux_gen", "timer_slots",
     }
     # A field whose register isn't confirmed is present but read-only (grid_type).
     gt = next(f for f in sections["grid"]["fields"] if f["key"] == "grid_type")
