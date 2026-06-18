@@ -1,7 +1,9 @@
 import { TestBed } from '@angular/core/testing';
 import { signal } from '@angular/core';
+import { of } from 'rxjs';
 
 import { NowPage } from './now';
+import { ApiService } from '../../core/api.service';
 import { LiveService } from '../../core/live.service';
 import { MetricValue, Snapshot } from '../../core/models';
 
@@ -13,6 +15,17 @@ class FakeLiveService {
   }
 }
 
+// ApiService stub: NowPage fetches device ratings + forecast config on init for gauge scales.
+const fakeApi = {
+  getDevices: () => of({ devices: [{ id: 'd1', ratings: { ac_power_w: 5000 } }] }),
+  getForecastConfig: () =>
+    of({
+      site: { lat: 0, lon: 0, performance_ratio: 0.85 },
+      arrays: [{ name: 'A', kwp: 6.5, tilt: 30, azimuth: 180 }],
+      battery: { capacity_wh: 16000, min_soc_pct: 10, max_soc_pct: 100, max_charge_w: 4000, max_discharge_w: 4000 },
+    }),
+} as unknown as ApiService;
+
 describe('NowPage', () => {
   let live: FakeLiveService;
 
@@ -20,7 +33,10 @@ describe('NowPage', () => {
     live = new FakeLiveService();
     await TestBed.configureTestingModule({
       imports: [NowPage],
-      providers: [{ provide: LiveService, useValue: live }],
+      providers: [
+        { provide: LiveService, useValue: live },
+        { provide: ApiService, useValue: fakeApi },
+      ],
     }).compileComponents();
   });
 
@@ -77,6 +93,16 @@ describe('NowPage', () => {
     expect(fixture.componentInstance.batteryAbs()).toBe(3000);
     expect(fixture.componentInstance.gridAbs()).toBe(2000);
     expect(el.textContent).toContain('6.5 kW'); // solar gauge
+  });
+
+  it('scales gauges to the actual installation (AC rating, installed PV, battery max)', () => {
+    const fixture = TestBed.createComponent(NowPage);
+    live.set({ battery_soc_pct: 60 });
+    fixture.detectChanges(); // triggers ngOnInit → fetches ratings + forecast config
+    const c = fixture.componentInstance;
+    expect(c.acRatedW()).toBe(5000); // inverter rated AC (load/grid scale)
+    expect(c.solarMax()).toBe(6500); // Σ array kWp × 1000
+    expect(c.batteryMax()).toBe(4000); // battery max charge/discharge
   });
 
   it('hides the battery health panel when neither soh nor cycles present (T055)', () => {

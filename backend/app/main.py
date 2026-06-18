@@ -275,6 +275,7 @@ def create_app(
             "online": bool(live and live["online"]),
             "last_sample_age_s": live["last_sample_age_s"] if live else None,
             "capabilities": sorted(device.capabilities()) if device else [],
+            "ratings": (device.info.ratings or {}) if device else {},  # ac_power_w etc. (gauge scales)
             "settings": bool(device and device.has_settings),  # read-only display available (Phase 5)
             # Editable only when the deploy flag is on AND the device is writable (Phase 6).
             "control": app.state.settings.enable_control and bool(device and device.is_writable),

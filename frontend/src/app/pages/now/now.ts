@@ -1,5 +1,6 @@
-import { Component, computed, inject } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 
+import { ApiService } from '../../core/api.service';
 import { LiveService } from '../../core/live.service';
 import { MetricValue } from '../../core/models';
 import { MetricCard } from '../../shared/metric-card';
@@ -37,23 +38,23 @@ import { PowerGauge } from '../../shared/power-gauge';
         </div>
         <div class="col">
           <div class="card h-100"><div class="card-body d-flex justify-content-center align-items-center">
-            <app-power-gauge [value]="num(m['pv_power_w']) ?? 0" [max]="ratedW" label="Solar" role="warning" />
+            <app-power-gauge [value]="num(m['pv_power_w']) ?? 0" [max]="solarMax()" label="Solar" role="warning" />
           </div></div>
         </div>
         <div class="col">
           <div class="card h-100"><div class="card-body d-flex justify-content-center align-items-center">
-            <app-power-gauge [value]="num(m['load_power_w']) ?? 0" [max]="ratedW" label="Load" role="primary" />
+            <app-power-gauge [value]="num(m['load_power_w']) ?? 0" [max]="acRatedW()" label="Load" role="primary" />
           </div></div>
         </div>
         <div class="col">
           <div class="card h-100"><div class="card-body d-flex justify-content-center align-items-center">
-            <app-power-gauge [value]="batteryAbs() ?? 0" [max]="ratedW" label="Battery"
+            <app-power-gauge [value]="batteryAbs() ?? 0" [max]="batteryMax()" label="Battery"
               [sublabel]="batteryDir()" [role]="batteryRole()" />
           </div></div>
         </div>
         <div class="col">
           <div class="card h-100"><div class="card-body d-flex justify-content-center align-items-center">
-            <app-power-gauge [value]="gridAbs() ?? 0" [max]="ratedW" label="Grid"
+            <app-power-gauge [value]="gridAbs() ?? 0" [max]="acRatedW()" label="Grid"
               [sublabel]="gridDir()" [role]="gridRole()" />
           </div></div>
         </div>
@@ -106,8 +107,35 @@ import { PowerGauge } from '../../shared/power-gauge';
     }
   `,
 })
-export class NowPage {
+export class NowPage implements OnInit {
   private readonly live = inject(LiveService);
+  private readonly api = inject(ApiService);
+
+  // Gauge full-scales from the actual installation (not a flat default): inverter rated AC
+  // power for load/grid, installed PV (Σ array kWp) for solar, and battery max charge/
+  // discharge for the battery. Rings cap at 100% if a flow exceeds its scale, but the gauge
+  // still shows the real value. Fall back to 8 kW until config loads.
+  readonly acRatedW = signal(8000);
+  private readonly pvInstalledW = signal<number | null>(null);
+  private readonly batteryMaxConfiguredW = signal<number | null>(null);
+  readonly solarMax = computed(() => this.pvInstalledW() ?? this.acRatedW());
+  readonly batteryMax = computed(() => this.batteryMaxConfiguredW() ?? this.acRatedW());
+
+  ngOnInit(): void {
+    // Inverter AC rating (load/grid scale) from the active device's ratings.
+    this.api.getDevices().subscribe((res) => {
+      const ac = Number(res.devices[0]?.ratings?.['ac_power_w']);
+      if (Number.isFinite(ac) && ac > 0) this.acRatedW.set(ac);
+    });
+    // Installed PV (Σ kWp) + battery max power from the forecast/site config.
+    this.api.getForecastConfig().subscribe((cfg) => {
+      const pv = (cfg.arrays ?? []).reduce((sum, a) => sum + (a.kwp ?? 0) * 1000, 0);
+      if (pv > 0) this.pvInstalledW.set(pv);
+      const b = cfg.battery;
+      const bm = Math.max(b?.max_charge_w ?? 0, b?.max_discharge_w ?? 0);
+      if (bm > 0) this.batteryMaxConfiguredW.set(bm);
+    });
+  }
 
   /** Metrics of the first device in the snapshot (single-inverter rig in Phase 0). */
   readonly metrics = computed(() => {
@@ -134,10 +162,6 @@ export class NowPage {
     const m = this.metrics();
     return this.num(m?.['battery_soh_pct']) !== undefined || this.num(m?.['battery_cycles']) !== undefined;
   });
-
-  // Full-scale for the power gauges — the inverter's rated AC power (the 8 kW SG05LP1 /
-  // dummy). Flows rarely exceed it; the gauge ring caps at 100% if they do.
-  readonly ratedW = 8000;
 
   // Grid: + = importing (drawing from grid), − = exporting (selling). Magnitude on the ring.
   readonly gridPower = computed(() => this.num(this.metrics()?.['grid_power_w']));

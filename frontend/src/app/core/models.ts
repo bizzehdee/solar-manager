@@ -198,6 +198,7 @@ export interface DeviceConfig {
   online: boolean;
   last_sample_age_s: number | null;
   capabilities: string[];
+  ratings?: Record<string, unknown>; // device ratings (e.g. ac_power_w) — gauge full-scales
   control: boolean;
   settings?: boolean; // read-only settings display available (Phase 5 / T072)
 }
