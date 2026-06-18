@@ -59,13 +59,20 @@ import { TimeSeriesChart } from '../../shared/time-series-chart';
               }
             </select>
           </div>
-          <div class="col-6 col-md-4">
+          <div class="col-6 col-md-3">
             <label class="form-label small text-secondary" for="range">Range</label>
             <select id="range" class="form-select" [value]="rangeDays()" (change)="onRange($event)">
               <option [value]="1">Last 24h</option>
               <option [value]="7">Last 7 days</option>
               <option [value]="30">Last 30 days</option>
             </select>
+          </div>
+          <div class="col-6 col-md-1 d-grid">
+            @if (exportHref(); as href) {
+              <a class="btn btn-outline-secondary" [href]="href" title="Export this view as CSV">
+                <i class="bi bi-download"></i>
+              </a>
+            }
           </div>
         </div>
       </div>
@@ -112,6 +119,14 @@ export class HistoryPage implements OnInit {
 
   /** Energy counters (…_wh) are accumulating totals — chart `last`, in kWh, as bars. */
   readonly isCounter = computed(() => (this.metric() ?? '').endsWith('_wh'));
+
+  /** Download link for the current metric/resolution/range as CSV (T091). */
+  readonly exportHref = computed(() => {
+    const m = this.metric();
+    if (!m) return null;
+    const start = Math.floor(Date.now() / 1000) - this.rangeDays() * 86400;
+    return `/api/export?metric=${encodeURIComponent(m)}&resolution=${this.resolution()}&start=${start}`;
+  });
   readonly unit = computed(() => this.unitFor(this.metric() ?? ''));
 
   ngOnInit(): void {

@@ -224,6 +224,29 @@ import { ArraySpec, DeviceConfig, ForecastConfig, StatsConfig } from '../../core
       </div>
     </div>
 
+    <!-- Backup & data (T091): download a full SQLite snapshot, restore from one, export history. -->
+    <div class="card mt-3">
+      <div class="card-header"><i class="bi bi-database"></i> Backup &amp; data</div>
+      <div class="card-body">
+        @if (restoreMsg(); as msg) {
+          <div class="alert alert-{{ msg.cls }}">{{ msg.text }}</div>
+        }
+        <div class="d-flex flex-wrap align-items-center gap-2">
+          <a class="btn btn-outline-primary" href="/api/backup">
+            <i class="bi bi-download"></i> Download backup
+          </a>
+          <input #restoreFile type="file" class="form-control" style="max-width: 20rem" accept=".sqlite,.db" />
+          <button class="btn btn-outline-danger" [disabled]="restoring()" (click)="restore(restoreFile)">
+            <i class="bi bi-upload"></i> Restore
+          </button>
+        </div>
+        <p class="small text-secondary mt-2 mb-0">
+          Restoring replaces the live database with the uploaded backup. Per-metric CSV export is
+          on the History view.
+        </p>
+      </div>
+    </div>
+
     <!-- Solar array & site (T064): drives the Phase 4 forecast model. Site location + overall
          derating, the PV array geometry (one row per string), and the battery operating window. -->
     <div class="card mt-3">
@@ -340,6 +363,10 @@ export class SettingsPage implements OnInit {
     systemCost: 0,
   };
 
+  // Backup & restore (T091).
+  readonly restoring = signal(false);
+  readonly restoreMsg = signal<{ cls: string; text: string } | null>(null);
+
   // Forecast config form (T064) — site/array/battery driving the Phase 4 forecast.
   readonly forecastSaved = signal(false);
   forecast: ForecastConfig = {
@@ -454,6 +481,29 @@ export class SettingsPage implements OnInit {
 
   private refresh(): void {
     this.api.getDevices().subscribe((res) => this.devices.set(res.devices));
+  }
+
+  /** Restore the DB from the selected backup file (T091). */
+  restore(input: HTMLInputElement): void {
+    const file = input.files?.[0];
+    if (!file) {
+      this.restoreMsg.set({ cls: 'warning', text: 'Choose a backup file first.' });
+      return;
+    }
+    this.restoring.set(true);
+    this.restoreMsg.set(null);
+    this.api.restoreBackup(file).subscribe({
+      next: () => {
+        this.restoring.set(false);
+        this.restoreMsg.set({ cls: 'success', text: 'Database restored. Reload to see the restored data.' });
+        this.refresh();
+      },
+      error: (err) => {
+        this.restoring.set(false);
+        const text = err?.status === 422 ? 'That file is not a valid SolarVolt backup.' : 'Restore failed.';
+        this.restoreMsg.set({ cls: 'danger', text });
+      },
+    });
   }
 
   add(): void {

@@ -16,7 +16,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import Body, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import Body, FastAPI, File, HTTPException, Query, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -262,6 +262,56 @@ def create_app(
                 "points": [p.as_dict() for p in points],
             }
         )
+
+    # ---- backup / restore / export (Phase 8 / T091) ---------------------------
+    @app.get("/api/backup")
+    async def backup() -> Response:
+        history: SqliteHistoryRepository = app.state.history_repo
+        data = await history.backup_bytes()
+        return Response(
+            data, media_type="application/x-sqlite3",
+            headers={"Content-Disposition": "attachment; filename=solarvolt-backup.sqlite"},
+        )
+
+    @app.post("/api/restore")
+    async def restore(file: UploadFile = File(...)) -> JSONResponse:
+        data = await file.read()
+        if not _valid_solarvolt_db(data):
+            raise HTTPException(status_code=422, detail="not a valid SolarVolt database backup")
+        history: SqliteHistoryRepository = app.state.history_repo
+        try:
+            await history.restore(data)
+        except ValueError as exc:  # e.g. in-memory DB can't be restored
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return JSONResponse({"ok": True, "bytes": len(data)})
+
+    @app.get("/api/export")
+    async def export_csv(
+        metric: str = Query(...), device_id: str | None = None,
+        start: str | None = None, end: str | None = None, resolution: str = "raw",
+    ) -> Response:
+        import csv
+        import io
+
+        repo: SqliteHistoryRepository = app.state.history_repo
+        device_id = device_id or _default_device_id()
+        now = datetime.now(timezone.utc).timestamp()
+        end_ts = _parse_time(end, now)
+        start_ts = _parse_time(start, end_ts - 86400.0)
+        try:
+            points = await repo.query(device_id, metric, start_ts, end_ts, resolution)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["ts", "iso", "value", "min", "max", "last", "n"])
+        for p in points:
+            d = p.as_dict()
+            iso = datetime.fromtimestamp(d["ts"], tz=timezone.utc).isoformat()
+            w.writerow([d["ts"], iso, d["value"], d.get("min", ""), d.get("max", ""), d.get("last", ""), d.get("n", "")])
+        fname = f"{device_id}-{metric}-{resolution}.csv"
+        return Response(buf.getvalue(), media_type="text/csv",
+                        headers={"Content-Disposition": f"attachment; filename={fname}"})
 
     # ---- statistics (Phase 3, T050/T052/T053) ---------------------------------
     @app.get("/api/stats/daily")
@@ -595,6 +645,34 @@ async def _audit(app, device_id, section, index, changes, result, request: Reque
         await repo.record(ts, device_id, section, changes, result, slot=index, source=source)
     except Exception as exc:  # pragma: no cover - audit must never break a write response
         logging.getLogger("solarvolt").warning("audit record failed: %s", exc)
+
+
+def _valid_solarvolt_db(data: bytes) -> bool:
+    """A restore upload is accepted only if it's a real SQLite file carrying our
+    `schema_version` table — guards against restoring an arbitrary/foreign file."""
+    if not data.startswith(b"SQLite format 3\x00"):
+        return False
+    import os
+    import sqlite3
+    import tempfile
+
+    fd, tmp = tempfile.mkstemp(suffix=".sqlite")
+    os.close(fd)
+    try:
+        with open(tmp, "wb") as fh:
+            fh.write(data)
+        conn = sqlite3.connect(tmp)
+        try:
+            row = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='schema_version'"
+            ).fetchone()
+            return row is not None
+        finally:
+            conn.close()
+    except sqlite3.DatabaseError:
+        return False
+    finally:
+        os.path.exists(tmp) and os.unlink(tmp)
 
 
 def _validate_device_body(body: dict, *, require_id: bool) -> None:

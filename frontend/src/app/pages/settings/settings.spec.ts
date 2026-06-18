@@ -64,6 +64,34 @@ describe('SettingsPage', () => {
     http.expectOne('/api/forecast/config').flush(forecastConfig());
   }
 
+  it('restore() POSTs the chosen backup file to /api/restore', () => {
+    const fixture = TestBed.createComponent(SettingsPage);
+    fixture.detectChanges();
+    http.expectOne('/api/devices').flush({ devices: [] });
+    flushConfig();
+
+    const file = new File([new Uint8Array([1, 2, 3])], 'backup.sqlite');
+    const input = { files: [file] } as unknown as HTMLInputElement;
+    fixture.componentInstance.restore(input);
+
+    const req = http.expectOne('/api/restore');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body instanceof FormData).toBe(true);
+    req.flush({ ok: true });
+    expect(fixture.componentInstance.restoreMsg()?.cls).toBe('success');
+    http.expectOne('/api/devices').flush({ devices: [] }); // refresh() after restore
+  });
+
+  it('restore() warns when no file is chosen', () => {
+    const fixture = TestBed.createComponent(SettingsPage);
+    fixture.detectChanges();
+    http.expectOne('/api/devices').flush({ devices: [] });
+    flushConfig();
+    fixture.componentInstance.restore({ files: [] } as unknown as HTMLInputElement);
+    expect(fixture.componentInstance.restoreMsg()?.cls).toBe('warning');
+    http.expectNone('/api/restore');
+  });
+
   it('renders the device list from /api/devices', () => {
     const fixture = TestBed.createComponent(SettingsPage);
     fixture.detectChanges();

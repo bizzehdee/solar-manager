@@ -36,6 +36,14 @@ export class ApiService {
     return this.http.get<Diagnostics>('/api/diagnostics');
   }
 
+  /** Restore the database from an uploaded backup (T091). Backup + CSV export are plain
+   *  downloads via `/api/backup` and `/api/export?…` (use anchors, not this client). */
+  restoreBackup(file: File): Observable<unknown> {
+    const form = new FormData();
+    form.append('file', file);
+    return this.http.post('/api/restore', form);
+  }
+
   getLive(): Observable<Snapshot> {
     return this.http.get<Snapshot>('/api/live');
   }

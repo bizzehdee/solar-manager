@@ -346,10 +346,10 @@ deferred — tracked under "Later — Integrations & notifications" below.*
 
 ## Phase 8 — Polish & operational
 
-- [ ] **T090 · First-run setup wizard** · Deps: T047, T064, T051
-  - Guided onboarding: device (dummy preselected), location, array segments, battery, tariffs. *Refs: §19.*
-- [ ] **T091 · Backup/restore + CSV/Excel export** · Deps: T044
-  - One-click SQLite backup/restore in UI; `/api/export`; export current History view. *Refs: §7, §19.*
+- [x] **T091 · Backup/restore + CSV/Excel export** · Deps: T044
+  - `/api/backup` (VACUUM-INTO snapshot download), `/api/restore` (validated upload → atomic
+    live-DB swap on the single DB thread), `/api/export` (CSV of any metric/range). UI: Backup &
+    data card in Settings (download + restore); CSV export button on History. *Refs: §7, §19.*
 - [x] **T092 · Diagnostics page + `/api/diagnostics`** · Deps: T030, T040
   - `/api/diagnostics` + Diagnostics page: build/schema version, DB size, rollup lag, active
     alerts, and per-device online + Modbus comms stats (transactions/failures/retries, last
@@ -428,6 +428,11 @@ versioned releases.*
   - *First step:* unpack a real backup, confirm the InfluxDB version + measurement/field names,
     and pin the **SA-measurement → canonical-metric** mapping against a sample — don't assume.
     Reuse the energy-counter handling (§5) for cumulative series. *Refs: §5, §19.*
+
+- [-] **L13 · First-run setup wizard** *(was T090)* · Deps: T047, T064, T051
+  - Guided onboarding: device (dummy preselected), location, array segments, battery, tariffs —
+    so a fresh install reaches a useful state without hand-editing config. Settings already
+    expose every piece (devices/forecast/tariff); this is the guided-flow wrapper. *Refs: §19.*
 
 - [-] **L06 · Customisable dashboards (incl. the home/Now dashboard)** · Deps: T018, T045, T047
   - **Deliverable:** a widget-based dashboard the user can arrange — pick which cards / gauges /

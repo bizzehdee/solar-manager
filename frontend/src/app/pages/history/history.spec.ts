@@ -96,6 +96,22 @@ describe('HistoryPage', () => {
     expect(fixture.nativeElement.querySelector('app-time-series-chart')).toBeTruthy();
   });
 
+  it('builds a CSV export href for the current metric + resolution (T091)', () => {
+    const fixture = TestBed.createComponent(HistoryPage);
+    fixture.detectChanges();
+    http.expectOne((r) => r.url === '/api/history/metrics').flush({ device_id: 'd1', metrics: ['pv_power_w'] });
+    flushStats();
+    http.expectOne((r) => r.url === '/api/history').flush({
+      device_id: 'd1', metric: 'pv_power_w', resolution: '1h', start: 0, end: 0, points: [],
+    });
+    fixture.detectChanges();
+
+    const href = fixture.componentInstance.exportHref();
+    expect(href).toContain('/api/export?metric=pv_power_w');
+    expect(href).toContain('resolution=1h');
+    expect(href).toContain('start=');
+  });
+
   it('shows a no-data message when metrics list is empty', () => {
     const fixture = TestBed.createComponent(HistoryPage);
     fixture.detectChanges();

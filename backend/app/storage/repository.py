@@ -392,6 +392,15 @@ class SqliteHistoryRepository:
         """Epoch seconds of the last-aggregated sample (0 if none) — diagnostics rollup lag."""
         return await self._db.run(self._get_meta, _WATERMARK_KEY, 0.0)
 
+    # --- backup / restore (T091) ------------------------------------------------
+    async def backup_bytes(self) -> bytes:
+        """A consistent snapshot of the whole database (samples, rollups, config, alerts…)."""
+        return await self._db.backup_bytes()
+
+    async def restore(self, data: bytes) -> None:
+        """Replace the live database with a validated backup (caller validates the bytes)."""
+        await self._db.restore(data)
+
     # --- meta helpers -----------------------------------------------------------
     def _get_meta(self, key: str, default: float) -> float:
         row = self._conn.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()

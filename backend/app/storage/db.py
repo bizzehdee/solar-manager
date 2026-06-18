@@ -36,13 +36,67 @@ class AsyncDb:
     def __init__(self) -> None:
         self._ex = ThreadPoolExecutor(max_workers=1, thread_name_prefix="sqlite")
         self.conn: sqlite3.Connection | None = None
+        self._path: str | None = None
 
     async def open(self, path: str) -> "AsyncDb":
         from .migrations import run_migrations
 
+        self._path = path
         self.conn = await self.run(connect, path)
         await self.run(run_migrations, self.conn)
         return self
+
+    @property
+    def path(self) -> str | None:
+        return self._path
+
+    async def backup_bytes(self) -> bytes:
+        """A consistent snapshot of the whole DB as bytes (`VACUUM INTO` a temp file on the
+        DB thread, so it's atomic w.r.t. other queries). Works for file + in-memory DBs."""
+        import os
+        import tempfile
+
+        def _dump() -> bytes:
+            fd, tmp = tempfile.mkstemp(suffix=".sqlite")
+            os.close(fd)
+            os.unlink(tmp)  # VACUUM INTO requires the target not to exist
+            try:
+                self.conn.execute("VACUUM INTO ?", (tmp,))
+                with open(tmp, "rb") as fh:
+                    return fh.read()
+            finally:
+                if os.path.exists(tmp):
+                    os.unlink(tmp)
+
+        return await self.run(_dump)
+
+    async def restore(self, data: bytes) -> None:
+        """Replace the live database with an uploaded snapshot (T091). Validated by the
+        caller; here we atomically (on the single DB thread) close, overwrite the file, and
+        reopen + migrate — repos read `self.conn` via a property, so they pick up the new
+        handle. Not supported for in-memory DBs."""
+        from .migrations import run_migrations
+
+        if not self._path or self._path == ":memory:":
+            raise ValueError("restore requires a file-backed database")
+        path = self._path
+
+        def _swap() -> sqlite3.Connection:
+            self.conn.close()
+            for suffix in ("-wal", "-shm"):  # drop stale WAL sidecars from the old DB
+                try:
+                    import os
+
+                    os.path.exists(path + suffix) and os.unlink(path + suffix)
+                except OSError:
+                    pass
+            with open(path, "wb") as fh:
+                fh.write(data)
+            conn = connect(path)
+            run_migrations(conn)
+            return conn
+
+        self.conn = await self.run(_swap)
 
     async def run(self, fn, *args):
         """Run a blocking DB callable on the dedicated thread and await its result."""
