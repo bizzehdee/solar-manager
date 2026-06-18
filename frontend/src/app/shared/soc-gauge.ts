@@ -15,7 +15,7 @@ import { DecimalPipe } from '@angular/common';
         transform="rotate(-90 60 60)" />
       <text x="60" y="60" text-anchor="middle" dominant-baseline="middle"
         class="fw-bold" style="font-size:1.5rem" fill="var(--bs-body-color)">
-        {{ value() | number: '1.0-0' }}%</text>
+        {{ value() | number: '1.0-1' }}%</text>
       <text x="60" y="84" text-anchor="middle" style="font-size:.7rem" fill="var(--bs-secondary-color)">
         {{ label() }}</text>
     </svg>

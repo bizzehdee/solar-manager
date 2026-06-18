@@ -94,7 +94,7 @@ describe('NowPage', () => {
     expect(fixture.componentInstance.gridDir()).toBe('exporting');
     expect(fixture.componentInstance.batteryAbs()).toBe(3000);
     expect(fixture.componentInstance.gridAbs()).toBe(2000);
-    expect(el.textContent).toContain('6.5 kW'); // solar gauge
+    expect(el.textContent).toContain('6500 W'); // solar gauge — real watts, not "6.5 kW"
   });
 
   it('scales gauges to the actual installation (AC rating, installed PV, battery charge limit)', () => {

@@ -12,7 +12,7 @@ import { DecimalPipe } from '@angular/common';
       <div>
         <div class="fs-4 fw-semibold">
           @if (value() === undefined) { <span class="text-secondary">—</span> }
-          @else { {{ value() | number: '1.0-0' }} <small class="text-secondary">{{ unit() }}</small> }
+          @else { {{ value() | number: '1.0-3' }} <small class="text-secondary">{{ unit() }}</small> }
         </div>
         <div class="small text-secondary">{{ label() }}</div>
       </div>

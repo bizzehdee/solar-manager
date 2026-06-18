@@ -14,14 +14,14 @@ describe('PowerGauge', () => {
     return fixture;
   }
 
-  it('formats watts as W, and ≥1000 W as kW', () => {
+  it('shows the real value + unit — no kW conversion or rounding', () => {
     expect(mount({ value: 441 }).componentInstance.valueText()).toBe('441 W');
-    expect(mount({ value: 6500 }).componentInstance.valueText()).toBe('6.5 kW');
+    expect(mount({ value: 6543.2 }).componentInstance.valueText()).toBe('6543.2 W'); // not "6.5 kW"
     expect(mount({ value: 0 }).componentInstance.valueText()).toBe('0 W');
   });
 
   it('keeps non-watt units as-is', () => {
-    expect(mount({ value: 52, unit: 'V' }).componentInstance.valueText()).toBe('52 V');
+    expect(mount({ value: 52.3, unit: 'V' }).componentInstance.valueText()).toBe('52.3 V');
   });
 
   it('fills the ring as value/max and caps at 100%', () => {

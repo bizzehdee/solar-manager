@@ -38,10 +38,7 @@ export class PowerGauge {
   readonly fraction = computed(() => Math.max(0, Math.min(1, Math.abs(this.value()) / (this.max() || 1))));
   readonly offset = computed(() => this.circ * (1 - this.fraction()));
 
-  /** Watts shown as W, or kW (1dp) once ≥ 1000; other units shown as-is. */
-  readonly valueText = computed(() => {
-    const v = this.value();
-    if (this.unit() === 'W' && Math.abs(v) >= 1000) return `${(v / 1000).toFixed(1)} kW`;
-    return `${Math.round(v)} ${this.unit()}`;
-  });
+  /** The real decoded value + unit — no kW conversion or rounding (≤3dp only to drop float
+   *  noise). We show the true reading, not a UI-rounded approximation. */
+  readonly valueText = computed(() => `${Math.round(this.value() * 1000) / 1000} ${this.unit()}`);
 }
