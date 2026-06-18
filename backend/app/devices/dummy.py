@@ -61,6 +61,7 @@ class DummyProfile:
         self._clock = clock
         self._seed = seed
         self._settings = self._initial_settings()  # mutable: control writes apply in-memory
+        self._clock_offset_s = 95.0  # synthetic RTC drift (inverter ~95 s ahead) until synced
 
     # --- DeviceProfile protocol -------------------------------------------------
     def register_blocks(self) -> list[RegBlock]:
@@ -81,6 +82,23 @@ class DummyProfile:
 
     def decode(self, raw: Mapping[int, int]) -> dict[str, MetricValue]:  # raw ignored
         return self.synthesize(self._clock())
+
+    # --- RTC / clock sync (Phase 8 / T097) — synthesised + writable in-memory --------
+    clock_syncable = True
+
+    def clock_blocks(self) -> list[RegBlock]:
+        return []  # synthesises its clock; no wire reads
+
+    def read_clock(self, raw: Mapping[int, int]):  # raw ignored
+        """The inverter's RTC: system time plus the (drifting) offset, so the Now/Control
+        UI shows a non-zero drift until synced."""
+        from datetime import timedelta
+
+        return self._clock() + timedelta(seconds=self._clock_offset_s)
+
+    def set_clock(self, dt) -> None:
+        """Sync: clear the drift so the inverter clock matches system time."""
+        self._clock_offset_s = 0.0
 
     # --- settings (read-only display, Phase 5; write path arrives in Phase 6/T072) ---
     def settings_blocks(self) -> list[RegBlock]:

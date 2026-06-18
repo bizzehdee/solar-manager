@@ -16,8 +16,20 @@ class FakeLiveService {
 }
 
 // ApiService stub: NowPage fetches device ratings + forecast config on init for gauge scales.
+let clockResponse = {
+  device_id: 'd1', supported: true, device_time: '2026-06-21T12:01:35',
+  system_time: '2026-06-21T12:00:00', drift_s: 95, syncable: true,
+};
+const syncCalls: string[] = [];
+
 const fakeApi = {
   getDevices: () => of({ devices: [{ id: 'd1', ratings: { ac_power_w: 5000 } }] }),
+  getDeviceClock: () => of(clockResponse),
+  syncDeviceClock: (id: string) => {
+    syncCalls.push(id);
+    clockResponse = { ...clockResponse, drift_s: 0 };
+    return of({ ok: true, drift_s: 0 });
+  },
   getDeviceSettings: () =>
     of({ device_id: 'd1', supported: true, values: { battery_charging: { max_charge_current_a: 140 } } }),
   getForecastConfig: () =>
@@ -95,6 +107,26 @@ describe('NowPage', () => {
     expect(fixture.componentInstance.batteryAbs()).toBe(3000);
     expect(fixture.componentInstance.gridAbs()).toBe(2000);
     expect(el.textContent).toContain('6500 W'); // solar gauge — real watts, not "6.5 kW"
+  });
+
+  it('shows inverter clock drift and syncs to system time', () => {
+    clockResponse = {
+      device_id: 'd1', supported: true, device_time: '2026-06-21T12:01:35',
+      system_time: '2026-06-21T12:00:00', drift_s: 95, syncable: true,
+    };
+    syncCalls.length = 0;
+    const fixture = TestBed.createComponent(NowPage);
+    live.set({ battery_soc_pct: 60 });
+    fixture.detectChanges(); // ngOnInit → getDevices → getDeviceClock
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.textContent).toContain('Inverter clock');
+    expect(el.textContent).toContain('+95 s'); // seconds shown under 2 min
+    expect(fixture.componentInstance.driftLabel(clockResponse)).toBe('+95 s');
+
+    fixture.componentInstance.syncClock();
+    expect(syncCalls).toEqual(['d1']);
+    expect(fixture.componentInstance.clock()?.drift_s).toBe(0);
   });
 
   it('scales gauges to the actual installation (AC rating, installed PV, battery charge limit)', () => {

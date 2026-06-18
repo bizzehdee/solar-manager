@@ -432,6 +432,39 @@ def create_app(
         await app.state.alerts.reload()
         return JSONResponse(None, status_code=204)
 
+    # ---- inverter clock sync (Phase 8 / T097) ---------------------------------
+    @app.get("/api/devices/{device_id}/clock")
+    async def device_clock(device_id: str) -> JSONResponse:
+        device = _require_device(device_id)
+        dt = await device.read_clock()
+        system = app.state.clock()
+        drift = (dt.timestamp() - system.timestamp()) if dt is not None else None
+        return JSONResponse({
+            "device_id": device_id,
+            "supported": device.has_clock,
+            "device_time": dt.isoformat() if dt is not None else None,
+            "system_time": system.isoformat(),
+            "drift_s": drift,
+            # Correcting the clock is a write: needs the deploy flag AND confirmed RTC registers.
+            "syncable": app.state.settings.enable_control and device.clock_syncable,
+        })
+
+    @app.post("/api/devices/{device_id}/clock/sync")
+    async def sync_device_clock(device_id: str) -> JSONResponse:
+        if not app.state.settings.enable_control:
+            raise HTTPException(status_code=403, detail="control is disabled (SOLARVOLT_ENABLE_CONTROL is off)")
+        device = _require_device(device_id)
+        if not device.clock_syncable:
+            raise HTTPException(status_code=400, detail="inverter clock is read-only (RTC registers unconfirmed)")
+        system = app.state.clock()
+        try:
+            await device.sync_clock(system)
+        except (TransportError, ValueError) as exc:
+            raise HTTPException(status_code=502, detail=f"clock sync failed: {exc}") from exc
+        dt = await device.read_clock()
+        drift = (dt.timestamp() - app.state.clock().timestamp()) if dt is not None else None
+        return JSONResponse({"ok": True, "device_time": dt.isoformat() if dt else None, "drift_s": drift})
+
     # ---- Prometheus metrics (Phase 7 / T085) ----------------------------------
     @app.get("/metrics")
     async def prometheus_metrics() -> Response:

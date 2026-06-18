@@ -188,6 +188,13 @@ settings:
       charge_from_gen:   { base_addr: 274, type: bool, mask: 0x02 }  #          bit1
       mode:              { base_addr: 274, type: bits, mask: 0x1C }  #          bits 2-4
 
+# Real-time clock (Phase 8 / T097). Candidate Deye/Sunsynk layout: regs 22–24 packed
+# (y-2000<<8|month, day<<8|hour, minute<<8|second). UNCONFIRMED on this unit → `writable:
+# false`, so drift is read/shown but sync (a write) stays disabled until the regs are pinned.
+clock:
+  base_addr: 22
+  writable: false
+
 # Device identity.
 info:
   serial:      { addr: [3, 4, 5, 6, 7], type: ascii }   # 5 regs, 2 ASCII chars each

@@ -145,6 +145,43 @@ class Device:
             return False
         return hasattr(self.profile, "encode_settings") or hasattr(self.profile, "apply_settings")
 
+    # --- RTC / clock sync (plan.md §19 / T097) ----------------------------------
+    @property
+    def clock_syncable(self) -> bool:
+        """Whether the device's clock can be corrected (a write). Read/drift is always
+        available when the profile exposes a clock; sync is gated on confirmed registers."""
+        return bool(getattr(self.profile, "clock_syncable", False))
+
+    async def read_clock(self):
+        """The inverter's current RTC datetime, or None if the profile has no clock."""
+        read = getattr(self.profile, "read_clock", None)
+        if read is None:
+            return None
+        blocks = getattr(self.profile, "clock_blocks", lambda: [])()
+        raw = await self._gather(blocks)
+        return read(raw)
+
+    @property
+    def has_clock(self) -> bool:
+        return getattr(self.profile, "read_clock", None) is not None
+
+    async def sync_clock(self, now) -> None:
+        """Set the inverter clock to `now`. Synthesising profiles apply it in-memory;
+        register-backed profiles encode + write the RTC registers (allow-listed to the
+        clock addresses). Raises TransportError-style ValueError if not syncable."""
+        set_fn = getattr(self.profile, "set_clock", None)
+        if set_fn is not None:  # synthesising profile (dummy)
+            set_fn(now)
+            return
+        if not self.clock_syncable:
+            raise ValueError("inverter clock is read-only (RTC registers unconfirmed)")
+        writes = self.profile.encode_clock(now)
+        allowed = self.profile.clock_addresses()
+        if any(a not in allowed for a in writes):
+            raise ValueError("clock write outside the RTC address allow-list")
+        for addr, val in sorted(writes.items()):
+            await self.transport.write_registers(addr, [val])
+
     @property
     def info(self) -> DeviceInfo:
         return self.profile.info

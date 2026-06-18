@@ -268,6 +268,17 @@ export interface WriteSettingsResponse {
   values: Record<string, unknown>;
 }
 
+/** Inverter RTC vs system time (plan.md §19 / T097). `syncable` ⇒ correction is allowed
+ *  (control flag on AND the RTC registers are confirmed-writable). */
+export interface DeviceClock {
+  device_id: string;
+  supported: boolean;
+  device_time: string | null;
+  system_time: string;
+  drift_s: number | null;
+  syncable: boolean;
+}
+
 // Alerts (plan.md §15). A fired alert row + the active count for the header bell.
 export interface Alert {
   id: number;

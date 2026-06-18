@@ -7,6 +7,7 @@ import {
   AlertsResponse,
   AuditEntry,
   DailyStats,
+  DeviceClock,
   DeviceConfig,
   DeviceSettingsResponse,
   ForecastConfig,
@@ -122,6 +123,17 @@ export class ApiService {
 
   snoozeAlert(id: number, minutes = 60): Observable<unknown> {
     return this.http.post(`/api/alerts/${id}/snooze`, { minutes });
+  }
+
+  // --- Inverter clock (plan.md §19 / T097) ---
+
+  getDeviceClock(deviceId: string): Observable<DeviceClock> {
+    return this.http.get<DeviceClock>(`/api/devices/${deviceId}/clock`);
+  }
+
+  /** Correct the inverter clock to system time (403 unless control is enabled + syncable). */
+  syncDeviceClock(deviceId: string): Observable<unknown> {
+    return this.http.post(`/api/devices/${deviceId}/clock/sync`, {});
   }
 
   // --- Statistics (plan.md §10) ---

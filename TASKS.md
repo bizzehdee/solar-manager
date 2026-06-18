@@ -361,8 +361,10 @@ deferred — tracked under "Later — Integrations & notifications" below.*
   - Detect & log grid loss/return (islanding) from grid metrics; timeline view. *Refs: §19.*
 - [ ] **T096 · Calibrate performance-ratio factor** · Deps: T063, T046
   - Tune PR empirically against measured history. *Refs: §6, §19.*
-- [ ] **T097 · Inverter clock sync** · Deps: T076
-  - Read inverter time drift; optionally correct under control. *Refs: §19.*
+- [x] **T097 · Inverter clock sync** · Deps: T076
+  - Reads the inverter RTC and shows drift vs system time (Now page); **Sync** correction gated
+    behind the control flag AND confirmed-writable RTC registers. Dummy: synthetic drift +
+    in-memory sync; real SG05LP1: candidate RTC regs 22–24 read-only until pinned. *Refs: §19.*
 
 ## Phase 9 — Deployment, packaging & release (ship to real hardware / users)
 

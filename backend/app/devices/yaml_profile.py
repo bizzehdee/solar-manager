@@ -12,6 +12,7 @@ Decode is the #1 bug source (plan.md §10), so it is the most heavily unit-teste
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -293,6 +294,46 @@ class ModbusYamlProfile:
         if not 0 <= raw <= 65535:
             raise ValueError(f"value {val} out of 16-bit register range after scaling")
         return raw
+
+    # --- RTC / clock (plan.md §19; task T097) -----------------------------------
+    @property
+    def clock_syncable(self) -> bool:
+        """Whether the inverter clock may be *written* — only when the RTC registers are
+        confirmed (`writable: true`). Read/drift always works; correction is gated."""
+        c = self._spec.get("clock") or {}
+        return bool(c) and bool(c.get("writable", False))
+
+    def clock_blocks(self) -> list[RegBlock]:
+        c = self._spec.get("clock")
+        return [RegBlock(int(c["base_addr"]), 3, self._table)] if c else []
+
+    def clock_addresses(self) -> set[int]:
+        c = self._spec.get("clock")
+        return {int(c["base_addr"]) + i for i in range(3)} if c else set()
+
+    def read_clock(self, raw: Mapping[int, int]) -> datetime | None:
+        """Decode the inverter RTC (regs base..base+2, packed). None if unconfigured/absent."""
+        c = self._spec.get("clock")
+        if not c:
+            return None
+        base = int(c["base_addr"])
+        try:
+            r0, r1, r2 = raw[base] & 0xFFFF, raw[base + 1] & 0xFFFF, raw[base + 2] & 0xFFFF
+        except KeyError:
+            return None
+        try:
+            return datetime(2000 + (r0 >> 8), r0 & 0xFF, r1 >> 8, r1 & 0xFF, r2 >> 8, r2 & 0xFF)
+        except ValueError:
+            return None  # garbage registers (e.g. an unconfirmed address) → no reading
+
+    def encode_clock(self, dt: datetime) -> dict[int, int]:
+        """Encode a datetime into the RTC registers (inverse of read_clock)."""
+        base = int(self._spec["clock"]["base_addr"])
+        return {
+            base: (((dt.year - 2000) & 0xFF) << 8) | dt.month,
+            base + 1: (dt.day << 8) | dt.hour,
+            base + 2: (dt.minute << 8) | dt.second,
+        }
 
     @property
     def info(self) -> DeviceInfo:

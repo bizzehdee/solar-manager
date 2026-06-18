@@ -1,8 +1,9 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { DatePipe } from '@angular/common';
 
 import { ApiService } from '../../core/api.service';
 import { LiveService } from '../../core/live.service';
-import { MetricValue } from '../../core/models';
+import { DeviceClock, MetricValue } from '../../core/models';
 import { MetricCard } from '../../shared/metric-card';
 import { SocGauge } from '../../shared/soc-gauge';
 import { PowerGauge } from '../../shared/power-gauge';
@@ -11,7 +12,7 @@ import { PowerGauge } from '../../shared/power-gauge';
 // component — it subscribes to LiveService and feeds the presentational gauge/cards.
 @Component({
   selector: 'app-now',
-  imports: [MetricCard, SocGauge, PowerGauge],
+  imports: [MetricCard, SocGauge, PowerGauge, DatePipe],
   template: `
     <h4 class="mb-3 d-flex align-items-center gap-2">
       Now
@@ -76,6 +77,29 @@ import { PowerGauge } from '../../shared/power-gauge';
         </div>
       </div>
 
+      <!-- Inverter clock drift (T097): shown when the device exposes an RTC; Sync gated. -->
+      @if (clock(); as c) {
+        @if (c.supported) {
+          <div class="card mt-3">
+            <div class="card-body d-flex align-items-center justify-content-between flex-wrap gap-2 py-2">
+              <div class="small">
+                <span class="fw-semibold"><i class="bi bi-clock-history"></i> Inverter clock</span>
+                <span class="text-secondary ms-2">
+                  {{ c.device_time ? (c.device_time | date: 'MMM d, HH:mm:ss') : '—' }} · drift {{ driftLabel(c) }}
+                </span>
+              </div>
+              @if (c.syncable) {
+                <button class="btn btn-sm btn-outline-primary" [disabled]="syncingClock()" (click)="syncClock()">
+                  <i class="bi bi-arrow-repeat"></i> Sync to system time
+                </button>
+              } @else {
+                <span class="badge text-bg-light">read-only</span>
+              }
+            </div>
+          </div>
+        }
+      }
+
       <!-- Battery health panel (T055): capability-gated — shown only when SoH or cycles report. -->
       @if (hasBatteryHealth()) {
         <div class="card mt-3">
@@ -133,6 +157,11 @@ export class NowPage implements OnInit {
     return this.batteryMaxConfiguredW() ?? this.acRatedW();
   });
 
+  // Inverter clock drift (T097), polled with the device fetch.
+  readonly clock = signal<DeviceClock | null>(null);
+  readonly syncingClock = signal(false);
+  private deviceId: string | null = null;
+
   ngOnInit(): void {
     // Inverter AC rating (load/grid scale) + battery charge-current limit from the device.
     this.api.getDevices().subscribe((res) => {
@@ -140,6 +169,8 @@ export class NowPage implements OnInit {
       const ac = Number(dev?.ratings?.['ac_power_w']);
       if (Number.isFinite(ac) && ac > 0) this.acRatedW.set(ac);
       if (dev?.id) {
+        this.deviceId = dev.id;
+        this.api.getDeviceClock(dev.id).subscribe({ next: (c) => this.clock.set(c), error: () => {} });
         this.api.getDeviceSettings(dev.id).subscribe({
           next: (s) => {
             const bc = (s.values?.['battery_charging'] ?? {}) as Record<string, unknown>;
@@ -215,6 +246,28 @@ export class NowPage implements OnInit {
     if (Math.abs(v) < 1) return 'secondary';
     return v > 0 ? 'success' : 'warning';
   });
+
+  /** Human drift: "in sync" under 1 s, else signed seconds (or minutes when large). */
+  driftLabel(c: DeviceClock): string {
+    const d = c.drift_s;
+    if (d === null) return '—';
+    if (Math.abs(d) < 1) return 'in sync';
+    const sign = d > 0 ? '+' : '−';
+    const abs = Math.abs(d);
+    return abs >= 120 ? `${sign}${Math.round(abs / 60)} min` : `${sign}${Math.round(abs)} s`;
+  }
+
+  syncClock(): void {
+    if (!this.deviceId) return;
+    this.syncingClock.set(true);
+    this.api.syncDeviceClock(this.deviceId).subscribe({
+      next: () => this.api.getDeviceClock(this.deviceId!).subscribe({
+        next: (c) => (this.clock.set(c), this.syncingClock.set(false)),
+        error: () => this.syncingClock.set(false),
+      }),
+      error: () => this.syncingClock.set(false),
+    });
+  }
 
   num(v: MetricValue | undefined): number | undefined {
     return typeof v === 'number' ? v : undefined;
