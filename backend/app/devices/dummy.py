@@ -8,7 +8,7 @@ install and what tests + CI run against.
 
 Determinism: synthesis is a pure function of the timestamp (+ an optional seed), so a
 fixed clock yields identical readings — see tests. Control (in-memory writes) is added
-in Phase 5 (T072); for now the dummy is read-only.
+in Phase 6 (T074); for now the dummy is read-only.
 """
 
 from __future__ import annotations

@@ -263,32 +263,60 @@ If the deliverable changes what users can do or how they run/install the app, **
   - **Done:** site/arrays/battery stored in `app_config`; editable in Settings (array-segment
     list editor); `ArraySegment.from_dict` applies the datasheet defaults.
 
-## Phase 5 — Control / write-back (OFF by default; see CLAUDE.md safety rules)
+## Phase 5 — Settings display (read-only, ungated)
 
-- [ ] **T070 · `write_registers` + write-register allow-list** · Deps: T030
-  - Transport write path; enforce profile allow-list so only declared holding registers are writable. *Refs: §12.*
-- [ ] **T071 · `SettingsSchema` + Sunsynk work-mode-timer settings** · Deps: T013
-  - `Field`/`RepeatingGroup` schema; profile `settings_schema`/`read_settings`/`encode_settings`
-    for 6 timer slots + globals (timer_enabled, grid_charge, work_mode); constraints in schema. *Refs: §4, §12.*
-- [ ] **T072 · Dummy accepts writes in-memory** · Deps: T014, T071
-  - Dummy implements the control path (mirrors a work-mode-timer schema) so the full
+*Show every device setting and its current value. This is read-only — no register is
+written — so it is **not** gated behind `SOLAR_MANAGER_ENABLE_CONTROL` (reading settings is
+just more monitoring). The settings register map is already screen-validated in
+`profiles/deye-base.yaml` (`settings:` block — work-mode timer, globals, battery). Writing
+those settings is Phase 6.*
+
+- [ ] **T070 · `SettingsSchema` + `read_settings` (schema + decode current values)** · Deps: T013, T031
+  - `Field`/`RepeatingGroup` schema model; profile declares `settings_schema()` + `read_settings()`
+    covering the **work-mode timer** (6 slots) + **globals** (timer_enabled, grid_charge, work_mode,
+    energy_pattern, solar_export, max_sell/solar power, start_grid_charge_soc) + **battery**
+    (voltages, currents, SoC thresholds, capacity, BMS protocol). Decodes the live holding
+    registers → typed settings. The **dummy implements `read_settings`** so it's exercised
+    hardware-free. *Refs: §4, §12.*
+- [ ] **T071 · Settings read API (`GET …/settings` + `…/settings/schema`)** · Deps: T070
+  - Expose the schema (form spec) + current decoded values per device. **Ungated** —
+    read-only; the `SOLAR_MANAGER_ENABLE_CONTROL` flag is not required to view settings. *Refs: §7, §12.*
+- [ ] **T072 · Settings display UI (read-only)** · Deps: T071, T011
+  - Generic `<schema-form>`/`<schema-field>` renders any device's settings + current values
+    **read-only** (no edit controls) — a "Device settings" view under Settings. Reusable by the
+    Phase-6 control form. *Refs: §8.*
+
+## Phase 6 — Settings control / write-back (OFF by default; see CLAUDE.md §12 safety rules)
+
+*Add the ability to **modify** the settings surfaced in Phase 5. Gated behind
+`SOLAR_MANAGER_ENABLE_CONTROL`: when off, the write endpoint 403s and the edit UI/“control”
+capability are suppressed — but the Phase-5 read-only view stays available. All seven §12
+write-safety rules apply (allow-list, validation, confirm, read-back, etag, audit, dummy-first).*
+
+- [ ] **T073 · `write_registers` + write-register allow-list** · Deps: T030
+  - Transport write path; enforce the profile allow-list so only the holding registers declared
+    in the settings map are writable — never arbitrary addresses through the API. *Refs: §12.*
+- [ ] **T074 · `encode_settings` + dummy in-memory writes** · Deps: T070, T014
+  - Profile `encode_settings()` (typed settings → register writes, bounds/enum validation); the
+    dummy applies writes in-memory (mirroring its `read_settings`) so the whole
     validate→write→read-back flow is testable with zero risk. *Refs: §4, §12.*
-- [ ] **T073 · `apply_settings` flow** · Deps: T070, T071
+- [ ] **T075 · `apply_settings` flow** · Deps: T073, T074
   - validate → encode → write → re-read → verify → return confirmed state; atomic-ish slot
     writes; etag/`If-Match` concurrency (409 on stale). *Refs: §4, §12.*
-- [ ] **T074 · Control API (flag-gated)** · Deps: T073
-  - `GET …/settings/schema`, `GET …/settings`, `PUT …/settings`; 403 + hidden capability when
-    `SOLAR_MANAGER_ENABLE_CONTROL` is off. *Refs: §7, §12.*
-- [ ] **T075 · Schema-driven Control UI** · Deps: T074, T011, T024
-  - Generic `<schema-form>`/`<schema-field>` builder renders any device's schema; current→proposed
-    diff + confirm dialog; read-back result / rollback on mismatch. Works against the dummy first.
+- [ ] **T076 · Control write API (flag-gated)** · Deps: T075
+  - `PUT …/settings`; 403 + write/“control” capability suppressed when
+    `SOLAR_MANAGER_ENABLE_CONTROL` is off (the T071 read endpoints stay available either way). *Refs: §7, §12.*
+- [ ] **T077 · Schema-driven Control UI (edit + diff + confirm)** · Deps: T076, T072, T024
+  - Extend the Phase-5 read-only form with **editing**: current→proposed diff + confirm dialog;
+    read-back result / rollback on mismatch; edit controls shown only when the flag is on. Works
+    against the dummy first.
   - **Playwright E2E (high value):** edit a work-mode-timer slot → see the diff → confirm → assert
     the read-back-verified confirmed state renders (full validate→confirm→write→read-back loop
     against the dummy's in-memory write path, control enabled in the test env). *Refs: §8, §12, §21.*
-- [ ] **T076 · Write audit log** · Deps: T073
+- [ ] **T078 · Write audit log** · Deps: T075
   - Record every write (when / source client / old→new / result). No "who" (no accounts). *Refs: §12.*
 
-## Phase 6 — Alerts & integrations (off the hot path, brand-independent)
+## Phase 7 — Alerts & integrations (off the hot path, brand-independent)
 
 - [ ] **T080 · Alert rule engine** · Deps: T042
   - User conditions on any canonical metric/state (low SoC, device offline/stale, inverter fault,
@@ -307,7 +335,7 @@ If the deliverable changes what users can do or how they run/install the app, **
 - [ ] **T086 · Generic outbound webhook** · Deps: T016
   - POST readings/events to a user URL (Node-RED/IFTTT/custom). *Refs: §14.*
 
-## Phase 7 — Polish & operational
+## Phase 8 — Polish & operational
 
 - [ ] **T090 · First-run setup wizard** · Deps: T047, T064, T051
   - Guided onboarding: device (dummy preselected), location, array segments, battery, tariffs. *Refs: §19.*
@@ -324,12 +352,12 @@ If the deliverable changes what users can do or how they run/install the app, **
   - Detect & log grid loss/return (islanding) from grid metrics; timeline view. *Refs: §19.*
 - [ ] **T096 · Calibrate performance-ratio factor** · Deps: T063, T046
   - Tune PR empirically against measured history. *Refs: §6, §19.*
-- [ ] **T097 · Inverter clock sync** · Deps: T074
+- [ ] **T097 · Inverter clock sync** · Deps: T076
   - Read inverter time drift; optionally correct under control. *Refs: §19.*
 
-## Phase 8 — Deployment, packaging & release (ship to real hardware / users)
+## Phase 9 — Deployment, packaging & release (ship to real hardware / users)
 
-*Not needed for dev on the dummy (the working-copy `make dev` path covers Phases 0–7) —
+*Not needed for dev on the dummy (the working-copy `make dev` path covers Phases 0–8) —
 relocated here from Phase 0. These matter once running unattended on a Pi or cutting
 versioned releases.*
 
