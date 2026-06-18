@@ -81,6 +81,7 @@ export class App implements OnInit {
     { path: 'control', label: 'Control', icon: 'bi-sliders' },
     { path: 'alerts', label: 'Alerts', icon: 'bi-bell' },
     { path: 'settings', label: 'Settings', icon: 'bi-gear' },
+    { path: 'diagnostics', label: 'Diagnostics', icon: 'bi-clipboard-pulse' },
   ];
 
   ngOnInit(): void {

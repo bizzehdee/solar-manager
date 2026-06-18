@@ -268,6 +268,25 @@ export interface WriteSettingsResponse {
   values: Record<string, unknown>;
 }
 
+/** Operational diagnostics (plan.md §19 / T092): build/schema, DB, rollup lag, comms. */
+export interface Diagnostics {
+  version: string;
+  schema_version: number;
+  control_enabled: boolean;
+  poll_interval_s: number;
+  database: { path: string; size_bytes: number | null };
+  rollup: { watermark_ts: number | null; lag_s: number | null };
+  alerts: { active_count: number };
+  devices: {
+    device_id: string;
+    vendor: string;
+    model: string;
+    online: boolean;
+    last_sample_age_s: number | null;
+    comms: Record<string, unknown> | null;
+  }[];
+}
+
 /** Inverter RTC vs system time (plan.md §19 / T097). `syncable` ⇒ correction is allowed
  *  (control flag on AND the RTC registers are confirmed-writable). */
 export interface DeviceClock {

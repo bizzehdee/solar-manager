@@ -8,6 +8,7 @@ import {
   AuditEntry,
   DailyStats,
   DeviceClock,
+  Diagnostics,
   DeviceConfig,
   DeviceSettingsResponse,
   ForecastConfig,
@@ -28,6 +29,11 @@ export class ApiService {
 
   getHealth(): Observable<Health> {
     return this.http.get<Health>('/api/health');
+  }
+
+  /** Operational diagnostics (build/schema, DB size, rollup lag, per-device comms). */
+  getDiagnostics(): Observable<Diagnostics> {
+    return this.http.get<Diagnostics>('/api/diagnostics');
   }
 
   getLive(): Observable<Snapshot> {

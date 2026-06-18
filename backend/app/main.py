@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -39,6 +40,7 @@ from .forecast.service import ForecastService
 from .persistence import PersistenceService
 from .poller import Poller
 from .stats import StatsService
+from .storage.migrations import SCHEMA_VERSION
 from .storage.repository import (
     AlertRepository,
     AppConfigRepository,
@@ -156,6 +158,47 @@ def create_app(
                 **poller.health(),
             }
         )
+
+    @app.get("/api/diagnostics")
+    async def diagnostics() -> JSONResponse:
+        """Operational snapshot (plan.md §19 / T092): build/schema, DB size, rollup lag, and
+        per-device online + Modbus comms stats."""
+        poller: Poller = app.state.poller
+        registry: DeviceRegistry = app.state.registry
+        settings: Settings = app.state.settings
+        history: SqliteHistoryRepository = app.state.history_repo
+
+        db_size = None
+        if settings.db_path and settings.db_path != ":memory:" and os.path.exists(settings.db_path):
+            db_size = os.path.getsize(settings.db_path)
+
+        watermark = await history.rollup_watermark()
+        now_ts = app.state.clock().timestamp()
+        health = {d["device_id"]: d for d in poller.health()["devices"]}
+        devices = []
+        for device in registry.devices:
+            h = health.get(device.device_id, {})
+            devices.append({
+                "device_id": device.device_id,
+                "vendor": device.info.vendor,
+                "model": device.info.model,
+                "online": h.get("online", False),
+                "last_sample_age_s": h.get("last_sample_age_s"),
+                "comms": device.comms_stats(),
+            })
+        return JSONResponse({
+            "version": __version__,
+            "schema_version": SCHEMA_VERSION,
+            "control_enabled": settings.enable_control,
+            "poll_interval_s": settings.poll_interval_s,
+            "database": {"path": settings.db_path, "size_bytes": db_size},
+            "rollup": {
+                "watermark_ts": watermark or None,
+                "lag_s": round(now_ts - watermark, 1) if watermark else None,
+            },
+            "alerts": {"active_count": await app.state.alert_repo.active_count()},
+            "devices": devices,
+        })
 
     @app.get("/api/live")
     async def live() -> JSONResponse:

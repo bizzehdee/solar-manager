@@ -111,6 +111,12 @@ class Device:
     def capabilities(self) -> set[str]:
         return self.profile.capabilities()
 
+    def comms_stats(self) -> dict | None:
+        """Transport comms health (Modbus tx/failure/retry counts etc.), or None for a
+        synthesising transport (the dummy moves no bytes). Used by Diagnostics (T092)."""
+        fn = getattr(self.transport, "comms_stats", None)
+        return fn() if fn else None
+
     # --- settings (read-only, Phase 5 / T070) -----------------------------------
     def settings_schema(self):
         """The device's SettingsSchema, or None if it exposes no settings."""

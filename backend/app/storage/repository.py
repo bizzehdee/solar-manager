@@ -388,6 +388,10 @@ class SqliteHistoryRepository:
         self._conn.commit()
         return cur.rowcount
 
+    async def rollup_watermark(self) -> float:
+        """Epoch seconds of the last-aggregated sample (0 if none) — diagnostics rollup lag."""
+        return await self._db.run(self._get_meta, _WATERMARK_KEY, 0.0)
+
     # --- meta helpers -----------------------------------------------------------
     def _get_meta(self, key: str, default: float) -> float:
         row = self._conn.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()

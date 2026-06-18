@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import time
 from dataclasses import dataclass
 from typing import Awaitable, Callable, Protocol, Sequence
 
@@ -83,6 +84,14 @@ class ModbusRtuSource:
         self._client_factory = client_factory
         self._sleep = sleep  # injectable so retry backoff is instant in tests
         self._client: _ModbusClient | None = None
+        # Comms stats surfaced on the Diagnostics page (T092).
+        self._stats = {"transactions": 0, "failures": 0, "retries": 0,
+                       "last_error": None, "last_rtt_ms": None}
+
+    def comms_stats(self) -> dict:
+        """Cumulative Modbus comms health (transactions / failures / retries, last error
+        and round-trip time) for diagnostics."""
+        return dict(self._stats)
 
     # --- Transport protocol -----------------------------------------------------
     async def connect(self) -> None:
@@ -132,6 +141,8 @@ class ModbusRtuSource:
             raise TransportError(f"{what}: transport not connected")
         delay = self._config.backoff_s
         last_error: Exception | None = None
+        self._stats["transactions"] += 1
+        started = time.monotonic()
         for attempt in range(self._config.retries):
             try:
                 rsp = await call(self._client)
@@ -142,8 +153,12 @@ class ModbusRtuSource:
                 if hasattr(rsp, "isError") and rsp.isError():
                     last_error = TransportError(f"{what}: device returned error {rsp!r}")
                 else:
+                    self._stats["last_rtt_ms"] = round((time.monotonic() - started) * 1000, 1)
                     return rsp
             if attempt < self._config.retries - 1:
+                self._stats["retries"] += 1
                 await self._sleep(min(delay, self._config.backoff_max_s))
                 delay *= 2
+        self._stats["failures"] += 1
+        self._stats["last_error"] = f"{what}: {last_error}"
         raise TransportError(f"{what}: failed after {self._config.retries} attempts") from last_error

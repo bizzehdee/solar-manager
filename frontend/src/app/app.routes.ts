@@ -9,5 +9,6 @@ export const routes: Routes = [
   { path: 'control', loadComponent: () => import('./pages/control/control').then((m) => m.ControlPage), title: 'Control' },
   { path: 'alerts', loadComponent: () => import('./pages/alerts/alerts').then((m) => m.AlertsPage), title: 'Alerts' },
   { path: 'settings', loadComponent: () => import('./pages/settings/settings').then((m) => m.SettingsPage), title: 'Settings' },
+  { path: 'diagnostics', loadComponent: () => import('./pages/diagnostics/diagnostics').then((m) => m.DiagnosticsPage), title: 'Diagnostics' },
   { path: '**', redirectTo: 'now' },
 ];

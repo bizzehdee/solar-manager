@@ -350,9 +350,10 @@ deferred — tracked under "Later — Integrations & notifications" below.*
   - Guided onboarding: device (dummy preselected), location, array segments, battery, tariffs. *Refs: §19.*
 - [ ] **T091 · Backup/restore + CSV/Excel export** · Deps: T044
   - One-click SQLite backup/restore in UI; `/api/export`; export current History view. *Refs: §7, §19.*
-- [ ] **T092 · Diagnostics page + `/api/diagnostics`** · Deps: T030, T040
-  - Per-device Modbus comms stats (success/timeout/retry, last error, RTT), DB size, rollup lag;
-    structured level-configurable logging. *Refs: §7, §19.*
+- [x] **T092 · Diagnostics page + `/api/diagnostics`** · Deps: T030, T040
+  - `/api/diagnostics` + Diagnostics page: build/schema version, DB size, rollup lag, active
+    alerts, and per-device online + Modbus comms stats (transactions/failures/retries, last
+    error, RTT — tracked in `ModbusRtuSource`). *Refs: §7, §19.*
 - [ ] **T093 · Localization & formatting** · Deps: T011
   - Configurable currency, units, date/time format, timezone; i18n scaffolding (English ships first). *Refs: §19.*
 - [ ] **T094 · Installable PWA** · Deps: T018
