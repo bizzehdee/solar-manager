@@ -35,6 +35,10 @@ internet-exposed.** One household, no accounts/roles.
   dummy simulator, YAML profile loader, poller; tests in `backend/tests/` (pytest).
 - `frontend/` — Angular 21 app (standalone, `app/` shell + `core/` services + `shared/` + `pages/`);
   Bootstrap 5.3 + Bootstrap Icons self-hosted; unit tests via vitest/jsdom (no browser needed).
+  UI translations are **data, not code**: one JSON file per locale in `frontend/src/locales/`
+  (`en-US.json` is the source of truth — every key lives there; others fall back to it). Use the
+  `translate` pipe / `TranslateService`; adding a language = adding a JSON file (+ register its
+  Angular formatting data in `app.config.ts`). Contributors submit via the new-locale issue form.
 - `e2e/` — Playwright integration tests (drive the full app on the dummy).
 - `tools/regscan.py` — read-only Modbus register-discovery CLI (Phase −1). See `tools/README.md`.
 - `.vscode/` — committed debug defaults (launch/tasks/extensions). **F5 → compound "Full Stack"

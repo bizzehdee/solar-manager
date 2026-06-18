@@ -1,0 +1,100 @@
+name: "🌐 New locale / translation"
+description: "Submit a UI translation for a language not yet shipped (or fixes to an existing one)."
+title: "[Locale] <language> (<code>) — translation"
+labels: ["enhancement", "localization"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping translate SolarVolt! UI strings are **data, not code** — each locale is
+        a single JSON file under [`frontend/src/locales/`](https://github.com/bizzehdee/solarvolt/tree/main/frontend/src/locales),
+        and **`en-US.json` is the source of truth** (it holds every key). To add a language you copy
+        it, translate the *values* (never the keys), and submit the result here.
+
+        > 💡 The cleanest path is a **pull request** that adds `frontend/src/locales/<code>.json` — but
+        > if you'd rather just hand over the translation, paste the finished JSON below and a maintainer
+        > will wire it in.
+
+        ### How to translate
+        1. Copy [`frontend/src/locales/en-US.json`](https://github.com/bizzehdee/solarvolt/blob/main/frontend/src/locales/en-US.json)
+           to `frontend/src/locales/<code>.json` (e.g. `it.json`, `nl.json`, `pt-BR.json`).
+        2. Set `meta.id` to the locale code and `meta.label` to the language's **endonym**
+           (its name in that language, e.g. `Italiano`, `Nederlands`, `Português (Brasil)`).
+        3. Translate every **value** in `strings`. Leave the **keys** exactly as they are.
+           Keep placeholders/units and the `…` ellipsis intact. A missing key falls back to English,
+           so a partial translation is fine to start.
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Before you start
+      options:
+        - label: I searched existing issues/PRs and this language isn't already submitted.
+          required: true
+        - label: I translated the **values** only and left every **key** unchanged.
+          required: true
+        - label: "`meta.id` is a valid locale code and `meta.label` is the language's own name (endonym)."
+          required: true
+  - type: input
+    id: language
+    attributes:
+      label: Language
+      placeholder: "e.g. Italian"
+    validations:
+      required: true
+  - type: input
+    id: code
+    attributes:
+      label: Locale code (BCP-47)
+      description: "Language, optionally with a region. Used as the filename and meta.id."
+      placeholder: "e.g. it, nl, pt-BR, es-MX"
+    validations:
+      required: true
+  - type: dropdown
+    id: delivery
+    attributes:
+      label: How are you submitting it?
+      options:
+        - "I've opened a pull request adding the locale file"
+        - "I'm pasting the JSON below for a maintainer to add"
+    validations:
+      required: true
+  - type: input
+    id: pr
+    attributes:
+      label: Pull request link (if you opened one)
+      placeholder: "https://github.com/bizzehdee/solarvolt/pull/…"
+    validations:
+      required: false
+  - type: textarea
+    id: json
+    attributes:
+      label: "Translated locale JSON (if not via PR)"
+      description: "Paste the full contents of your <code>.json here. Leave blank if you linked a PR above."
+      render: json
+      placeholder: |
+        {
+          "meta": { "id": "it", "label": "Italiano" },
+          "strings": {
+            "settings.devices.title": "Impostazioni — Dispositivi"
+          }
+        }
+    validations:
+      required: false
+  - type: dropdown
+    id: maintenance
+    attributes:
+      label: Can you help keep it updated?
+      description: "New UI strings are added over time; an occasional top-up keeps a language complete (untranslated keys just fall back to English)."
+      options:
+        - "Yes — ping me when new strings need translating"
+        - "Maybe — I can do occasional top-ups"
+        - "No — this is a one-off contribution"
+    validations:
+      required: true
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: "Regional variants, terminology choices, anything a reviewer should know."
+    validations:
+      required: false

@@ -3,6 +3,7 @@ import { FormsModule } from '@angular/forms';
 
 import { ApiService } from '../../core/api.service';
 import { PreferencesService } from '../../core/preferences.service';
+import { TranslatePipe } from '../../core/translate.pipe';
 import {
   ArraySpec,
   DeviceConfig,
@@ -17,27 +18,27 @@ import {
 // offers an inline add/edit/delete form. Single-house deployment, no auth (CLAUDE.md).
 @Component({
   selector: 'app-settings',
-  imports: [FormsModule],
+  imports: [FormsModule, TranslatePipe],
   template: `
-    <h4 class="mb-3"><i class="bi bi-gear"></i> Settings — Devices</h4>
+    <h4 class="mb-3"><i class="bi bi-gear"></i> {{ 'settings.devices.title' | translate }}</h4>
 
     <div class="card mb-3">
-      <div class="card-header">Configured devices</div>
+      <div class="card-header">{{ 'settings.devices.configured' | translate }}</div>
       <div class="card-body p-0">
         @if (devices().length === 0) {
-          <div class="alert alert-secondary m-3 mb-0">No devices configured yet.</div>
+          <div class="alert alert-secondary m-3 mb-0">{{ 'settings.devices.none' | translate }}</div>
         } @else {
           <div class="table-responsive">
             <table class="table align-middle mb-0">
               <thead>
                 <tr>
-                  <th>Name</th>
-                  <th>Vendor / Profile</th>
-                  <th>Transport</th>
-                  <th>Status</th>
-                  <th>Capabilities</th>
-                  <th>Enabled</th>
-                  <th class="text-end">Actions</th>
+                  <th>{{ 'settings.devices.name' | translate }}</th>
+                  <th>{{ 'settings.devices.profile' | translate }}</th>
+                  <th>{{ 'settings.devices.transport' | translate }}</th>
+                  <th>{{ 'settings.devices.status' | translate }}</th>
+                  <th>{{ 'settings.devices.capabilities' | translate }}</th>
+                  <th>{{ 'settings.devices.enabled' | translate }}</th>
+                  <th class="text-end">{{ 'settings.devices.actions' | translate }}</th>
                 </tr>
               </thead>
               <tbody>
@@ -51,7 +52,7 @@ import {
                     <td>{{ d.transport }}</td>
                     <td>
                       <span class="badge" [class]="d.online ? 'text-bg-success' : 'text-bg-danger'">
-                        {{ d.online ? 'online' : 'offline' }}
+                        {{ (d.online ? 'status.online' : 'status.offline') | translate }}
                       </span>
                     </td>
                     <td>{{ d.capabilities.length }}</td>
@@ -96,7 +97,7 @@ import {
     </div>
 
     <div class="card">
-      <div class="card-header">Add device</div>
+      <div class="card-header">{{ 'settings.devices.add' | translate }}</div>
       <div class="card-body">
         @if (error()) {
           <div class="alert alert-danger">{{ error() }}</div>
@@ -104,15 +105,15 @@ import {
         <form (ngSubmit)="add()">
           <div class="row g-3">
             <div class="col-12 col-md-4">
-              <label class="form-label small text-secondary" for="dev-id">ID</label>
+              <label class="form-label small text-secondary" for="dev-id">{{ 'field.id' | translate }}</label>
               <input id="dev-id" class="form-control" [(ngModel)]="form.id" name="id" required />
             </div>
             <div class="col-12 col-md-4">
-              <label class="form-label small text-secondary" for="dev-name">Name</label>
+              <label class="form-label small text-secondary" for="dev-name">{{ 'field.name' | translate }}</label>
               <input id="dev-name" class="form-control" [(ngModel)]="form.name" name="name" />
             </div>
             <div class="col-12 col-md-4">
-              <label class="form-label small text-secondary" for="dev-transport">Transport</label>
+              <label class="form-label small text-secondary" for="dev-transport">{{ 'field.transport' | translate }}</label>
               <select id="dev-transport" class="form-select" [(ngModel)]="form.transport" name="transport">
                 <option value="dummy">dummy</option>
                 <option value="modbus_rtu">modbus_rtu</option>
@@ -120,19 +121,19 @@ import {
             </div>
             @if (form.transport === 'modbus_rtu') {
               <div class="col-12 col-md-4">
-                <label class="form-label small text-secondary" for="dev-profile">Profile</label>
+                <label class="form-label small text-secondary" for="dev-profile">{{ 'field.profile' | translate }}</label>
                 <select id="dev-profile" class="form-select" [(ngModel)]="form.profile" name="profile">
-                  <option value="" disabled>Select a profile…</option>
+                  <option value="" disabled>{{ 'settings.devices.selectProfile' | translate }}</option>
                   @for (p of profiles(); track p.name) {
                     <option [value]="p.name">{{ p.label }}</option>
                   }
                 </select>
               </div>
               <div class="col-12 col-md-4">
-                <label class="form-label small text-secondary" for="dev-port">Serial port</label>
+                <label class="form-label small text-secondary" for="dev-port">{{ 'field.serialPort' | translate }}</label>
                 <div class="input-group">
                   <select id="dev-port" class="form-select" [(ngModel)]="form.port" name="port">
-                    <option value="" disabled>Select a port…</option>
+                    <option value="" disabled>{{ 'settings.devices.selectPort' | translate }}</option>
                     @for (p of serialPorts(); track p.device) {
                       <option [value]="p.device">
                         {{ p.device }}{{ p.description ? ' — ' + p.description : '' }}
@@ -140,16 +141,16 @@ import {
                     }
                   </select>
                   <button type="button" class="btn btn-outline-secondary" (click)="refreshPorts()"
-                          title="Rescan serial ports">
+                          [title]="'settings.devices.rescan' | translate">
                     <i class="bi bi-arrow-clockwise"></i>
                   </button>
                 </div>
                 @if (serialPorts().length === 0) {
-                  <div class="form-text">No serial ports detected — plug in your RS485 adapter and rescan.</div>
+                  <div class="form-text">{{ 'settings.devices.noPorts' | translate }}</div>
                 }
               </div>
               <div class="col-12 col-md-4">
-                <label class="form-label small text-secondary" for="dev-slave">Slave ID</label>
+                <label class="form-label small text-secondary" for="dev-slave">{{ 'field.slaveId' | translate }}</label>
                 <input id="dev-slave" type="number" class="form-control" [(ngModel)]="form.slaveId" name="slaveId" />
               </div>
             }
@@ -161,15 +162,15 @@ import {
           }
           <div class="mt-3 d-flex gap-2">
             <button type="submit" class="btn btn-primary" [disabled]="!form.id">
-              <i class="bi bi-plus-lg"></i> Add device
+              <i class="bi bi-plus-lg"></i> {{ 'settings.devices.add' | translate }}
             </button>
             @if (form.transport === 'modbus_rtu') {
               <button type="button" class="btn btn-outline-secondary"
                       [disabled]="testing() || !form.profile || !form.port" (click)="testConnection()">
                 @if (testing()) {
-                  <span class="spinner-border spinner-border-sm me-1"></span> Testing…
+                  <span class="spinner-border spinner-border-sm me-1"></span> {{ 'settings.devices.testing' | translate }}
                 } @else {
-                  <i class="bi bi-plug"></i> Test connection
+                  <i class="bi bi-plug"></i> {{ 'settings.devices.testConnection' | translate }}
                 }
               </button>
             }
@@ -182,7 +183,7 @@ import {
          + flat export + CO₂/system cost. Rates are per kWh and the standing charge per day, in
          major currency units (e.g. enter 0.293 for 29.3p, 0.6075 for 60.75p). -->
     <div class="card mt-3">
-      <div class="card-header"><i class="bi bi-cash-coin"></i> Tariff &amp; economics</div>
+      <div class="card-header"><i class="bi bi-cash-coin"></i> {{ 'settings.tariff.title' | translate }}</div>
       <div class="card-body">
         @if (tariffSaved()) {
           <div class="alert alert-success">Saved — economics refreshed.</div>
@@ -271,7 +272,7 @@ import {
 
     <!-- Backup & data (T091): download a full SQLite snapshot, restore from one, export history. -->
     <div class="card mt-3">
-      <div class="card-header"><i class="bi bi-database"></i> Backup &amp; data</div>
+      <div class="card-header"><i class="bi bi-database"></i> {{ 'settings.backup.title' | translate }}</div>
       <div class="card-body">
         @if (restoreMsg(); as msg) {
           <div class="alert alert-{{ msg.cls }}">{{ msg.text }}</div>
@@ -294,14 +295,14 @@ import {
 
     <!-- Formatting & locale (T093): drives date/number formatting (applied on reload). -->
     <div class="card mt-3">
-      <div class="card-header"><i class="bi bi-translate"></i> Formatting &amp; locale</div>
+      <div class="card-header"><i class="bi bi-translate"></i> {{ 'settings.locale.title' | translate }}</div>
       <div class="card-body">
         @if (localeSaved()) {
           <div class="alert alert-success">Saved — reloading to apply the new locale…</div>
         }
         <div class="row g-3 align-items-end">
           <div class="col-12 col-md-5">
-            <label class="form-label small text-secondary" for="loc">Locale (date &amp; number format)</label>
+            <label class="form-label small text-secondary" for="loc">{{ 'settings.locale.field' | translate }}</label>
             <select id="loc" class="form-select" [(ngModel)]="localeChoice" name="locale">
               @for (l of prefs.supported; track l.id) {
                 <option [value]="l.id">{{ l.label }}</option>
@@ -310,13 +311,13 @@ import {
           </div>
           <div class="col-12 col-md-4">
             <button type="button" class="btn btn-primary" (click)="saveLocale()">
-              <i class="bi bi-save"></i> Save locale
+              <i class="bi bi-save"></i> {{ 'settings.locale.save' | translate }}
             </button>
           </div>
         </div>
         <p class="small text-secondary mt-2 mb-0">
-          Currency is configured with the tariff above. Only English UI strings ship today;
-          the locale controls how dates and numbers are formatted.
+          Currency is configured with the tariff above. The locale controls how dates and numbers
+          are formatted, and the UI language where a translation is available (English otherwise).
         </p>
       </div>
     </div>
@@ -324,7 +325,7 @@ import {
     <!-- Solar array & site (T064): drives the Phase 4 forecast model. Site location + overall
          derating, the PV array geometry (one row per string), and the battery operating window. -->
     <div class="card mt-3">
-      <div class="card-header"><i class="bi bi-sun"></i> Solar array &amp; site</div>
+      <div class="card-header"><i class="bi bi-sun"></i> {{ 'settings.solar.title' | translate }}</div>
       <div class="card-body">
         @if (forecastSaved()) {
           <div class="alert alert-success">Saved — forecast updated.</div>

@@ -2,17 +2,15 @@
 // localStorage so LOCALE_ID can be resolved synchronously at bootstrap (before any HTTP),
 // then synced from the backend by PreferencesService for cross-device consistency.
 
+import { LOCALES } from '../../locales';
+
 const KEY = 'solarvolt.locale';
 export const DEFAULT_LOCALE = 'en-US';
 
-/** Locales we ship formatting data for (registerLocaleData in app.config). English first. */
-export const SUPPORTED_LOCALES: { id: string; label: string }[] = [
-  { id: 'en-US', label: 'English (US)' },
-  { id: 'en-GB', label: 'English (UK)' },
-  { id: 'de', label: 'Deutsch' },
-  { id: 'fr', label: 'Français' },
-  { id: 'es', label: 'Español' },
-];
+/** The selectable locales, derived from the bundled locale data files (locales/*.json).
+ *  Adding a translated locale means adding a JSON file, not editing this list. Each must
+ *  also have its Angular formatting data registered in app.config (registerLocaleData). */
+export const SUPPORTED_LOCALES: { id: string; label: string }[] = LOCALES.map((l) => l.meta);
 
 export function storedLocale(): string {
   try {
