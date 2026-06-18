@@ -87,18 +87,68 @@ class DummyProfile:
         return []  # synthesizes settings directly; no wire reads
 
     def settings_schema(self) -> SettingsSchema:
-        """A representative work-mode-timer schema so the read-only settings UI is
-        exercisable on the dummy (mirrors the real SG05LP1 shape)."""
-        work_mode = FieldSpec(
-            "work_mode", "Work mode", "enum",
-            options=[{"value": 0, "label": "Selling first"}, {"value": 2, "label": "Zero export to CT"}],
-        )
+        """The full settings surface, grouped to mirror the inverter's own menus so the
+        Control page's 2-column layout is exercisable. Read-only where the real inverter
+        exposes a value it won't let you set over Modbus (grid type / grid frequency)."""
         return SettingsSchema([
-            Section("globals", "Work mode & limits", [
+            # Grid: type & frequency are read-only; the voltage limits are writable.
+            Section("grid", "Grid", [
+                FieldSpec(
+                    "grid_type", "Grid type", "enum", writable=False,
+                    options=[
+                        {"value": 0, "label": "220/230/240V single phase"},
+                        {"value": 1, "label": "120/240V two phase"},
+                        {"value": 2, "label": "120/208V three phase"},
+                        {"value": 3, "label": "120V single phase"},
+                    ],
+                ),
+                FieldSpec(
+                    "grid_frequency", "Grid frequency", "enum", writable=False,
+                    options=[{"value": 0, "label": "50 Hz"}, {"value": 1, "label": "60 Hz"}],
+                ),
+                FieldSpec("grid_voltage_high_v", "Grid voltage high", "number", unit="V"),
+                FieldSpec("grid_voltage_low_v", "Grid voltage low", "number", unit="V"),
+            ]),
+            Section("battery_type", "Battery type", [
+                FieldSpec("battery_type", "Battery type", "enum",
+                          options=[{"value": 0, "label": "Lithium"}, {"value": 1, "label": "AGM"}]),
+                FieldSpec("lithium_protocol", "Lithium protocol", "enum",
+                          options=[{"value": 0, "label": "CAN"}, {"value": 1, "label": "RS485"}]),
+                FieldSpec("battery_operation", "Battery operation", "enum",
+                          options=[{"value": 0, "label": "Voltage"},
+                                   {"value": 1, "label": "State of charge"},
+                                   {"value": 2, "label": "None"}]),
+                FieldSpec("battery_capacity_ah", "Battery capacity", "number", unit="Ah", min=0, max=2000),
+            ]),
+            Section("battery_charging", "Battery charging", [
+                FieldSpec("max_charge_current_a", "Max charge current", "number", unit="A", min=0, max=300),
+                FieldSpec("max_discharge_current_a", "Max discharge current", "number", unit="A", min=0, max=300),
+                FieldSpec("float_voltage_v", "Float voltage", "number", unit="V", min=40, max=60),
+                FieldSpec("absorption_voltage_v", "Absorption voltage", "number", unit="V", min=40, max=60),
+            ]),
+            Section("work_mode", "Work mode", [
                 FieldSpec("timer_enabled", "Timer enabled", "bool"),
                 FieldSpec("grid_charge", "Grid charge", "bool"),
-                work_mode,
-                FieldSpec("max_sell_power_w", "Max sell power", "number", unit="W"),
+                FieldSpec("shutdown_soc_pct", "Output shutdown capacity", "number", unit="%", min=0, max=100),
+                FieldSpec("low_soc_pct", "Stop discharge capacity", "number", unit="%", min=0, max=100),
+                FieldSpec("start_grid_charge_soc_pct", "Start grid charge capacity", "number", unit="%", min=0, max=100),
+            ]),
+            Section("work_mode_detail", "Work mode detail", [
+                FieldSpec("work_mode", "Work mode", "enum",
+                          options=[{"value": 0, "label": "Selling first"},
+                                   {"value": 1, "label": "Zero export to load"},
+                                   {"value": 2, "label": "Zero export to CT"}]),
+                FieldSpec("solar_export", "Solar export when battery full", "bool"),
+                FieldSpec("energy_pattern", "Energy pattern", "enum",
+                          options=[{"value": 0, "label": "Battery first"}, {"value": 1, "label": "Load first"}]),
+                FieldSpec("max_sell_power_w", "Max sell power", "number", unit="W", min=0, max=8000),
+                FieldSpec("max_solar_power_w", "Max solar power", "number", unit="W", min=0, max=12000),
+            ]),
+            Section("aux_gen", "Aux / Generator", [
+                FieldSpec("generator_connected_to_grid", "Generator on grid input", "bool"),
+                FieldSpec("gen_start_soc_pct", "Generator start capacity", "number", unit="%", min=0, max=100),
+                FieldSpec("gen_stop_soc_pct", "Generator stop capacity", "number", unit="%", min=0, max=100),
+                FieldSpec("gen_max_run_time_h", "Generator max run time", "number", unit="h", min=0, max=24),
             ]),
             Section("timer_slots", "Work-mode timer", [
                 FieldSpec("start_time", "Start time", "time"),
@@ -106,10 +156,6 @@ class DummyProfile:
                 FieldSpec("target_soc_pct", "Target SoC", "number", unit="%", min=0, max=100),
                 FieldSpec("charge_from_grid", "Charge from grid", "bool"),
             ], repeating=True, count=6),
-            Section("battery", "Battery", [
-                FieldSpec("float_voltage_v", "Float voltage", "number", unit="V"),
-                FieldSpec("max_charge_current_a", "Max charge current", "number", unit="A"),
-            ]),
         ])
 
     @staticmethod
@@ -119,13 +165,21 @@ class DummyProfile:
         soc = [65, 10, 10, 10, 10, 10]
         starts = ["00:05", "05:55", "09:00", "13:00", "17:00", "21:00"]
         return {
-            "globals": {"timer_enabled": True, "grid_charge": True, "work_mode": 2, "max_sell_power_w": 8000.0},
+            "grid": {"grid_type": 0, "grid_frequency": 0, "grid_voltage_high_v": 264.0, "grid_voltage_low_v": 184.0},
+            "battery_type": {"battery_type": 0, "lithium_protocol": 0, "battery_operation": 1, "battery_capacity_ah": 312.0},
+            "battery_charging": {"max_charge_current_a": 140.0, "max_discharge_current_a": 180.0,
+                                 "float_voltage_v": 53.6, "absorption_voltage_v": 56.0},
+            "work_mode": {"timer_enabled": True, "grid_charge": True, "shutdown_soc_pct": 5.0,
+                          "low_soc_pct": 10.0, "start_grid_charge_soc_pct": 30.0},
+            "work_mode_detail": {"work_mode": 2, "solar_export": False, "energy_pattern": 1,
+                                 "max_sell_power_w": 8000.0, "max_solar_power_w": 4800.0},
+            "aux_gen": {"generator_connected_to_grid": False, "gen_start_soc_pct": 20.0,
+                        "gen_stop_soc_pct": 80.0, "gen_max_run_time_h": 8.0},
             "timer_slots": [
                 {"start_time": starts[i], "power_w": 8000.0, "target_soc_pct": soc[i],
                  "charge_from_grid": i == 0}
                 for i in range(6)
             ],
-            "battery": {"float_voltage_v": 53.6, "max_charge_current_a": 140.0},
         }
 
     def read_settings(self, raw: Mapping[int, int]) -> dict:  # raw ignored

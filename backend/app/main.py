@@ -303,12 +303,19 @@ def create_app(
         values = await device.read_settings()
         etag = control.settings_etag(values) if values is not None else None
         headers = {"ETag": etag} if etag else None
+        info = device.info
         return JSONResponse(
             {
                 "device_id": device_id,
                 "supported": values is not None,
                 "control_enabled": app.state.settings.enable_control and device.is_writable,
                 "etag": etag,
+                "info": {
+                    "vendor": info.vendor,
+                    "model": info.model,
+                    "serial": info.serial,
+                    "firmware": info.firmware,
+                },
                 "values": values or {},
             },
             headers=headers,

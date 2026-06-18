@@ -215,6 +215,7 @@ export interface SettingsField {
   options?: { value: number; label: string }[]; // enum machine value → human label
   min?: number; // write bounds (Phase 6) — also used as input constraints
   max?: number;
+  writable?: boolean; // false ⇒ display-only (no edit control, never written). Default true.
 }
 
 /** A group of related fields. `repeating` sections (e.g. timer slots) hold `count` entries. */
@@ -234,11 +235,20 @@ export interface SettingsSchemaResponse {
 
 /** Decoded current values keyed by section. Non-repeating ⇒ object; repeating ⇒ array of objects.
  *  enum ⇒ integer machine value, time ⇒ "HH:MM", bool ⇒ boolean, number/int ⇒ number. */
+/** Device identity shown on the Control page (read-only). */
+export interface DeviceInfo {
+  vendor: string;
+  model: string;
+  serial: string | null;
+  firmware: Record<string, string> | null;
+}
+
 export interface DeviceSettingsResponse {
   device_id: string;
   supported: boolean;
   control_enabled?: boolean; // editing available (deploy flag on AND device writable, Phase 6)
   etag?: string | null; // optimistic-concurrency token for writes (If-Match)
+  info?: DeviceInfo;
   values: Record<string, unknown>;
 }
 

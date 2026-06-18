@@ -96,17 +96,51 @@ metrics:
 # All addresses below are VALIDATED against the SG05LP1's own screen (2026-06-18 config
 # read-out + the grid-charging regscan dump). See validation block in the child profile.
 settings:
-  globals:
-    timer_enabled:   { addr: 248, type: bool, mask: 0x01 }      # "Use Timer"
-    grid_charge:     { addr: 232, type: bool, mask: 0x01 }      # confirmed Enabled = 1
-    # "Work mode" — confirmed [244]=2 = "Zero export to CT" on this unit. Other enum
-    # values are NOT yet screen-verified (decode falls back to the raw int for unknowns).
-    work_mode:       { addr: 244, type: enum, values: { 2: zero_export_to_ct } }
-    energy_pattern:  { addr: 243, type: enum, values: { 0: battery_first, 1: load_first } }  # confirmed 1 = Load first
-    solar_export:    { addr: 247, type: bool, mask: 0x01 }      # "Solar export when battery full" — TOGGLE-CONFIRMED: 0→1 when enabled
-    max_sell_power_w:    { addr: 245, type: u16 }               # confirmed 8000 W
-    max_solar_power_w:   { addr: 53,  type: u16 }               # confirmed 4800 W
-    start_grid_charge_soc_pct: { addr: 229, type: u16 }         # "Start grid charge capacity" (confirmed 30 %)
+  # Sections mirror the inverter's own setting menus (the Control page lays them out 2-up).
+  # Only screen-validated registers are wired; sections/fields needing register addresses we
+  # haven't confirmed yet (Grid voltage/freq limits & peak-shaving, Aux/Generator, battery
+  # type & operation mode, remote switch, generator charge, force-gen, grid trickle feed) are
+  # intentionally absent until a regscan pins them — never guess a writable address (CLAUDE §12).
+
+  # Battery type / protocol (read/write). battery_type {lithium,agm} + battery_operation
+  # {voltage,soc,none} await confirmed addresses.
+  battery_type:
+    lithium_protocol:        { addr: 325, type: enum, values: { 0: can } }   # screen "Lithium protocol"; CAN
+    battery_capacity_ah:     { addr: 204, type: u16 }                # confirmed 312 Ah (≈16 kWh @ 51.2 V)
+
+  # Battery charging limits (writable; voltages ×0.01 V).
+  battery_charging:
+    max_charge_current_a:    { addr: 210, type: u16 }                # confirmed 140 A
+    max_discharge_current_a: { addr: 211, type: u16 }                # confirmed 180 A
+    grid_charge_current_a:   { addr: 230, type: u16 }                # confirmed 80 A
+    gen_charge_current_a:    { addr: 227, type: u16 }                # confirmed 40 A
+    float_voltage_v:         { addr: 203, type: u16, scale: 0.01 }   # confirmed 53.6 V
+    absorption_voltage_v:    { addr: 202, type: u16, scale: 0.01 }   # confirmed 56.0 V
+    equalization_voltage_v:  { addr: 201, type: u16, scale: 0.01 }   # confirmed 56.0 V
+    shutdown_voltage_v:      { addr: 220, type: u16, scale: 0.01 }
+    restart_voltage_v:       { addr: 221, type: u16, scale: 0.01 }
+    low_voltage_v:           { addr: 222, type: u16, scale: 0.01 }
+
+  # Work-mode toggles + SoC thresholds (screen "Work mode" menu). remote switch / generator
+  # charge / force-generator-on await confirmed addresses.
+  work_mode:
+    timer_enabled:           { addr: 248, type: bool, mask: 0x01 }   # "Use Timer"
+    grid_charge:             { addr: 232, type: bool, mask: 0x01 }   # confirmed Enabled = 1
+    shutdown_soc_pct:        { addr: 217, type: u16 }                # "Output shutdown capacity" (confirmed 5 %)
+    low_soc_pct:             { addr: 219, type: u16 }                # "Stop battery discharge capacity" (confirmed 10 %)
+    restart_soc_pct:         { addr: 218, type: u16 }                # "Start battery discharge capacity" (confirmed 25 %)
+    start_grid_charge_soc_pct: { addr: 229, type: u16 }              # "Start grid charge capacity" (confirmed 30 %)
+
+  # Work-mode detail (screen "Work mode" detail page). grid trickle feed awaits its address.
+  work_mode_detail:
+    # "Work mode" / energy-management model. Canonical Deye/Sunsynk order; [244]=2 =
+    # "Zero export to CT" is screen-confirmed on this unit, 0/1 are the standard family values.
+    work_mode:               { addr: 244, type: enum, values: { 0: selling_first, 1: zero_export_to_load, 2: zero_export_to_ct } }
+    solar_export:            { addr: 247, type: bool, mask: 0x01 }   # "Solar export when battery full" — TOGGLE-CONFIRMED 0→1
+    energy_pattern:          { addr: 243, type: enum, values: { 0: battery_first, 1: load_first } }  # confirmed 1 = Load first
+    max_sell_power_w:        { addr: 245, type: u16 }                # confirmed 8000 W
+    max_solar_power_w:       { addr: 53,  type: u16 }                # confirmed 4800 W
+
   # Work-mode timer: 6 repeating slots, slot i = base_addr + i. ALL fields confirmed against
   # the screen. There is NO end-time register — a slot ends when the next begins (cyclic,
   # wraps the last slot → the first). Example validated config (this unit, cheap-night plan):
@@ -124,25 +158,6 @@ settings:
       charge_from_grid:  { base_addr: 274, type: bool, mask: 0x01 }  # 274..279 bit0 (confirmed)
       charge_from_gen:   { base_addr: 274, type: bool, mask: 0x02 }  #          bit1
       mode:              { base_addr: 274, type: bits, mask: 0x1C }  #          bits 2-4
-  # Battery protection / charge settings (writable holding registers; voltages ×0.01 V).
-  # Screen labels: shutdown_soc = "Output shutdown capacity"; low_soc = "Stop battery
-  # discharge capacity"; restart_soc = "Start battery discharge capacity".
-  battery:
-    equalization_voltage_v:  { addr: 201, type: u16, scale: 0.01 }   # confirmed 56.0 V
-    absorption_voltage_v:    { addr: 202, type: u16, scale: 0.01 }   # confirmed 56.0 V
-    float_voltage_v:         { addr: 203, type: u16, scale: 0.01 }   # confirmed 53.6 V
-    shutdown_soc_pct:        { addr: 217, type: u16 }                # confirmed 5 %
-    restart_soc_pct:         { addr: 218, type: u16 }                # confirmed 25 % (start discharge)
-    low_soc_pct:             { addr: 219, type: u16 }                # confirmed 10 % (stop discharge)
-    shutdown_voltage_v:      { addr: 220, type: u16, scale: 0.01 }
-    restart_voltage_v:       { addr: 221, type: u16, scale: 0.01 }
-    low_voltage_v:           { addr: 222, type: u16, scale: 0.01 }
-    max_charge_current_a:    { addr: 210, type: u16 }                # confirmed 140 A
-    max_discharge_current_a: { addr: 211, type: u16 }                # confirmed 180 A
-    grid_charge_current_a:   { addr: 230, type: u16 }                # confirmed 80 A
-    gen_charge_current_a:    { addr: 227, type: u16 }                # confirmed 40 A
-    battery_capacity_ah:     { addr: 204, type: u16 }                # confirmed 312 Ah (≈16 kWh @ 51.2 V)
-    bms_protocol:            { addr: 325, type: enum, values: { 0: can } }   # Lithium, CAN protocol 0
 
 # Device identity.
 info:

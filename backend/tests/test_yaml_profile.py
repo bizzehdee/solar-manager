@@ -122,8 +122,9 @@ def test_no_faults_is_empty_list():
 # --- writable-settings map, validated vs the inverter screen (plan.md §4/§12; T071) -----
 def test_settings_map_inherited_and_complete():
     s = _profile().settings  # inherited from deye-base
-    assert {"globals", "timer_slots", "battery"} <= set(s)
-    g = s["globals"]
+    # Grouped into the inverter's menu sections (Grid/Aux-Gen await register addresses).
+    assert {"battery_type", "battery_charging", "work_mode", "work_mode_detail", "timer_slots"} <= set(s)
+    g = s["work_mode_detail"]
     # work_mode enum resolved: [244] = 2 -> "Zero export to CT".
     assert g["work_mode"]["addr"] == 244
     assert g["work_mode"]["values"][2] == "zero_export_to_ct"
@@ -131,18 +132,18 @@ def test_settings_map_inherited_and_complete():
     assert g["energy_pattern"]["addr"] == 243 and g["energy_pattern"]["values"][1] == "load_first"
     assert g["max_sell_power_w"]["addr"] == 245
     assert g["max_solar_power_w"]["addr"] == 53
-    assert g["start_grid_charge_soc_pct"]["addr"] == 229
+    assert s["work_mode"]["start_grid_charge_soc_pct"]["addr"] == 229
     # solar_export — toggle-confirmed at [247] bit0 (0→1 when enabled).
     assert g["solar_export"]["addr"] == 247 and g["solar_export"]["mask"] == 0x01
 
 
 def test_settings_battery_and_timer_addresses():
     s = _profile().settings
-    b = s["battery"]
+    b = s["battery_charging"]
     assert b["max_charge_current_a"]["addr"] == 210 and b["max_discharge_current_a"]["addr"] == 211
     assert b["gen_charge_current_a"]["addr"] == 227
-    assert b["battery_capacity_ah"]["addr"] == 204      # 312 Ah on this unit
-    assert b["bms_protocol"]["values"][0] == "can"
+    assert s["battery_type"]["battery_capacity_ah"]["addr"] == 204      # 312 Ah on this unit
+    assert s["battery_type"]["lithium_protocol"]["values"][0] == "can"
     # 6 cyclic timer slots, base addresses match the validated screen read-out.
     t = s["timer_slots"]
     assert t["count"] == 6

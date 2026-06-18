@@ -113,7 +113,7 @@ def test_device_settings_schema_and_values_ungated(midday):
 
         vals = client.get("/api/devices/dummy/settings").json()
         assert vals["supported"] is True
-        assert vals["values"]["globals"]["work_mode"] == 2
+        assert vals["values"]["work_mode_detail"]["work_mode"] == 2
         assert len(vals["values"]["timer_slots"]) == 6
         assert vals["values"]["timer_slots"][0]["start_time"] == "00:05"
 

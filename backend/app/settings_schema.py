@@ -47,6 +47,10 @@ class FieldSpec:
     # uses these for input constraints; validation enforces them server-side.
     min: float | None = None
     max: float | None = None
+    # Read-only fields are displayed but never written: excluded from the write allow-list,
+    # rejected by validation, and shown without edit controls (some inverter values — e.g.
+    # grid type / grid frequency — are observable but not settable over Modbus).
+    writable: bool = True
 
     def as_dict(self) -> dict:
         d = {"key": self.key, "label": self.label, "type": self.type}
@@ -58,6 +62,8 @@ class FieldSpec:
             d["min"] = self.min
         if self.max is not None:
             d["max"] = self.max
+        if not self.writable:
+            d["writable"] = False
         return d
 
 

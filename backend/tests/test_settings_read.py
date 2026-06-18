@@ -31,7 +31,8 @@ _RAW = {
 def test_settings_schema_sections_and_types():
     schema = _profile().settings_schema().as_dict()
     sections = {s["key"]: s for s in schema["sections"]}
-    assert set(sections) == {"globals", "timer_slots", "battery"}
+    # Sections mirror the inverter's menus; Grid/Aux-Gen await register addresses.
+    assert set(sections) == {"battery_type", "battery_charging", "work_mode", "work_mode_detail", "timer_slots"}
 
     timer = sections["timer_slots"]
     assert timer["repeating"] is True and timer["count"] == 6
@@ -40,7 +41,7 @@ def test_settings_schema_sections_and_types():
     assert fkeys["power_w"]["type"] == "number" and fkeys["power_w"]["unit"] == "W"
     assert fkeys["charge_from_grid"]["type"] == "bool"
 
-    wm = next(f for f in sections["globals"]["fields"] if f["key"] == "work_mode")
+    wm = next(f for f in sections["work_mode_detail"]["fields"] if f["key"] == "work_mode")
     assert wm["type"] == "enum"
     assert {"value": 2, "label": "Zero export to CT"} in wm["options"]
 
@@ -54,12 +55,14 @@ def test_settings_blocks_cover_addresses():
 def test_read_settings_decodes_all_sections():
     out = _profile().read_settings(_RAW)
 
-    g = out["globals"]
-    assert g["timer_enabled"] is True          # 255 & 0x01
-    assert g["grid_charge"] is True
-    assert g["work_mode"] == 2                  # enum machine value
-    assert g["solar_export"] is True           # 1 & 0x01
-    assert g["max_sell_power_w"] == 8000
+    wm = out["work_mode"]
+    assert wm["timer_enabled"] is True          # 248 & 0x01
+    assert wm["grid_charge"] is True
+
+    wmd = out["work_mode_detail"]
+    assert wmd["work_mode"] == 2                 # enum machine value
+    assert wmd["solar_export"] is True          # 247 & 0x01
+    assert wmd["max_sell_power_w"] == 8000
 
     slots = out["timer_slots"]
     assert len(slots) == 6
@@ -68,24 +71,33 @@ def test_read_settings_decodes_all_sections():
     assert slots[0]["charge_from_grid"] is True and slots[1]["charge_from_grid"] is False
     assert slots[0]["power_w"] == 8000
 
-    b = out["battery"]
-    assert b["float_voltage_v"] == 53.6 and b["absorption_voltage_v"] == 56.0
-    assert b["max_charge_current_a"] == 140 and b["max_discharge_current_a"] == 180
-    assert b["battery_capacity_ah"] == 312
+    bc = out["battery_charging"]
+    assert bc["float_voltage_v"] == 53.6 and bc["absorption_voltage_v"] == 56.0
+    assert bc["max_charge_current_a"] == 140 and bc["max_discharge_current_a"] == 180
+    assert out["battery_type"]["battery_capacity_ah"] == 312
 
 
 def test_read_settings_absent_register_is_none():
     out = _profile().read_settings({})  # nothing supplied
-    assert out["battery"]["float_voltage_v"] is None
+    assert out["battery_charging"]["float_voltage_v"] is None
     assert out["timer_slots"][0]["start_time"] is None
 
 
 # --- dummy ------------------------------------------------------------------------
+def test_dummy_exposes_readonly_grid_section():
+    schema = DummyProfile().settings_schema().as_dict()
+    grid = next(s for s in schema["sections"] if s["key"] == "grid")
+    gt = next(f for f in grid["fields"] if f["key"] == "grid_type")
+    assert gt["writable"] is False        # read-only: displayed but never written
+    assert {"value": 0, "label": "220/230/240V single phase"} in gt["options"]
+    assert DummyProfile().read_settings({})["grid"]["grid_frequency"] == 0
+
+
 def test_dummy_settings_schema_and_values():
     p = DummyProfile()
     assert p.settings_schema() is not None
     vals = p.read_settings({})
-    assert vals["globals"]["work_mode"] == 2
+    assert vals["work_mode_detail"]["work_mode"] == 2
     assert [s["start_time"] for s in vals["timer_slots"]] == \
         ["00:05", "05:55", "09:00", "13:00", "17:00", "21:00"]
     assert vals["timer_slots"][0]["charge_from_grid"] is True
@@ -114,11 +126,11 @@ async def test_device_read_settings_via_transport():
     assert dev.has_settings is True
     out = await dev.read_settings()
     assert out["timer_slots"][0]["start_time"] == "00:05"
-    assert out["globals"]["work_mode"] == 2
+    assert out["work_mode_detail"]["work_mode"] == 2
 
 
 async def test_dummy_device_read_settings_no_wire():
     dev = Device("dummy", NullTransport(), DummyProfile(), clock=system_clock)
     assert dev.has_settings is True
     out = await dev.read_settings()
-    assert out["globals"]["grid_charge"] is True
+    assert out["work_mode"]["grid_charge"] is True

@@ -47,6 +47,10 @@ function schema(): SettingsSchemaResponse {
             ],
           },
           { key: 'max_sell_power_w', label: 'Max sell power', type: 'number', unit: 'W' },
+          {
+            key: 'grid_type', label: 'Grid type', type: 'enum', writable: false,
+            options: [{ value: 0, label: 'Single phase' }],
+          },
         ],
       },
       {
@@ -85,7 +89,7 @@ function settings(): DeviceSettingsResponse {
     device_id: 'd1',
     supported: true,
     values: {
-      globals: { timer_enabled: true, grid_charge: true, work_mode: 2, max_sell_power_w: 8000 },
+      globals: { timer_enabled: true, grid_charge: true, work_mode: 2, max_sell_power_w: 8000, grid_type: 0 },
       timer_slots: Array.from({ length: 6 }, () => ({ ...slot })),
       battery: { float_voltage_v: 53.6, max_charge_current_a: 140 },
     },
@@ -116,9 +120,10 @@ describe('ControlPage', () => {
 
     const el = fixture.nativeElement as HTMLElement;
     expect(el.textContent).toContain('Read-only');
-    // One card per section.
+    // Non-repeating sections fill the 2-column grid first (schema order), then the repeating
+    // timer spans full width below — so the timer header comes last.
     const headers = Array.from(el.querySelectorAll('.card-header')).map((h) => h.textContent?.trim());
-    expect(headers).toEqual(['Globals', 'Timer slots', 'Battery']);
+    expect(headers).toEqual(['Globals', 'Battery', 'Timer slots']);
   });
 
   it('renders the repeating timer-slots table with one row per entry', () => {
@@ -156,7 +161,12 @@ describe('ControlPage', () => {
 
   // --- Phase 6 editing (control enabled) ---
   function settingsCtl(): DeviceSettingsResponse {
-    return { ...settings(), control_enabled: true, etag: 'abc' };
+    return {
+      ...settings(),
+      control_enabled: true,
+      etag: 'abc',
+      info: { vendor: 'sunsynk', model: 'SG05LP1', serial: 'SN123', firmware: { protocol: '2.1' } },
+    };
   }
 
   function bootEditable() {
@@ -169,6 +179,16 @@ describe('ControlPage', () => {
     fixture.detectChanges();
     return fixture;
   }
+
+  it('renders the read-only Inverter info card from device identity', () => {
+    const fixture = bootEditable();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.textContent).toContain('Inverter info');
+    expect(el.textContent).toContain('sunsynk');
+    expect(el.textContent).toContain('SG05LP1');
+    expect(el.textContent).toContain('SN123');
+    expect(el.textContent).toContain('2.1'); // firmware entry
+  });
 
   it('shows edit controls only when control is enabled', () => {
     const fixture = bootEditable();
@@ -235,6 +255,19 @@ describe('ControlPage', () => {
     expect(c.feedback()!.cls).toBe('danger');
     expect(c.feedback()!.text).toContain('max_sell_power_w');
     expect(c.values()!.etag).toBe('zzz');
+  });
+
+  it('does not render an edit control for a read-only field', () => {
+    const fixture = bootEditable();
+    const c = fixture.componentInstance;
+    const globals = c.schema()!.sections[0];
+    c.startEdit(globals, null);
+    fixture.detectChanges();
+
+    // 4 writable globals fields ⇒ 4 inputs; the read-only grid_type stays a value display.
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelectorAll('app-setting-input').length).toBe(4);
+    expect(el.textContent).toContain('Single phase'); // read-only value still shown
   });
 
   it('reloads (does not clobber) on a stale 412', () => {

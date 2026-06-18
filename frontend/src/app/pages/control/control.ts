@@ -6,6 +6,7 @@ import { ApiService } from '../../core/api.service';
 import {
   AuditEntry,
   DeviceConfig,
+  DeviceInfo,
   DeviceSettingsResponse,
   SettingsField,
   SettingsSchemaResponse,
@@ -62,95 +63,131 @@ import { SettingInput } from '../../shared/setting-input';
     } @else if (!schema() || schema()?.supported === false) {
       <div class="alert alert-info mb-0"><i class="bi bi-info-circle"></i> This device exposes no settings.</div>
     } @else {
-      @for (section of schema()!.sections; track section.key) {
-        <div class="card mb-3">
-          <div class="card-header d-flex align-items-center justify-content-between">
-            <span>{{ section.label }}</span>
-            <!-- Non-repeating section edit controls live in the header. -->
-            @if (controlEnabled() && !section.repeating) {
-              @if (isEditing(section.key, null)) {
-                <span class="btn-group btn-group-sm">
-                  <button class="btn btn-primary" (click)="review(section, null)">Review changes</button>
-                  <button class="btn btn-outline-secondary" (click)="cancelEdit()">Cancel</button>
-                </span>
-              } @else {
-                <button class="btn btn-sm btn-outline-primary" [disabled]="isBusy()" (click)="startEdit(section, null)">
-                  <i class="bi bi-pencil"></i> Edit
-                </button>
-              }
-            }
-          </div>
-          <div class="card-body p-0">
-            @if (section.repeating) {
-              <div class="table-responsive">
+      <!-- Non-repeating sections in a responsive 2-column grid (paired left/right). -->
+      <div class="row g-3">
+        <!-- Inverter info: read-only identity, first cell. -->
+        @if (info(); as i) {
+          <div class="col-12 col-md-6">
+            <div class="card h-100">
+              <div class="card-header"><i class="bi bi-info-circle"></i> Inverter info</div>
+              <div class="card-body p-0">
                 <table class="table table-sm align-middle mb-0">
-                  <thead>
-                    <tr>
-                      <th>#</th>
-                      @for (f of section.fields; track f.key) { <th>{{ headerFor(f) }}</th> }
-                      @if (controlEnabled()) { <th class="text-end">Actions</th> }
-                    </tr>
-                  </thead>
                   <tbody>
-                    @for (row of rowsFor(section); track ri; let ri = $index) {
-                      <tr [class.table-active]="isEditing(section.key, ri)">
-                        <td class="text-secondary">Slot {{ ri + 1 }}</td>
-                        @for (f of section.fields; track f.key) {
-                          <td>
-                            @if (isEditing(section.key, ri)) {
-                              <app-setting-input
-                                [field]="f"
-                                [value]="draft()[f.key]"
-                                (valueChange)="setDraft(f.key, $event)"
-                              />
-                            } @else {
-                              <app-setting-value [field]="f" [value]="row[f.key]" />
-                            }
-                          </td>
-                        }
-                        @if (controlEnabled()) {
-                          <td class="text-end text-nowrap">
-                            @if (isEditing(section.key, ri)) {
-                              <button class="btn btn-sm btn-primary me-1" (click)="review(section, ri)">Review</button>
-                              <button class="btn btn-sm btn-outline-secondary" (click)="cancelEdit()">Cancel</button>
-                            } @else {
-                              <button
-                                class="btn btn-sm btn-outline-primary"
-                                [disabled]="isBusy()"
-                                (click)="startEditRow(section, ri)"
-                              >
-                                <i class="bi bi-pencil"></i> Edit
-                              </button>
-                            }
-                          </td>
-                        }
+                    <tr><th class="w-50 fw-normal text-secondary">Vendor</th><td class="text-end">{{ i.vendor }}</td></tr>
+                    <tr><th class="fw-normal text-secondary">Model</th><td class="text-end">{{ i.model }}</td></tr>
+                    @if (i.serial) {
+                      <tr><th class="fw-normal text-secondary">Serial</th><td class="text-end">{{ i.serial }}</td></tr>
+                    }
+                    @for (fw of firmwareEntries(i); track fw[0]) {
+                      <tr>
+                        <th class="fw-normal text-secondary text-capitalize">{{ fw[0] }}</th>
+                        <td class="text-end">{{ fw[1] }}</td>
                       </tr>
                     }
                   </tbody>
                 </table>
               </div>
-            } @else {
+            </div>
+          </div>
+        }
+        @for (section of gridSections(); track section.key) {
+          <div class="col-12 col-md-6">
+            <div class="card h-100">
+              <div class="card-header d-flex align-items-center justify-content-between">
+                <span>{{ section.label }}</span>
+                <!-- Edit controls only where at least one field is writable. -->
+                @if (controlEnabled() && isSectionEditable(section)) {
+                  @if (isEditing(section.key, null)) {
+                    <span class="btn-group btn-group-sm">
+                      <button class="btn btn-primary" (click)="review(section, null)">Review changes</button>
+                      <button class="btn btn-outline-secondary" (click)="cancelEdit()">Cancel</button>
+                    </span>
+                  } @else {
+                    <button class="btn btn-sm btn-outline-primary" [disabled]="isBusy()" (click)="startEdit(section, null)">
+                      <i class="bi bi-pencil"></i> Edit
+                    </button>
+                  }
+                }
+              </div>
+              <div class="card-body p-0">
+                <table class="table table-sm align-middle mb-0">
+                  <tbody>
+                    @for (f of section.fields; track f.key) {
+                      <tr>
+                        <th class="w-50 fw-normal text-secondary">{{ headerFor(f) }}</th>
+                        <td class="text-end">
+                          @if (isEditing(section.key, null) && f.writable !== false) {
+                            <app-setting-input
+                              [field]="f"
+                              [value]="draft()[f.key]"
+                              (valueChange)="setDraft(f.key, $event)"
+                            />
+                          } @else {
+                            <app-setting-value [field]="f" [value]="objFor(section)[f.key]" />
+                          }
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        }
+      </div>
+
+      <!-- Repeating sections (the work-mode timer) span both columns, below the grid. -->
+      @for (section of fullWidthSections(); track section.key) {
+        <div class="card mt-3">
+          <div class="card-header">{{ section.label }}</div>
+          <div class="card-body p-0">
+            <div class="table-responsive">
               <table class="table table-sm align-middle mb-0">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    @for (f of section.fields; track f.key) { <th>{{ headerFor(f) }}</th> }
+                    @if (controlEnabled()) { <th class="text-end">Actions</th> }
+                  </tr>
+                </thead>
                 <tbody>
-                  @for (f of section.fields; track f.key) {
-                    <tr>
-                      <th class="w-50 fw-normal text-secondary">{{ headerFor(f) }}</th>
-                      <td class="text-end">
-                        @if (isEditing(section.key, null)) {
-                          <app-setting-input
-                            [field]="f"
-                            [value]="draft()[f.key]"
-                            (valueChange)="setDraft(f.key, $event)"
-                          />
-                        } @else {
-                          <app-setting-value [field]="f" [value]="objFor(section)[f.key]" />
-                        }
-                      </td>
+                  @for (row of rowsFor(section); track ri; let ri = $index) {
+                    <tr [class.table-active]="isEditing(section.key, ri)">
+                      <td class="text-secondary">Slot {{ ri + 1 }}</td>
+                      @for (f of section.fields; track f.key) {
+                        <td>
+                          @if (isEditing(section.key, ri) && f.writable !== false) {
+                            <app-setting-input
+                              [field]="f"
+                              [value]="draft()[f.key]"
+                              (valueChange)="setDraft(f.key, $event)"
+                            />
+                          } @else {
+                            <app-setting-value [field]="f" [value]="row[f.key]" />
+                          }
+                        </td>
+                      }
+                      @if (controlEnabled()) {
+                        <td class="text-end text-nowrap">
+                          @if (isEditing(section.key, ri)) {
+                            <button class="btn btn-sm btn-primary me-1" (click)="review(section, ri)">Review</button>
+                            <button class="btn btn-sm btn-outline-secondary" (click)="cancelEdit()">Cancel</button>
+                          } @else {
+                            <button
+                              class="btn btn-sm btn-outline-primary"
+                              [disabled]="isBusy()"
+                              (click)="startEditRow(section, ri)"
+                            >
+                              <i class="bi bi-pencil"></i> Edit
+                            </button>
+                          }
+                        </td>
+                      }
                     </tr>
                   }
                 </tbody>
               </table>
-            }
+            </div>
           </div>
         </div>
       }
@@ -243,6 +280,17 @@ export class ControlPage implements OnInit {
 
   readonly controlEnabled = computed(() => this.values()?.control_enabled === true);
   readonly isBusy = computed(() => this.edit() !== null || this.saving());
+
+  // Layout: non-repeating sections fill a responsive 2-column grid (in schema order);
+  // repeating sections (the work-mode timer) span the full width below.
+  readonly gridSections = computed(() => (this.schema()?.sections ?? []).filter((s) => !s.repeating));
+  readonly fullWidthSections = computed(() => (this.schema()?.sections ?? []).filter((s) => s.repeating));
+
+  /** Device identity for the read-only "Inverter info" card (first grid cell). */
+  readonly info = computed(() => this.values()?.info ?? null);
+  firmwareEntries(info: DeviceInfo): [string, string][] {
+    return Object.entries(info.firmware ?? {});
+  }
 
   ngOnInit(): void {
     this.api.getDevices().subscribe((res) => {
@@ -414,6 +462,11 @@ export class ControlPage implements OnInit {
 
   headerFor(f: SettingsField): string {
     return f.unit ? `${f.label} (${f.unit})` : f.label;
+  }
+
+  /** Whether a section has any writable field (else there's nothing to edit). */
+  isSectionEditable(section: SettingsSection): boolean {
+    return section.fields.some((f) => f.writable !== false);
   }
 
   /** One-line "field: old → new" summary for an audit row. */

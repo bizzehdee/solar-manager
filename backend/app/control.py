@@ -108,6 +108,9 @@ def validate_settings(
         if spec is None:
             errors.append(f"unknown field {key!r} in section {section_key!r}")
             continue
+        if not spec.writable:
+            errors.append(f"field {key!r} is read-only")
+            continue
         try:
             cleaned[key] = _validate_field(spec, val)
         except ValueError as exc:

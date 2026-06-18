@@ -22,9 +22,17 @@ from ..settings_schema import FieldSpec, Section, SettingsSchema, enum_options, 
 from .base import RegBlock
 
 # Friendlier labels for the known settings sections (falls back to humanize()).
+# Friendly labels for the inverter's own menu groups (falls back to humanize()).
 _SECTION_LABELS = {
-    "globals": "Work mode & limits",
+    "grid": "Grid",
+    "battery_type": "Battery type",
+    "battery_charging": "Battery charging",
+    "work_mode": "Work mode",
+    "work_mode_detail": "Work mode detail",
+    "aux_gen": "Aux / Generator",
     "timer_slots": "Work-mode timer",
+    # legacy keys (older profiles)
+    "globals": "Work mode & limits",
     "battery": "Battery",
 }
 
@@ -138,16 +146,17 @@ class ModbusYamlProfile:
     @staticmethod
     def _field_spec(key: str, spec: dict[str, Any]) -> FieldSpec:
         t = spec.get("type", "u16")
+        w = bool(spec.get("writable", True))   # `writable: false` ⇒ display-only (no write)
         if t == "bool":
-            return FieldSpec(key, humanize(key), "bool")
+            return FieldSpec(key, humanize(key), "bool", writable=w)
         if t == "enum":
-            return FieldSpec(key, humanize(key), "enum", options=enum_options(spec.get("values", {})))
+            return FieldSpec(key, humanize(key), "enum", options=enum_options(spec.get("values", {})), writable=w)
         if t == "time_hhmm":
-            return FieldSpec(key, humanize(key), "time")
+            return FieldSpec(key, humanize(key), "time", writable=w)
         lo, hi = ModbusYamlProfile._field_bounds(key, spec)
         if t == "bits":
-            return FieldSpec(key, humanize(key), "int", min=lo, max=hi)
-        return FieldSpec(key, humanize(key), "number", unit=unit_for(key), min=lo, max=hi)
+            return FieldSpec(key, humanize(key), "int", min=lo, max=hi, writable=w)
+        return FieldSpec(key, humanize(key), "number", unit=unit_for(key), min=lo, max=hi, writable=w)
 
     @staticmethod
     def _field_bounds(key: str, spec: dict[str, Any]) -> tuple[float | None, float | None]:
@@ -164,15 +173,21 @@ class ModbusYamlProfile:
         """Register blocks covering every settings address (for the transport read)."""
         return self._blocks_for(self._settings_addresses())
 
-    def _settings_addresses(self) -> set[int]:
+    def _settings_addresses(self, *, writable_only: bool = False) -> set[int]:
+        """All settings addresses (for the read), or only writable ones (the write allow-list).
+        A field with `writable: false` is read+displayed but never in the allow-list (§12)."""
         addrs: set[int] = set()
         for skey, sval in self.settings.items():
             if skey == "timer_slots":
                 count = int(sval.get("count", 0))
                 for spec in sval.get("fields", {}).values():
+                    if writable_only and not spec.get("writable", True):
+                        continue
                     addrs.update(spec["base_addr"] + i for i in range(count))
             else:
                 for spec in sval.values():
+                    if writable_only and not spec.get("writable", True):
+                        continue
                     if spec.get("addr") is not None:
                         addrs.add(int(spec["addr"]))
         return addrs
@@ -214,10 +229,10 @@ class ModbusYamlProfile:
 
     # --- settings encode + write allow-list (plan.md §12; tasks T073/T074) -------
     def writable_addresses(self) -> set[int]:
-        """The ONLY holding registers the API may write — exactly the settings-map
-        addresses (§12 allow-list). No arbitrary-address writes, ever. Identical set to
-        what `settings_blocks()` reads back, so a write is always re-readable."""
-        return self._settings_addresses()
+        """The ONLY holding registers the API may write — the settings-map addresses minus
+        any `writable: false` (read-only) fields (§12 allow-list). No arbitrary-address
+        writes, ever. A subset of what `settings_blocks()` reads, so writes are re-readable."""
+        return self._settings_addresses(writable_only=True)
 
     def encode_settings(
         self, section_key: str, values: Mapping[str, Any], current_raw: Mapping[int, int], *, index: int | None = None

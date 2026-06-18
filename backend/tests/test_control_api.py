@@ -31,7 +31,7 @@ def test_write_forbidden_when_control_disabled():
         got = client.get("/api/devices/dummy/settings").json()
         assert got["supported"] is True
         assert got["control_enabled"] is False
-        r = client.put("/api/devices/dummy/settings", json={"section": "globals", "values": {"grid_charge": False}})
+        r = client.put("/api/devices/dummy/settings", json={"section": "work_mode", "values": {"grid_charge": False}})
         assert r.status_code == 403
 
         dev = next(d for d in client.get("/api/devices").json()["devices"] if d["id"] == "dummy")
@@ -49,11 +49,11 @@ def test_device_advertises_control_when_enabled():
 def test_write_applies_verifies_and_audits():
     with _client(control=True) as client:
         before = client.get("/api/devices/dummy/settings").json()
-        assert before["values"]["globals"]["max_sell_power_w"] == 8000.0
+        assert before["values"]["work_mode_detail"]["max_sell_power_w"] == 8000.0
 
         r = client.put(
             "/api/devices/dummy/settings",
-            json={"section": "globals", "values": {"max_sell_power_w": 5000}},
+            json={"section": "work_mode_detail", "values": {"max_sell_power_w": 5000}},
         )
         assert r.status_code == 200
         body = r.json()
@@ -61,11 +61,11 @@ def test_write_applies_verifies_and_audits():
         assert body["changes"] == {"max_sell_power_w": {"old": 8000.0, "new": 5000}}
         assert r.headers["ETag"] == body["etag"]
         # Read-back through the API reflects the write.
-        assert client.get("/api/devices/dummy/settings").json()["values"]["globals"]["max_sell_power_w"] == 5000
+        assert client.get("/api/devices/dummy/settings").json()["values"]["work_mode_detail"]["max_sell_power_w"] == 5000
 
         audit = client.get("/api/audit").json()["entries"]
         assert len(audit) == 1
-        assert audit[0]["section"] == "globals" and audit[0]["result"] == "ok"
+        assert audit[0]["section"] == "work_mode_detail" and audit[0]["result"] == "ok"
         assert audit[0]["changes"]["max_sell_power_w"]["new"] == 5000
 
 
@@ -85,7 +85,7 @@ def test_validation_error_is_422():
     with _client(control=True) as client:
         r = client.put(
             "/api/devices/dummy/settings",
-            json={"section": "globals", "values": {"work_mode": 999}},
+            json={"section": "work_mode_detail", "values": {"work_mode": 999}},
         )
         assert r.status_code == 422
         assert "errors" in r.json()["detail"]
@@ -95,7 +95,7 @@ def test_unknown_field_is_422():
     with _client(control=True) as client:
         r = client.put(
             "/api/devices/dummy/settings",
-            json={"section": "globals", "values": {"nope": 1}},
+            json={"section": "work_mode_detail", "values": {"nope": 1}},
         )
         assert r.status_code == 422
 
@@ -105,7 +105,7 @@ def test_stale_if_match_is_412():
         r = client.put(
             "/api/devices/dummy/settings",
             headers={"If-Match": "deadbeef"},
-            json={"section": "globals", "values": {"grid_charge": False}},
+            json={"section": "work_mode", "values": {"grid_charge": False}},
         )
         assert r.status_code == 412
         assert "current_etag" in r.json()["detail"]
@@ -117,7 +117,7 @@ def test_matching_etag_allows_write():
         r = client.put(
             "/api/devices/dummy/settings",
             headers={"If-Match": etag},
-            json={"section": "globals", "values": {"grid_charge": False}},
+            json={"section": "work_mode", "values": {"grid_charge": False}},
         )
         assert r.status_code == 200 and r.json()["ok"] is True
 

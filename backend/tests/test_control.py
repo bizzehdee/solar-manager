@@ -75,9 +75,9 @@ def test_contiguous_runs_groups_adjacent_addresses():
 
 
 def test_verify_settings_tolerates_scale_rounding_but_flags_real_diffs():
-    after = {"battery": {"float_voltage_v": 53.6, "max_charge_current_a": 140.0}}
-    assert verify_settings("battery", {"float_voltage_v": 53.603}, None, after) == []  # within tolerance
-    assert verify_settings("battery", {"float_voltage_v": 54.0}, None, after) == ["float_voltage_v"]
+    after = {"battery_charging": {"float_voltage_v": 53.6, "max_charge_current_a": 140.0}}
+    assert verify_settings("battery_charging", {"float_voltage_v": 53.603}, None, after) == []  # within tolerance
+    assert verify_settings("battery_charging", {"float_voltage_v": 54.0}, None, after) == ["float_voltage_v"]
 
 
 # --- validation (§12 rule 1) ----------------------------------------------------
@@ -89,15 +89,15 @@ def test_validate_rejects_unknown_section_field_and_empty():
     with pytest.raises(SettingsValidationError):
         validate_settings(_schema(), "nope", {"x": 1})
     with pytest.raises(SettingsValidationError):
-        validate_settings(_schema(), "globals", {"bogus": 1})
+        validate_settings(_schema(), "work_mode_detail", {"bogus": 1})
     with pytest.raises(SettingsValidationError):
-        validate_settings(_schema(), "globals", {})
+        validate_settings(_schema(), "work_mode_detail", {})
 
 
 def test_validate_enum_must_be_allowed_option():
-    assert validate_settings(_schema(), "globals", {"work_mode": 2}) == {"work_mode": 2}
+    assert validate_settings(_schema(), "work_mode_detail", {"work_mode": 2}) == {"work_mode": 2}
     with pytest.raises(SettingsValidationError):
-        validate_settings(_schema(), "globals", {"work_mode": 9})
+        validate_settings(_schema(), "work_mode_detail", {"work_mode": 9})
 
 
 def test_validate_percentage_bounds_and_time_and_bool():
@@ -107,7 +107,7 @@ def test_validate_percentage_bounds_and_time_and_bool():
     assert validate_settings(_schema(), "timer_slots", {"start_time": "5:5"}, index=0) == {"start_time": "05:05"}
     with pytest.raises(SettingsValidationError):
         validate_settings(_schema(), "timer_slots", {"start_time": "25:00"}, index=0)
-    assert validate_settings(_schema(), "globals", {"grid_charge": 1}) == {"grid_charge": True}
+    assert validate_settings(_schema(), "work_mode", {"grid_charge": 1}) == {"grid_charge": True}
 
 
 def test_validate_repeating_index_required_and_bounded():
@@ -116,7 +116,7 @@ def test_validate_repeating_index_required_and_bounded():
     with pytest.raises(SettingsValidationError):
         validate_settings(_schema(), "timer_slots", {"target_soc_pct": 50}, index=99)
     with pytest.raises(SettingsValidationError):
-        validate_settings(_schema(), "globals", {"grid_charge": True}, index=0)  # not repeating
+        validate_settings(_schema(), "work_mode", {"grid_charge": True}, index=0)  # not repeating
 
 
 # --- apply against the dummy (in-memory, §12 dummy-first) ------------------------
@@ -124,15 +124,15 @@ def test_validate_repeating_index_required_and_bounded():
 async def test_apply_globals_against_dummy_verifies_readback():
     device = _dummy_device()
     before = await device.read_settings()
-    assert before["globals"]["max_sell_power_w"] == 8000.0
+    assert before["work_mode_detail"]["max_sell_power_w"] == 8000.0
 
-    result = await control.apply_settings(device, "globals", {"max_sell_power_w": 5000})
+    result = await control.apply_settings(device, "work_mode_detail", {"max_sell_power_w": 5000})
     assert result.ok and result.mismatches == []
-    assert result.after["globals"]["max_sell_power_w"] == 5000
+    assert result.after["work_mode_detail"]["max_sell_power_w"] == 5000
     assert result.changes == {"max_sell_power_w": {"old": 8000.0, "new": 5000}}
     assert result.etag == settings_etag(result.after)
     # Persisted in-memory: a fresh read reflects it.
-    assert (await device.read_settings())["globals"]["max_sell_power_w"] == 5000
+    assert (await device.read_settings())["work_mode_detail"]["max_sell_power_w"] == 5000
 
 
 @pytest.mark.asyncio
@@ -150,20 +150,20 @@ async def test_apply_if_match_concurrency():
     device = _dummy_device()
     current = settings_etag(await device.read_settings())
     with pytest.raises(StaleSettingsError):
-        await control.apply_settings(device, "globals", {"grid_charge": False}, if_match="stale")
+        await control.apply_settings(device, "work_mode", {"grid_charge": False}, if_match="stale")
     # Correct etag goes through.
-    result = await control.apply_settings(device, "globals", {"grid_charge": False}, if_match=current)
-    assert result.ok and result.after["globals"]["grid_charge"] is False
+    result = await control.apply_settings(device, "work_mode", {"grid_charge": False}, if_match=current)
+    assert result.ok and result.after["work_mode"]["grid_charge"] is False
 
 
 # --- apply over a YAML profile + fake registers (encode + allow-list) ------------
 @pytest.mark.asyncio
 async def test_apply_yaml_encodes_writes_and_reads_back():
     device, transport = _yaml_device()
-    result = await control.apply_settings(device, "globals", {"max_sell_power_w": 4800})
+    result = await control.apply_settings(device, "work_mode_detail", {"max_sell_power_w": 4800})
     assert result.ok
     assert transport.regs[245] == 4800  # confirmed addr for max_sell_power_w
-    assert result.after["globals"]["max_sell_power_w"] == 4800
+    assert result.after["work_mode_detail"]["max_sell_power_w"] == 4800
 
 
 @pytest.mark.asyncio
@@ -192,7 +192,7 @@ async def test_encode_u16_range_guard_rejects_overflow():
     # max_solar_power_w has no explicit bounds, so validation passes a huge value through to
     # the encoder, which refuses anything outside the register's 16-bit range (§12 safety).
     with pytest.raises(control.SettingsError):
-        await control.apply_settings(device, "globals", {"max_solar_power_w": 70000})
+        await control.apply_settings(device, "work_mode_detail", {"max_solar_power_w": 70000})
 
 
 # --- read-back mismatch ⇒ rollback signal (§12 rule 4) --------------------------
@@ -208,7 +208,7 @@ class _StubbornProfile:
         return []
 
     def read_settings(self, raw):
-        return {"globals": {"grid_charge": True}}
+        return {"work_mode": {"grid_charge": True}}
 
     def apply_settings(self, section, values, *, index=None):
         return None  # ignores the write
@@ -217,7 +217,7 @@ class _StubbornProfile:
 @pytest.mark.asyncio
 async def test_apply_reports_mismatch_when_readback_disagrees():
     device = Device("stub", NullTransport(), _StubbornProfile())
-    result = await control.apply_settings(device, "globals", {"grid_charge": False})
+    result = await control.apply_settings(device, "work_mode", {"grid_charge": False})
     assert result.ok is False
     assert result.mismatches == ["grid_charge"]
 
@@ -227,6 +227,41 @@ def test_not_writable_error_carries_addrs():
     assert err.addrs == [99, 100]
 
 
+# --- read-only fields (writable: false) -----------------------------------------
+def test_validate_rejects_writing_a_readonly_field():
+    # The dummy's Grid section is read-only (grid_type / grid_frequency).
+    with pytest.raises(SettingsValidationError):
+        validate_settings(_schema(), "grid", {"grid_type": 1})
+
+
+@pytest.mark.asyncio
+async def test_apply_readonly_field_is_refused_on_dummy():
+    device = _dummy_device()
+    with pytest.raises(SettingsValidationError):
+        await control.apply_settings(device, "grid", {"grid_frequency": 1})
+    # Read-only value is unchanged + still displayed.
+    assert (await device.read_settings())["grid"]["grid_type"] == 0
+
+
+def test_readonly_fields_excluded_from_write_allow_list():
+    # A profile with one read-only and one writable field in a section.
+    spec = {
+        "vendor": "x",
+        "settings": {
+            "grid": {
+                "grid_type": {"addr": 500, "type": "enum", "values": {0: "single_phase"}, "writable": False},
+                "grid_voltage_high_v": {"addr": 501, "type": "u16"},
+            }
+        },
+    }
+    profile = ModbusYamlProfile(spec)
+    allowed = profile.writable_addresses()
+    assert 501 in allowed and 500 not in allowed  # read-only addr excluded
+    # …but the read still covers it (so it's displayed).
+    read = {a for b in profile.settings_blocks() for a in range(b.start, b.start + b.count)}
+    assert 500 in read and 501 in read
+
+
 # --- validation helper edge cases (typed coercion + bounds + time) --------------
 def _yaml_schema():
     return ModbusYamlProfile.from_name("sunsynk-8k-sg05lp1").settings_schema()
@@ -234,29 +269,29 @@ def _yaml_schema():
 
 def test_validate_bool_rejects_non_boolean():
     with pytest.raises(SettingsValidationError):
-        validate_settings(_schema(), "globals", {"grid_charge": 5})
+        validate_settings(_schema(), "work_mode", {"grid_charge": 5})
 
 
 def test_validate_enum_rejects_unparseable():
     with pytest.raises(SettingsValidationError):
-        validate_settings(_schema(), "globals", {"work_mode": "abc"})
+        validate_settings(_schema(), "work_mode_detail", {"work_mode": "abc"})
 
 
 def test_validate_rejects_boolean_for_numeric_fields():
     # A bool must not sneak in where an enum/number is expected (bool is an int subclass).
     with pytest.raises(SettingsValidationError):
-        validate_settings(_schema(), "globals", {"work_mode": True})
+        validate_settings(_schema(), "work_mode_detail", {"work_mode": True})
     with pytest.raises(SettingsValidationError):
-        validate_settings(_schema(), "battery", {"float_voltage_v": True})
+        validate_settings(_schema(), "battery_charging", {"float_voltage_v": True})
 
 
 def test_validate_number_coerces_string_and_rejects_garbage_and_nonfinite():
     # number field accepts a numeric string…
-    assert validate_settings(_schema(), "battery", {"float_voltage_v": "53.6"}) == {"float_voltage_v": 53.6}
+    assert validate_settings(_schema(), "battery_charging", {"float_voltage_v": "53.6"}) == {"float_voltage_v": 53.6}
     # …but rejects non-numeric strings, wrong types, and non-finite values.
     for bad in ("abc", [1], float("inf"), float("nan")):
         with pytest.raises(SettingsValidationError):
-            validate_settings(_schema(), "battery", {"float_voltage_v": bad})
+            validate_settings(_schema(), "battery_charging", {"float_voltage_v": bad})
 
 
 def test_validate_number_bounds_both_directions():
@@ -302,7 +337,7 @@ class _ReadOnlyProfile:
 async def test_apply_on_non_writable_device_raises():
     device = Device("ro", NullTransport(), _ReadOnlyProfile())
     with pytest.raises(control.SettingsError):
-        await control.apply_settings(device, "globals", {"grid_charge": False})
+        await control.apply_settings(device, "work_mode", {"grid_charge": False})
 
 
 class _RogueProfile:
@@ -318,7 +353,7 @@ class _RogueProfile:
         return []
 
     def read_settings(self, raw):
-        return {"globals": {"grid_charge": True}}
+        return {"work_mode": {"grid_charge": True}}
 
     def writable_addresses(self):
         return {232}  # the legitimate grid_charge register
@@ -331,4 +366,4 @@ class _RogueProfile:
 async def test_apply_rejects_write_outside_allow_list():
     device = Device("rogue", FakeRegisters(), _RogueProfile())
     with pytest.raises(NotWritableError):
-        await control.apply_settings(device, "globals", {"grid_charge": False})
+        await control.apply_settings(device, "work_mode", {"grid_charge": False})
