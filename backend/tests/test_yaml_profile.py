@@ -132,6 +132,8 @@ def test_settings_map_inherited_and_complete():
     assert g["max_sell_power_w"]["addr"] == 245
     assert g["max_solar_power_w"]["addr"] == 53
     assert g["start_grid_charge_soc_pct"]["addr"] == 229
+    # solar_export — toggle-confirmed at [247] bit0 (0→1 when enabled).
+    assert g["solar_export"]["addr"] == 247 and g["solar_export"]["mask"] == 0x01
 
 
 def test_settings_battery_and_timer_addresses():
@@ -221,3 +223,30 @@ def test_decodes_real_grid_charging_capture_signs():
     # Energy balance: import ≈ load + battery charge + conversion losses.
     losses = out["grid_power_w"] - out["load_power_w"] - out["battery_power_w"]
     assert 0 < losses < 600
+
+
+def test_decodes_real_daytime_pv_capture():
+    """The 'enabled-export' daytime capture (2026-06-18) — first real PV generation.
+    Confirms pv1_voltage ×0.1 under load (265.1 V, not the night residual), PV producing,
+    and the derived pv_power_w total. Battery lightly discharging (sign holds)."""
+    raw = {
+        109: 2651,   # pv1_voltage_v ×0.1 -> 265.1 V (real string voltage under load)
+        110: 17,     # pv1_current_a ×0.1 -> 1.7 A
+        186: 441,    # pv1_power_w -> 441 W   (265.1 V × 1.7 A ≈ 451 W ✓)
+        187: 0,      # pv2_power_w -> 0
+        183: 5277,   # battery_voltage_v ×0.01 -> 52.77 V
+        184: 61,     # battery_soc_pct -> 61 %
+        190: 79,     # battery_power_w s16 ×-1 -> -79 W (lightly discharging)
+        150: 2484,   # grid_voltage_v ×0.1 -> 248.4 V
+        178: 522,    # load_power_w -> 522 W
+        79: 5003,    # grid_frequency_hz ×0.01 -> 50.03 Hz
+    }
+    out = _profile().decode(raw)
+    assert out["pv1_voltage_v"] == pytest.approx(265.1)
+    assert out["pv1_current_a"] == pytest.approx(1.7)
+    assert out["pv1_power_w"] == 441
+    assert out["pv_power_w"] == 441           # derived sum of MPPTs
+    assert out["battery_soc_pct"] == 61
+    assert out["battery_power_w"] == -79      # discharging -> negative (canonical)
+    assert out["grid_voltage_v"] == pytest.approx(248.4)
+    assert out["grid_frequency_hz"] == pytest.approx(50.03)

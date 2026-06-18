@@ -54,6 +54,10 @@ validation:
     - currents — charge 140 [210], discharge 180 [211], grid-charge 80 [230], gen-charge 40 [227]
     - BMS protocol [325]=0 (CAN); battery capacity [204] = 312 Ah (~16 kWh @ 51.2 V)
     - all 6 work-mode timer slots confirmed — start_time [250-255], power [256-261], target_soc [268-273], charge_from_grid [274-279] bit0 (no end-time reg; cyclic)
+    # Daytime PV capture (pv-gen + enabled-export, 2026-06-18 morning):
+    - pv1_voltage_v [109] = 265.1 V under load (×0.1 confirmed; earlier night residual was 79 V)
+    - pv1_current_a [110] = 1.7 A, pv1_power_w [186] = 441 W (V×I ✓); pv_power_w derived = 441 W
+    - solar_export [247] TOGGLE-CONFIRMED 0→1 when "solar export when battery full" enabled
   unconfirmed:
-    - grid_power_w EXPORT polarity (assumed s16-negative; capture a daytime exporting scan to confirm directly)
-    - pv1_voltage_v daytime under load (night residual only: 79 V then 6.3 V)
+    - grid_power_w EXPORT polarity — still assumed s16-negative; the daytime scan had PV but the
+      battery was at 61% (not full) so it did not export. Needs a battery-full + PV-surplus scan.

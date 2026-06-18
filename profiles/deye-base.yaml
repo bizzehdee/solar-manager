@@ -103,7 +103,7 @@ settings:
     # values are NOT yet screen-verified (decode falls back to the raw int for unknowns).
     work_mode:       { addr: 244, type: enum, values: { 2: zero_export_to_ct } }
     energy_pattern:  { addr: 243, type: enum, values: { 0: battery_first, 1: load_first } }  # confirmed 1 = Load first
-    solar_export:    { addr: 247, type: bool, mask: 0x01 }      # "Solar export when battery full" (confirmed 0 = off)
+    solar_export:    { addr: 247, type: bool, mask: 0x01 }      # "Solar export when battery full" — TOGGLE-CONFIRMED: 0→1 when enabled
     max_sell_power_w:    { addr: 245, type: u16 }               # confirmed 8000 W
     max_solar_power_w:   { addr: 53,  type: u16 }               # confirmed 4800 W
     start_grid_charge_soc_pct: { addr: 229, type: u16 }         # "Start grid charge capacity" (confirmed 30 %)
