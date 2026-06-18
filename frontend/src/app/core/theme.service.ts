@@ -3,7 +3,7 @@ import { Injectable, signal } from '@angular/core';
 // Bootstrap 5.3 native color modes (plan.md §8): sets data-bs-theme on <html>,
 // persists the choice, and defaults to the OS preference.
 export type Theme = 'light' | 'dark';
-const STORAGE_KEY = 'solar-manager.theme';
+const STORAGE_KEY = 'solarvolt.theme';
 
 @Injectable({ providedIn: 'root' })
 export class ThemeService {

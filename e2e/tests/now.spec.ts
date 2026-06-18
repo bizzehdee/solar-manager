@@ -5,7 +5,7 @@ import { test, expect } from '@playwright/test';
 test.describe('Now dashboard (live, on the dummy)', () => {
   test('shell renders with brand and full sidebar nav', async ({ page }) => {
     await page.goto('/');
-    await expect(page.locator('.navbar-brand')).toContainText('Solar Manager');
+    await expect(page.locator('.navbar-brand')).toContainText('SolarVolt');
     await expect(page.locator('.app-sidebar .nav-link')).toHaveCount(5);
   });
 

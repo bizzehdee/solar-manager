@@ -1,7 +1,7 @@
 """Building real devices from configuration (plan.md §4; tasks T030/T031).
 
 Phase 1 has no device-config DB yet (that lands in Phase 2, T047), so a real inverter
-is wired from environment variables: set `SOLAR_MANAGER_MODBUS_PORT` and the default
+is wired from environment variables: set `SOLARVOLT_MODBUS_PORT` and the default
 registry serves a real Sunsynk over RTU instead of the dummy. With nothing set, the
 dummy remains the default — a fresh clone still gives a live synthetic dashboard with
 zero hardware (plan.md §13).

@@ -1,5 +1,5 @@
 {
-  "name": "solar-manager-e2e",
+  "name": "solarvolt-e2e",
   "private": true,
   "description": "Playwright integration tests — drive the full app on the dummy (plan.md §21)",
   "scripts": {

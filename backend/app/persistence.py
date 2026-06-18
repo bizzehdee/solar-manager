@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from .poller import Poller
 from .storage.repository import SqliteHistoryRepository
 
-log = logging.getLogger("solar_manager.persistence")
+log = logging.getLogger("solarvolt.persistence")
 
 
 def _utcnow() -> datetime:

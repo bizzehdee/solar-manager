@@ -1,5 +1,5 @@
 {
-  // Default debug profiles for Solar Manager — hit F5 to debug.
+  // Default debug profiles for SolarVolt — hit F5 to debug.
   //
   // Pick "Full Stack: Backend + Frontend (F5)" from the debug dropdown once;
   // VSCode remembers it, so F5 then launches both with breakpoints working.
@@ -24,7 +24,7 @@
       "cwd": "${workspaceFolder}/backend",
       "python": "${workspaceFolder}/.venv/bin/python",
       "env": {
-        "SOLAR_MANAGER_ENABLE_CONTROL": "false",
+        "SOLARVOLT_ENABLE_CONTROL": "false",
         "PYTHONUNBUFFERED": "1"
       },
       "console": "integratedTerminal",

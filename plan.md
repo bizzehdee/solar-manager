@@ -1,4 +1,4 @@
-# Solar Manager — Implementation Plan
+# SolarVolt — Implementation Plan
 
 A **vendor-agnostic** management & statistics webapp for solar/battery systems — inverters, battery banks, and PV arrays — built so that any brand can be added via a driver/profile.
 Goal: **instant**, **historical**, and **projected** (forecast) views of the system.
@@ -437,7 +437,7 @@ Three subcommands:
 Writing to the inverter is the one feature that can do harm, so it's deliberately constrained:
 
 ### Gated off by default (deployment flag)
-- A single deploy flag — **`SOLAR_MANAGER_ENABLE_CONTROL`** (env var / compose setting), default **`false`** — governs all write capability.
+- A single deploy flag — **`SOLARVOLT_ENABLE_CONTROL`** (env var / compose setting), default **`false`** — governs all write capability.
 - When **off**: write endpoints return **403**, the Control page is hidden, and the device's `"control"` capability is suppressed. The app is **monitoring-only out of the box**, so someone who doesn't know what they're doing can't accidentally reprogram their inverter.
 - When **on**: control surfaces for devices whose profile declares a `settings_schema`. The flag is intentionally a *deployment* decision (not a UI toggle a casual user flips) — opt-in, documented, with a clear "you are enabling writes to your inverter" warning.
 - No user roles/auth (single-house LAN install, §1) — the deploy flag *is* the gate. Protection is the flag + the layered write safeguards below, not login permissions.
@@ -491,7 +491,7 @@ no Docker, no hardware, and nothing to provision:
   backend) for live reload, **or** a one-off `ng build` that the backend then serves — so the
   whole UI is reachable with just the backend running.
 - **Defaults make it work with zero config:** the **`DummyProfile` simulator is the default
-  device**, the DB is a local SQLite file in the working dir, and `SOLAR_MANAGER_ENABLE_CONTROL`
+  device**, the DB is a local SQLite file in the working dir, and `SOLARVOLT_ENABLE_CONTROL`
   is off — so a fresh clone produces a live, populated dashboard (synthetic data) on first run.
 - A **`make dev`** target (and documented manual steps) brings up backend + frontend together.
 - This path is what CI and contributors use; keep it working — if a change can only run under
@@ -508,11 +508,11 @@ no Docker, no hardware, and nothing to provision:
 
 ### A. Native install on Raspberry Pi / Ubuntu (primary)
 - **Targets:** fresh **Ubuntu** (Server/Desktop) on a Raspberry Pi (ARM64); also any Debian/Ubuntu x86 box.
-- **Backend:** Python venv (`python3 -m venv`), `pip install -r requirements.txt`, run **Uvicorn/Gunicorn** under a **systemd service** (`solar-manager.service`) so it starts on boot and restarts on failure.
+- **Backend:** Python venv (`python3 -m venv`), `pip install -r requirements.txt`, run **Uvicorn/Gunicorn** under a **systemd service** (`solarvolt.service`) so it starts on boot and restarts on failure.
 - **Frontend:** Angular built to static files (`ng build`) and **served by the FastAPI app itself** (or nginx) — one process, one port, no separate web server needed.
-- **Database:** SQLite file under `/var/lib/solar-manager/` (or the service user's home). Nothing to provision.
+- **Database:** SQLite file under `/var/lib/solarvolt/` (or the service user's home). Nothing to provision.
 - **Serial access:** add the service user to the **`dialout`** group for `/dev/ttyUSB*` access to the USB-RS485 adapter; pin the adapter to a stable path via a **udev rule** (so it isn't `ttyUSB0` one boot and `ttyUSB1` the next).
-- **Config:** a single `.env` / config file (DB path, serial port, poll interval, `SOLAR_MANAGER_ENABLE_CONTROL`, etc.); systemd `EnvironmentFile`.
+- **Config:** a single `.env` / config file (DB path, serial port, poll interval, `SOLARVOLT_ENABLE_CONTROL`, etc.); systemd `EnvironmentFile`.
 - **Install ergonomics:** an **`install.sh`** (and a `Makefile`) that creates the venv, builds the frontend, installs the systemd unit, sets up the udev rule and group — fresh-Ubuntu-to-running in one script. Document the manual steps too.
 - **Updates:** `git pull` + rebuild + `systemctl restart`; SQLite makes backup a file copy.
 
@@ -528,7 +528,7 @@ Cutting a release is driven entirely by **pushing a git tag matching `version/x.
 - **Gate first:** the release build **re-runs the full CI hard gates (§21)** — build, unit tests, coverage, no-CDN check. A red build never produces a release.
 - **Version derivation:** the **`x.y`** is parsed from the tag (`version/x.y` → `x.y`) and is the single source of truth — it **names the GitHub Release** (release title = `x.y`), tags the artifacts, and is **stamped into the app** so the footer (§8) and `/api/health` report the running version (no hand-edited version constants).
 - **Artifacts attached to the release:**
-  - a versioned source/runtime bundle (`solar-manager-x.y.tar.gz`) containing the production `ng build` output (self-hosted assets, no CDN), the backend, `install.sh`, and the systemd unit — i.e. a native-install-ready package;
+  - a versioned source/runtime bundle (`solarvolt-x.y.tar.gz`) containing the production `ng build` output (self-hosted assets, no CDN), the backend, `install.sh`, and the systemd unit — i.e. a native-install-ready package;
   - optionally the multi-arch (arm64+amd64) Docker image pushed to **GHCR** tagged `x.y` (and `latest`).
 - **Publish:** the workflow creates the GitHub Release named `x.y` with auto-generated release notes (changelog from commits/PRs since the previous `version/*` tag) and uploads the artifacts. Releases live on the repo the Project tracks; the workflow activates once the repo is on GitHub.
 
@@ -650,7 +650,7 @@ A second test tier covers what unit tests **structurally cannot**: behaviour tha
 
 What stays **out** of Playwright: register decode/scaling/sign math, settings encode/read, energy/forecast/stats arithmetic, allow-list rejection logic — all of that is faster and more thorough as unit tests (above). E2E asserts the *wiring and the user experience*, not the arithmetic.
 
-- **Mechanics:** Playwright (TS) with headless Chromium/WebKit; a fixture boots the app in dummy mode on an ephemeral port and tears it down; tests are seed-deterministic so live values are assertable. Control-flow tests set `SOLAR_MANAGER_ENABLE_CONTROL=true` only in that test env.
+- **Mechanics:** Playwright (TS) with headless Chromium/WebKit; a fixture boots the app in dummy mode on an ephemeral port and tears it down; tests are seed-deterministic so live values are assertable. Control-flow tests set `SOLARVOLT_ENABLE_CONTROL=true` only in that test env.
 
 ### The bar (CI gate)
 - **All tests pass — 100% green is the merge gate.** Non-negotiable; a red unit **or Playwright E2E** suite blocks merge.

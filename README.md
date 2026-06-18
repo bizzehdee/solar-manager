@@ -1,4 +1,4 @@
-# Solar Manager
+# SolarVolt
 
 A free, open-source web app to **monitor, chart and (optionally) control your home
 solar + battery system** — from your own LAN, with no cloud account and no subscription.
@@ -58,14 +58,14 @@ inverter. No inverter, no config, no cloud.
 Plug a USB-RS485 adapter into the inverter's RS485 port and point the app at it:
 
 ```sh
-export SOLAR_MANAGER_MODBUS_PORT=/dev/ttyUSB0   # your adapter
-# optional: SOLAR_MANAGER_MODBUS_BAUD=9600  SOLAR_MANAGER_MODBUS_SLAVE_ID=1
+export SOLARVOLT_MODBUS_PORT=/dev/ttyUSB0   # your adapter
+# optional: SOLARVOLT_MODBUS_BAUD=9600  SOLARVOLT_MODBUS_SLAVE_ID=1
 make dev
 ```
 
-With `SOLAR_MANAGER_MODBUS_PORT` set, the app reads your real inverter instead of the
+With `SOLARVOLT_MODBUS_PORT` set, the app reads your real inverter instead of the
 dummy. Control/write-back stays **off** unless you explicitly enable it
-(`SOLAR_MANAGER_ENABLE_CONTROL=true`) — the app is monitoring-only by default.
+(`SOLARVOLT_ENABLE_CONTROL=true`) — the app is monitoring-only by default.
 
 ## Project status
 
@@ -82,6 +82,6 @@ The forecast fetches weather from Open-Meteo's free public API — the **only** 
 request the app makes, and only when the Forecast view/config is used. Everything else
 runs entirely on your LAN.
 
-Data is stored in a local SQLite file (`solar-manager.db` by default); set
-`SOLAR_MANAGER_DB_PATH` to relocate it and `SOLAR_MANAGER_RETENTION_DAYS` to tune how long
+Data is stored in a local SQLite file (`solarvolt.db` by default); set
+`SOLARVOLT_DB_PATH` to relocate it and `SOLARVOLT_RETENTION_DAYS` to tune how long
 raw samples are kept (rollups are kept indefinitely).

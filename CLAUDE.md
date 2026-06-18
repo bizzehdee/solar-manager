@@ -1,4 +1,4 @@
-# Solar Manager — Working Brief for Claude
+# SolarVolt — Working Brief for Claude
 
 This file is the standing context for every session. Read it first, then `TASKS.md`
 for the ordered backlog. The full design rationale lives in `plan.md` — treat it as
@@ -51,7 +51,7 @@ internet-exposed.** One household, no accounts/roles.
   - `make install` — venv + `backend/requirements-dev.txt` + `frontend` npm deps.
   - `make dev` — backend (uvicorn `--reload`, :8000) + frontend (`ng serve` proxy, :4200) together.
   - `make test` — backend `pytest --cov-fail-under=80` + frontend vitest.
-  - `make build` — production `ng build` (output `frontend/dist/solar-manager/browser`, served by the backend).
+  - `make build` — production `ng build` (output `frontend/dist/solarvolt/browser`, served by the backend).
   - `make e2e` — Playwright suite (run `make build` first; it boots the backend serving the built UI).
   - Backend-only tests: `cd backend && ../.venv/bin/python -m pytest`.
 - Register scan (real): see `tools/README.md`. `--mock` runs with no hardware.
@@ -123,12 +123,12 @@ Per-phase suffixes (`grid_power_l1_w`) collapse to the unsuffixed total for sing
   protection requires it green.
 - **Releases (`.github/workflows/release.yml`, task T022):** pushing a git tag `version/x.y`
   cuts a release — re-runs the CI gates, parses `x.y` from the tag as the single source of
-  truth (stamped into the footer + `/api/health`), builds the `solar-manager-x.y.tar.gz`
+  truth (stamped into the footer + `/api/health`), builds the `solarvolt-x.y.tar.gz`
   bundle (+ optional GHCR image), and publishes a **GitHub Release titled `x.y`**. Don't
   hand-edit version constants; the tag drives it.
 
 ## Write-back safety (`plan.md` §12) — the highest-risk feature
-Control is **off by default** behind the `SOLAR_MANAGER_ENABLE_CONTROL` deploy flag
+Control is **off by default** behind the `SOLARVOLT_ENABLE_CONTROL` deploy flag
 (env var). When off: write endpoints 403, Control UI hidden, `control` capability
 suppressed. When building any write path, ALL of these apply:
 1. Schema validation (bounds/enums), client- **and** server-side, before any register is touched.

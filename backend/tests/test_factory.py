@@ -38,9 +38,9 @@ def test_registry_builds_real_device_when_port_set():
 
 
 def test_settings_from_env_reads_modbus(monkeypatch):
-    monkeypatch.setenv("SOLAR_MANAGER_MODBUS_PORT", "/dev/ttyUSB1")
-    monkeypatch.setenv("SOLAR_MANAGER_MODBUS_BAUD", "19200")
-    monkeypatch.setenv("SOLAR_MANAGER_MODBUS_SLAVE_ID", "5")
+    monkeypatch.setenv("SOLARVOLT_MODBUS_PORT", "/dev/ttyUSB1")
+    monkeypatch.setenv("SOLARVOLT_MODBUS_BAUD", "19200")
+    monkeypatch.setenv("SOLARVOLT_MODBUS_SLAVE_ID", "5")
     s = Settings.from_env()
     assert s.modbus_port == "/dev/ttyUSB1"
     assert s.modbus_baudrate == 19200
@@ -48,7 +48,7 @@ def test_settings_from_env_reads_modbus(monkeypatch):
 
 
 def test_settings_from_env_defaults_to_no_port(monkeypatch):
-    monkeypatch.delenv("SOLAR_MANAGER_MODBUS_PORT", raising=False)
+    monkeypatch.delenv("SOLARVOLT_MODBUS_PORT", raising=False)
     assert Settings.from_env().modbus_port is None
 
 

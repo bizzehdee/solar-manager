@@ -19,7 +19,7 @@ import logging
 
 from .base import Device, TransportError
 
-log = logging.getLogger("solar_manager.firmware")
+log = logging.getLogger("solarvolt.firmware")
 
 
 async def verify_firmware(device: Device, *, logger: logging.Logger = log) -> list[str]:

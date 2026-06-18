@@ -13,7 +13,7 @@ htmlcov/
 *.db
 *.db-wal
 *.db-shm
-solar-manager.db
+solarvolt.db
 
 # Builds
 dist/

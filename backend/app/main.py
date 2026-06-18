@@ -42,7 +42,7 @@ from .tariff import Tariff
 from .version import __version__
 
 # Where the built Angular app lands (Phase 0 frontend build output). Optional in dev.
-_FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist" / "solar-manager" / "browser"
+_FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist" / "solarvolt" / "browser"
 
 
 def _parse_time(value: str | None, default: float) -> float:
@@ -122,7 +122,7 @@ def create_app(
     clock=system_clock,
     weather: OpenMeteoClient | None = None,
 ) -> FastAPI:
-    app = FastAPI(title="Solar Manager", version=__version__, lifespan=lifespan)
+    app = FastAPI(title="SolarVolt", version=__version__, lifespan=lifespan)
     app.state.settings = settings or Settings.from_env()
     app.state.registry = registry  # None => built from the config DB in lifespan
     app.state.clock = clock

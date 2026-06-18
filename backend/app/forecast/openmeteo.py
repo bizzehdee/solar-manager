@@ -1,6 +1,6 @@
 """Open-Meteo weather client + cache (plan.md §6; task T060).
 
-Fetches the hourly forecast Solar Manager needs — global horizontal irradiance
+Fetches the hourly forecast SolarVolt needs — global horizontal irradiance
 (`shortwave_radiation`), `cloud_cover`, `temperature_2m` — for a lat/lon, and caches it
 (default 6 h TTL ⇒ a few refreshes a day; Open-Meteo is free, no key needed).
 
@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Awaitable, Callable
 
-log = logging.getLogger("solar_manager.forecast")
+log = logging.getLogger("solarvolt.forecast")
 
 _BASE_URL = "https://api.open-meteo.com/v1/forecast"
 _HOURLY = "shortwave_radiation,cloud_cover,temperature_2m"

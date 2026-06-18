@@ -1,4 +1,4 @@
-# Solar Manager — developer entry points (plan.md §13).
+# SolarVolt — developer entry points (plan.md §13).
 # `make dev` is the one-command working-copy run: backend + frontend on the dummy,
 # no hardware. Everything here works straight after `git pull`.
 

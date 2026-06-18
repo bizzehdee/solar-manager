@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for helping grow the hardware list! Solar Manager is **vendor-agnostic** —
+        Thanks for helping grow the hardware list! SolarVolt is **vendor-agnostic** —
         adding a device is *writing a profile (YAML), not patching core code* — but a profile
         is only as good as the **register data** behind it. This form collects that data.
 
@@ -106,12 +106,12 @@ body:
 
         `regscan.py` reverse-engineers the map by **differential scanning** — it reads the device in
         several known states and the registers that *change in the expected direction* reveal the live
-        measurements and their sign conventions. Full guide: **[`tools/README.md`](https://github.com/bizzehdee/solar-manager/blob/main/tools/README.md)**.
+        measurements and their sign conventions. Full guide: **[`tools/README.md`](https://github.com/bizzehdee/solarvolt/blob/main/tools/README.md)**.
 
         ```bash
         # 1. Get the tool (read-only; needs only the tools/ dir)
-        git clone https://github.com/bizzehdee/solar-manager.git
-        cd solar-manager/tools
+        git clone https://github.com/bizzehdee/solarvolt.git
+        cd solarvolt/tools
         python3 -m venv .venv && source .venv/bin/activate
         pip install -r requirements.txt          # pymodbus + pyserial (real scans only)
 

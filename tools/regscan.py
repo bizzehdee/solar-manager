@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""regscan.py — Modbus register-discovery tool for Solar Manager (Phase -1, see plan.md §11).
+"""regscan.py — Modbus register-discovery tool for SolarVolt (Phase -1, see plan.md §11).
 
 READ-ONLY. Sweeps a Modbus device's register space, decodes each register several
 ways, and writes timestamped snapshots. A `report` step consolidates one or more
@@ -1455,7 +1455,7 @@ def _verify_markdown(args, variant, src, rows, collisions, n_ok, n_missing) -> s
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="regscan.py",
-        description="Read-only Modbus register-discovery tool (Solar Manager, plan.md §11).",
+        description="Read-only Modbus register-discovery tool (SolarVolt, plan.md §11).",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )

@@ -1,4 +1,4 @@
-# Solar Manager — Deliverables Backlog
+# SolarVolt — Deliverables Backlog
 
 Ordered, dependency-aware list of **deliverables** (each a shippable/demoable artifact,
 not a whole phase). Work top-down within what's unblocked. See `plan.md` for the spec
@@ -45,7 +45,7 @@ If the deliverable changes what users can do or how they run/install the app, **
 
 - [x] **T010 · FastAPI backend skeleton serving `/api/health`** · Deps: —
   - Async FastAPI app; `/api/health` returns 200 + status payload; config from `.env`/env;
-    `SOLAR_MANAGER_ENABLE_CONTROL` read at startup (default `false`); `requirements.txt` pinned;
+    `SOLARVOLT_ENABLE_CONTROL` read at startup (default `false`); `requirements.txt` pinned;
     run/test commands recorded in `CLAUDE.md`.
   - **Runs from the working copy:** after `git pull` + venv + `pip install -r requirements.txt`,
     `uvicorn … --reload` from the repo root starts the app — no systemd/Docker/hardware; SQLite
@@ -127,7 +127,7 @@ If the deliverable changes what users can do or how they run/install the app, **
 - [x] **T031 · `SunsynkProfile` reading real data** · Deps: T013, T030, T002
   - Drive the SG05LP1 from `sunsynk-8k-sg05lp1.yaml` over RTU; decode the full canonical set. *Refs: §4.*
   - **Done:** `app/devices/factory.py` pairs `ModbusRtuSource` + `ModbusYamlProfile`;
-    env-driven (`SOLAR_MANAGER_MODBUS_PORT` ⇒ real device, else dummy — see `config.py`).
+    env-driven (`SOLARVOLT_MODBUS_PORT` ⇒ real device, else dummy — see `config.py`).
     Canonical `pv_power_w` derived from the per-MPPT powers in `ModbusYamlProfile`.
     Signs now resolved (T002): battery normalized to +charge/−discharge, grid +import/−export.
 - [x] **T032 · Firmware-pin mismatch warning at connect** · Deps: T031
@@ -168,13 +168,13 @@ If the deliverable changes what users can do or how they run/install the app, **
 - [x] **T042 · Persist poller output** · Deps: T016, T040
   - Write samples at a persistence rate decoupled from poll rate. *Refs: §5, §10.*
   - **Done:** `app/persistence.py` `PersistenceService` — own cadence
-    (`SOLAR_MANAGER_PERSIST_INTERVAL_S`, default 30s), dedups by timestamp, DB errors
+    (`SOLARVOLT_PERSIST_INTERVAL_S`, default 30s), dedups by timestamp, DB errors
     degrade to a warning (never blocks the poll loop).
 - [x] **T043 · Aggregator / rollup jobs + retention** · Deps: T042
   - Roll raw→5m→1h→1d on a schedule; prune raw past retention; retention configurable. *Refs: §5.*
   - **Done:** `app/aggregator.py` (pure bucketing, §21 critical, 100% cov) + repository
     `aggregate()`/`prune()`; the persistence service rolls up then prunes raw past
-    `SOLAR_MANAGER_RETENTION_DAYS` (default 14). Re-aggregates the open day so in-progress
+    `SOLARVOLT_RETENTION_DAYS` (default 14). Re-aggregates the open day so in-progress
     buckets stay correct.
 - [x] **T044 · History API (`/api/history`)** · Deps: T043
   - Query by metric/range/resolution (raw|5m|1h|1d). *Refs: §7.*
@@ -266,7 +266,7 @@ If the deliverable changes what users can do or how they run/install the app, **
 ## Phase 5 — Settings display (read-only, ungated)
 
 *Show every device setting and its current value. This is read-only — no register is
-written — so it is **not** gated behind `SOLAR_MANAGER_ENABLE_CONTROL` (reading settings is
+written — so it is **not** gated behind `SOLARVOLT_ENABLE_CONTROL` (reading settings is
 just more monitoring). The settings register map is already screen-validated in
 `profiles/deye-base.yaml` (`settings:` block — work-mode timer, globals, battery). Writing
 those settings is Phase 6.*
@@ -281,7 +281,7 @@ those settings is Phase 6.*
     reads the settings registers via transport then decodes.
 - [x] **T071 · Settings read API (`GET …/settings` + `…/settings/schema`)** · Deps: T070
   - Expose the schema (form spec) + current decoded values per device. **Ungated** —
-    read-only; the `SOLAR_MANAGER_ENABLE_CONTROL` flag is not required to view settings. *Refs: §7, §12.*
+    read-only; the `SOLARVOLT_ENABLE_CONTROL` flag is not required to view settings. *Refs: §7, §12.*
   - **Done:** `GET /api/devices/{id}/settings/schema` + `…/settings` (404 unknown device); device
     list advertises `settings: bool`. Tested ungated (control off → still 200).
 - [x] **T072 · Settings display UI (read-only)** · Deps: T071, T011
@@ -294,7 +294,7 @@ those settings is Phase 6.*
 ## Phase 6 — Settings control / write-back (OFF by default; see CLAUDE.md §12 safety rules)
 
 *Add the ability to **modify** the settings surfaced in Phase 5. Gated behind
-`SOLAR_MANAGER_ENABLE_CONTROL`: when off, the write endpoint 403s and the edit UI/“control”
+`SOLARVOLT_ENABLE_CONTROL`: when off, the write endpoint 403s and the edit UI/“control”
 capability are suppressed — but the Phase-5 read-only view stays available. All seven §12
 write-safety rules apply (allow-list, validation, confirm, read-back, etag, audit, dummy-first).*
 
@@ -310,7 +310,7 @@ write-safety rules apply (allow-list, validation, confirm, read-back, etag, audi
     writes; etag/`If-Match` concurrency (409 on stale). *Refs: §4, §12.*
 - [ ] **T076 · Control write API (flag-gated)** · Deps: T075
   - `PUT …/settings`; 403 + write/“control” capability suppressed when
-    `SOLAR_MANAGER_ENABLE_CONTROL` is off (the T071 read endpoints stay available either way). *Refs: §7, §12.*
+    `SOLARVOLT_ENABLE_CONTROL` is off (the T071 read endpoints stay available either way). *Refs: §7, §12.*
 - [ ] **T077 · Schema-driven Control UI (edit + diff + confirm)** · Deps: T076, T072, T024
   - Extend the Phase-5 read-only form with **editing**: current→proposed diff + confirm dialog;
     read-back result / rollback on mismatch; edit controls shown only when the flag is on. Works
@@ -367,7 +367,7 @@ relocated here from Phase 0. These matter once running unattended on a Pi or cut
 versioned releases.*
 
 - [ ] **T019 · Native install path** · Deps: T010, T011
-  - `systemd` unit (`solar-manager.service`), `install.sh` (venv, frontend build, unit install,
+  - `systemd` unit (`solarvolt.service`), `install.sh` (venv, frontend build, unit install,
     `dialout` group, udev rule pinning the USB-RS485 adapter), `EnvironmentFile` config,
     `Makefile`. FastAPI serves the built Angular static files (one process/port). *Refs: §13.*
 - [-] **T020 · Docker/Compose path (optional)** · Deps: T010, T011
@@ -378,7 +378,7 @@ versioned releases.*
     (e.g. `version/1.0`). Parses **`x.y`** from the tag as the single source of truth.
   - **Re-runs the CI hard gates first** (build/tests/coverage/no-CDN, §21) — no release from a
     red build. Then: stamp `x.y` into the app (footer §8 + `/api/health`); build the versioned
-    bundle `solar-manager-x.y.tar.gz` (prod `ng build` + backend + `install.sh` + systemd unit);
+    bundle `solarvolt-x.y.tar.gz` (prod `ng build` + backend + `install.sh` + systemd unit);
     optionally push multi-arch Docker image to GHCR tagged `x.y`/`latest`.
   - **Creates a GitHub Release titled `x.y`** with auto-generated notes (changelog since the
     previous `version/*` tag) and uploads the artifacts. Activates once the repo is on GitHub. *Refs: §13, §21.*

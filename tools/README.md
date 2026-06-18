@@ -1,6 +1,6 @@
 # Register Discovery Tool (`regscan.py`)
 
-Phase −1 tooling for Solar Manager (see `../plan.md` §11). **Read-only** Modbus
+Phase −1 tooling for SolarVolt (see `../plan.md` §11). **Read-only** Modbus
 register scanner that helps reverse-engineer an inverter's register map by
 correlating decoded values against known system states. Output is a single
 Markdown report designed to be **pasted to Claude** to build a device profile

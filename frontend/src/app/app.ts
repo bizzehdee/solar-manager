@@ -18,7 +18,7 @@ import { StatusPill } from './shared/status-pill';
         <button class="btn btn-sm btn-outline-secondary me-2" (click)="toggleSidebar()" aria-label="Toggle sidebar">
           <i class="bi bi-list"></i>
         </button>
-        <span class="navbar-brand mb-0 h5"><i class="bi bi-sun text-warning"></i> Solar Manager</span>
+        <span class="navbar-brand mb-0 h5"><i class="bi bi-sun text-warning"></i> SolarVolt</span>
         <div class="ms-auto d-flex align-items-center gap-3">
           <app-status-pill [status]="live.status()" />
           <button class="btn btn-sm btn-outline-secondary" (click)="theme.toggle()" aria-label="Toggle theme">

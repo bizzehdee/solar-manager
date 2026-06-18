@@ -6,7 +6,7 @@
   },
   "newProjectRoot": "projects",
   "projects": {
-    "solar-manager": {
+    "solarvolt": {
       "projectType": "application",
       "schematics": {
         "@schematics/angular:component": {
@@ -61,10 +61,10 @@
           "builder": "@angular/build:dev-server",
           "configurations": {
             "production": {
-              "buildTarget": "solar-manager:build:production"
+              "buildTarget": "solarvolt:build:production"
             },
             "development": {
-              "buildTarget": "solar-manager:build:development"
+              "buildTarget": "solarvolt:build:development"
             }
           },
           "defaultConfiguration": "development"

@@ -25,7 +25,7 @@ class Settings:
     # How often the poller reads every device, in seconds (plan.md §10).
     poll_interval_s: float = 3.0
     # SQLite file location (plan.md §5).
-    db_path: str = "solar-manager.db"
+    db_path: str = "solarvolt.db"
     # Persistence cadence + retention (plan.md §5, §10) — decoupled from poll rate.
     persist_interval_s: float = 30.0
     aggregate_interval_s: float = 300.0
@@ -43,17 +43,17 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> "Settings":
-        port = os.environ.get("SOLAR_MANAGER_MODBUS_PORT") or None
+        port = os.environ.get("SOLARVOLT_MODBUS_PORT") or None
         return cls(
-            enable_control=_env_bool("SOLAR_MANAGER_ENABLE_CONTROL", False),
-            poll_interval_s=float(os.environ.get("SOLAR_MANAGER_POLL_INTERVAL_S", "3.0")),
-            db_path=os.environ.get("SOLAR_MANAGER_DB_PATH", "solar-manager.db"),
-            persist_interval_s=float(os.environ.get("SOLAR_MANAGER_PERSIST_INTERVAL_S", "30.0")),
-            aggregate_interval_s=float(os.environ.get("SOLAR_MANAGER_AGGREGATE_INTERVAL_S", "300.0")),
-            history_retention_days=float(os.environ.get("SOLAR_MANAGER_RETENTION_DAYS", "14.0")),
+            enable_control=_env_bool("SOLARVOLT_ENABLE_CONTROL", False),
+            poll_interval_s=float(os.environ.get("SOLARVOLT_POLL_INTERVAL_S", "3.0")),
+            db_path=os.environ.get("SOLARVOLT_DB_PATH", "solarvolt.db"),
+            persist_interval_s=float(os.environ.get("SOLARVOLT_PERSIST_INTERVAL_S", "30.0")),
+            aggregate_interval_s=float(os.environ.get("SOLARVOLT_AGGREGATE_INTERVAL_S", "300.0")),
+            history_retention_days=float(os.environ.get("SOLARVOLT_RETENTION_DAYS", "14.0")),
             modbus_port=port,
-            modbus_baudrate=int(os.environ.get("SOLAR_MANAGER_MODBUS_BAUD", "9600")),
-            modbus_slave_id=int(os.environ.get("SOLAR_MANAGER_MODBUS_SLAVE_ID", "1")),
-            modbus_profile=os.environ.get("SOLAR_MANAGER_MODBUS_PROFILE", "sunsynk-8k-sg05lp1"),
-            modbus_device_id=os.environ.get("SOLAR_MANAGER_MODBUS_DEVICE_ID", "sunsynk"),
+            modbus_baudrate=int(os.environ.get("SOLARVOLT_MODBUS_BAUD", "9600")),
+            modbus_slave_id=int(os.environ.get("SOLARVOLT_MODBUS_SLAVE_ID", "1")),
+            modbus_profile=os.environ.get("SOLARVOLT_MODBUS_PROFILE", "sunsynk-8k-sg05lp1"),
+            modbus_device_id=os.environ.get("SOLARVOLT_MODBUS_DEVICE_ID", "sunsynk"),
         )
