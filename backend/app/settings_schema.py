@@ -42,6 +42,11 @@ class FieldSpec:
     type: str                       # bool | enum | number | time | int
     unit: str | None = None
     options: list[dict] | None = None   # for enum: [{value, label}, ...]
+    # Write bounds (Phase 6): inclusive min/max on the *decoded* value. None ⇒ unbounded
+    # (numeric writes still clamp to the register's u16/s16 range in the encoder). The UI
+    # uses these for input constraints; validation enforces them server-side.
+    min: float | None = None
+    max: float | None = None
 
     def as_dict(self) -> dict:
         d = {"key": self.key, "label": self.label, "type": self.type}
@@ -49,6 +54,10 @@ class FieldSpec:
             d["unit"] = self.unit
         if self.options is not None:
             d["options"] = self.options
+        if self.min is not None:
+            d["min"] = self.min
+        if self.max is not None:
+            d["max"] = self.max
         return d
 
 

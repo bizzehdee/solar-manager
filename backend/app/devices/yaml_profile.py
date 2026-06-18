@@ -144,9 +144,21 @@ class ModbusYamlProfile:
             return FieldSpec(key, humanize(key), "enum", options=enum_options(spec.get("values", {})))
         if t == "time_hhmm":
             return FieldSpec(key, humanize(key), "time")
+        lo, hi = ModbusYamlProfile._field_bounds(key, spec)
         if t == "bits":
-            return FieldSpec(key, humanize(key), "int")
-        return FieldSpec(key, humanize(key), "number", unit=unit_for(key))
+            return FieldSpec(key, humanize(key), "int", min=lo, max=hi)
+        return FieldSpec(key, humanize(key), "number", unit=unit_for(key), min=lo, max=hi)
+
+    @staticmethod
+    def _field_bounds(key: str, spec: dict[str, Any]) -> tuple[float | None, float | None]:
+        """Write bounds for a numeric field: explicit YAML `min`/`max` win; otherwise a
+        percentage (…_pct) defaults to 0–100. Everything else is unbounded here and only
+        clamped to the register's u16/s16 range by the encoder (write-safety, §12)."""
+        lo = spec.get("min")
+        hi = spec.get("max")
+        if lo is None and hi is None and key.endswith("_pct"):
+            return 0.0, 100.0
+        return lo, hi
 
     def settings_blocks(self) -> list[RegBlock]:
         """Register blocks covering every settings address (for the transport read)."""
@@ -199,6 +211,73 @@ class ModbusYamlProfile:
         if t == "s16":
             v = _signed(v, 16)
         return round(v * spec.get("scale", 1) + spec.get("offset", 0), 3)
+
+    # --- settings encode + write allow-list (plan.md §12; tasks T073/T074) -------
+    def writable_addresses(self) -> set[int]:
+        """The ONLY holding registers the API may write — exactly the settings-map
+        addresses (§12 allow-list). No arbitrary-address writes, ever. Identical set to
+        what `settings_blocks()` reads back, so a write is always re-readable."""
+        return self._settings_addresses()
+
+    def encode_settings(
+        self, section_key: str, values: Mapping[str, Any], current_raw: Mapping[int, int], *, index: int | None = None
+    ) -> dict[int, int]:
+        """Encode typed settings → `{addr: register_value}` for one section (slot `index`
+        for the repeating timer). Bool/bits fields are read-modify-write against
+        `current_raw` so co-located bits in one register compose without clobbering each
+        other; numeric values are bounds-checked to the register's u16/s16 range.
+
+        Assumes `values` already passed schema validation (control.validate_settings) — this
+        is the register-level encode + the hard u16/s16 range guard."""
+        sset = self.settings.get(section_key)
+        if sset is None:
+            raise KeyError(f"unknown settings section {section_key!r}")
+        if section_key == "timer_slots":
+            fields = sset.get("fields", {})
+            slot = index or 0
+            addr_of = lambda spec: spec["base_addr"] + slot
+        else:
+            fields = sset
+            addr_of = lambda spec: spec.get("addr")
+
+        writes: dict[int, int] = {}
+        for key, val in values.items():
+            spec = fields[key]
+            addr = addr_of(spec)
+            if addr is None:
+                raise KeyError(f"field {key!r} in {section_key!r} has no address")
+            # Compose onto the working value (prior write this call, else the live register)
+            # so multiple bit-fields sharing one register merge correctly.
+            base = writes.get(addr, current_raw.get(addr, 0)) & 0xFFFF
+            writes[addr] = self._encode_setting(spec, val, base)
+        return writes
+
+    @staticmethod
+    def _encode_setting(spec: dict[str, Any], val: Any, current: int) -> int:
+        t = spec.get("type", "u16")
+        if t == "bool":
+            mask = spec.get("mask", 0xFFFF)
+            return (current & ~mask | (mask if val else 0)) & 0xFFFF
+        if t == "bits":
+            mask = spec.get("mask", 0xFFFF)
+            shift = (mask & -mask).bit_length() - 1
+            return (current & ~mask | ((int(val) << shift) & mask)) & 0xFFFF
+        if t == "enum":
+            return int(val) & 0xFFFF
+        if t == "time_hhmm":
+            hh, mm = str(val).split(":")
+            return (int(hh) * 100 + int(mm)) & 0xFFFF
+        # numeric u16 / s16
+        scale = spec.get("scale", 1)
+        offset = spec.get("offset", 0)
+        raw = round((float(val) - offset) / scale)
+        if t == "s16":
+            if not -32768 <= raw <= 32767:
+                raise ValueError(f"value {val} out of signed 16-bit range after scaling")
+            return raw & 0xFFFF
+        if not 0 <= raw <= 65535:
+            raise ValueError(f"value {val} out of 16-bit register range after scaling")
+        return raw
 
     @property
     def info(self) -> DeviceInfo:

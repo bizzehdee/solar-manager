@@ -26,9 +26,12 @@ and watch your panels, battery and grid in real time.
   time-of-use, with seasonal variants).
 - **Fault & battery-health surfacing** — decoded inverter fault codes shown as a banner;
   battery State-of-Health / cycles panel when the BMS reports them.
-- **Inverter settings viewer** — the Control page shows every decoded setting (work-mode
-  timer slots, charge/SoC limits, battery voltages, work mode) read-only. *Editing those
-  settings is coming next, gated behind an explicit opt-in flag.*
+- **Inverter settings — view & (optionally) edit** — the Control page shows every decoded
+  setting (work-mode timer slots, charge/SoC limits, battery voltages, work mode). Viewing is
+  always available; **editing is opt-in** (`SOLARVOLT_ENABLE_CONTROL=true`) and, when on, every
+  change is validated, shown as a current→proposed **diff to confirm**, written, then **read
+  back and verified** (a mismatch is flagged, not reported as success). Every write is recorded
+  in an audit log. Off by default — the app is monitoring-only until you turn control on.
 - **Solar & battery forecast** — a weather-driven (free [Open-Meteo](https://open-meteo.com))
   PV-generation forecast for your array (tilt/azimuth/kWp), plus a projected battery-SoC
   curve with empty/full times. Switch between **today / tomorrow / 3-day / 7-day** views
@@ -38,8 +41,7 @@ and watch your panels, battery and grid in real time.
   realistic, time-of-day-aware data, so you can try the whole app on a fresh clone.
 - **Real inverter support** — read live instant data from a Sunsynk SG05LP1 over a
   USB-RS485 adapter.
-- *Coming:* alerts/notifications and opt-in inverter control (work-mode timers). See
-  `TASKS.md` for the roadmap.
+- *Coming:* alerts/notifications. See `TASKS.md` for the roadmap.
 
 ## Try it (no hardware needed)
 
@@ -75,8 +77,10 @@ dummy. Control/write-back stays **off** unless you explicitly enable it
 real register captures, including the **battery and grid power directions** (a daytime
 capture will finalise grid *export* polarity and PV voltage under load). **Persistence +
 History** (Phase 2), **Statistics — energy, self-consumption, cost/savings/CO₂, fault &
-battery-health surfacing** (Phase 3), and the **solar/battery Forecast** (Phase 4) are in.
-Alerts and opt-in control are still on the roadmap (`TASKS.md`).
+battery-health surfacing** (Phase 3), the **solar/battery Forecast** (Phase 4), the read-only
+**settings viewer** (Phase 5) and **opt-in settings control / write-back** (Phase 6, off by
+default, with validation → confirm → read-back-verify → audit) are all in. Alerts &
+notifications are still on the roadmap (`TASKS.md`).
 
 The forecast fetches weather from Open-Meteo's free public API — the **only** outbound
 request the app makes, and only when the Forecast view/config is used. Everything else

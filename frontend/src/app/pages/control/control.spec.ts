@@ -154,6 +154,112 @@ describe('ControlPage', () => {
     expect(text).toContain('53.6 V'); // float_voltage_v with unit
   });
 
+  // --- Phase 6 editing (control enabled) ---
+  function settingsCtl(): DeviceSettingsResponse {
+    return { ...settings(), control_enabled: true, etag: 'abc' };
+  }
+
+  function bootEditable() {
+    const fixture = TestBed.createComponent(ControlPage);
+    fixture.detectChanges();
+    http.expectOne('/api/devices').flush({ devices: [device({ control: true })] });
+    http.expectOne('/api/devices/d1/settings/schema').flush(schema());
+    http.expectOne('/api/devices/d1/settings').flush(settingsCtl());
+    http.expectOne((r) => r.url === '/api/audit').flush({ entries: [] });
+    fixture.detectChanges();
+    return fixture;
+  }
+
+  it('shows edit controls only when control is enabled', () => {
+    const fixture = bootEditable();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.textContent).toContain('Editing is enabled');
+    expect(el.querySelectorAll('button').length).toBeGreaterThan(0);
+    expect(Array.from(el.querySelectorAll('button')).some((b) => b.textContent?.includes('Edit'))).toBe(true);
+  });
+
+  it('builds a current→proposed diff and only sends changed fields, with If-Match', () => {
+    const fixture = bootEditable();
+    const c = fixture.componentInstance;
+    const globals = c.schema()!.sections[0];
+
+    c.startEdit(globals, null);
+    c.setDraft('max_sell_power_w', 5000); // changed
+    c.review(globals, null);
+    fixture.detectChanges();
+
+    // Confirm dialog shows exactly the one changed field.
+    expect(c.confirm()!.rows.length).toBe(1);
+    expect((fixture.nativeElement as HTMLElement).querySelector('.modal')).toBeTruthy();
+
+    c.applyConfirmed();
+    const req = http.expectOne('/api/devices/d1/settings');
+    expect(req.request.method).toBe('PUT');
+    expect(req.request.body).toEqual({ section: 'globals', index: null, values: { max_sell_power_w: 5000 } });
+    expect(req.request.headers.get('If-Match')).toBe('abc');
+    req.flush({
+      device_id: 'd1', ok: true, section: 'globals', index: null,
+      changes: { max_sell_power_w: { old: 8000, new: 5000 } }, mismatches: [], etag: 'def',
+      values: { ...settings().values, globals: { timer_enabled: true, grid_charge: true, work_mode: 2, max_sell_power_w: 5000 } },
+    });
+    http.expectOne((r) => r.url === '/api/audit').flush({ entries: [] });
+    fixture.detectChanges();
+
+    expect(c.feedback()!.cls).toBe('success');
+    expect(c.confirm()).toBeNull();
+    expect(c.edit()).toBeNull();
+    expect((c.values()!.values['globals'] as Record<string, unknown>)['max_sell_power_w']).toBe(5000);
+    expect(c.values()!.etag).toBe('def');
+  });
+
+  it('surfaces a read-back mismatch (409) as a rollback warning and reloads device state', () => {
+    const fixture = bootEditable();
+    const c = fixture.componentInstance;
+    const globals = c.schema()!.sections[0];
+    c.startEdit(globals, null);
+    c.setDraft('max_sell_power_w', 5000);
+    c.review(globals, null);
+    c.applyConfirmed();
+
+    http.expectOne('/api/devices/d1/settings').flush(
+      {
+        device_id: 'd1', ok: false, section: 'globals', index: null, changes: {},
+        mismatches: ['max_sell_power_w'], etag: 'zzz',
+        values: { ...settings().values },
+      },
+      { status: 409, statusText: 'Conflict' },
+    );
+    http.expectOne((r) => r.url === '/api/audit').flush({ entries: [] });
+    fixture.detectChanges();
+
+    expect(c.feedback()!.cls).toBe('danger');
+    expect(c.feedback()!.text).toContain('max_sell_power_w');
+    expect(c.values()!.etag).toBe('zzz');
+  });
+
+  it('reloads (does not clobber) on a stale 412', () => {
+    const fixture = bootEditable();
+    const c = fixture.componentInstance;
+    const globals = c.schema()!.sections[0];
+    c.startEdit(globals, null);
+    c.setDraft('max_sell_power_w', 5000);
+    c.review(globals, null);
+    c.applyConfirmed();
+
+    http.expectOne('/api/devices/d1/settings').flush(
+      { detail: { error: 'stale', current_etag: 'newer' } },
+      { status: 412, statusText: 'Precondition Failed' },
+    );
+    // handleWriteError → load(): re-fetches schema + settings (+ audit on settings success).
+    http.expectOne('/api/devices/d1/settings/schema').flush(schema());
+    http.expectOne('/api/devices/d1/settings').flush(settingsCtl());
+    http.expectOne((r) => r.url === '/api/audit').flush({ entries: [] });
+    fixture.detectChanges();
+
+    expect(c.feedback()!.cls).toBe('warning');
+    expect(c.edit()).toBeNull();
+  });
+
   it('shows the "no settings" alert when the schema is unsupported', () => {
     const fixture = TestBed.createComponent(ControlPage);
     fixture.detectChanges();

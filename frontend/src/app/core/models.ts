@@ -211,6 +211,8 @@ export interface SettingsField {
   type: 'bool' | 'enum' | 'number' | 'time' | 'int';
   unit?: string;
   options?: { value: number; label: string }[]; // enum machine value → human label
+  min?: number; // write bounds (Phase 6) — also used as input constraints
+  max?: number;
 }
 
 /** A group of related fields. `repeating` sections (e.g. timer slots) hold `count` entries. */
@@ -233,5 +235,33 @@ export interface SettingsSchemaResponse {
 export interface DeviceSettingsResponse {
   device_id: string;
   supported: boolean;
+  control_enabled?: boolean; // editing available (deploy flag on AND device writable, Phase 6)
+  etag?: string | null; // optimistic-concurrency token for writes (If-Match)
   values: Record<string, unknown>;
+}
+
+// Settings write-back (plan.md §12 / Phase 6). PUT one section (or one timer slot) of values.
+
+/** Result of a settings write: read-back-verified `ok`, the per-field old→new diff, any
+ *  fields whose read-back disagreed (rollback signal), the new etag, and the full new values. */
+export interface WriteSettingsResponse {
+  device_id: string;
+  ok: boolean;
+  section: string;
+  index: number | null;
+  changes: Record<string, { old: unknown; new: unknown }>;
+  mismatches: string[];
+  etag: string;
+  values: Record<string, unknown>;
+}
+
+/** One audit-log entry: every settings write is recorded (when / source / old→new / result). */
+export interface AuditEntry {
+  ts: number;
+  device_id: string;
+  source: string;
+  section: string;
+  slot: number | null;
+  changes: Record<string, { old: unknown; new: unknown }>;
+  result: 'ok' | 'mismatch' | 'error';
 }

@@ -21,7 +21,8 @@ test.describe('Settings display (read-only, on the dummy)', () => {
     // Enum decoded to its label, not the raw machine value.
     await expect(page.getByText('Zero export to CT')).toBeVisible();
 
-    // Read-only notice (no edit controls in Phase 5).
-    await expect(page.getByText(/Read-only/)).toBeVisible();
+    // With control enabled (Phase 6) the page offers editing rather than a read-only notice.
+    await expect(page.getByText(/Editing is enabled/)).toBeVisible();
+    await expect(page.getByRole('button', { name: /Edit/ }).first()).toBeVisible();
   });
 });

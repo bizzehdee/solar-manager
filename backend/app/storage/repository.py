@@ -48,12 +48,65 @@ def _is_number(v: object) -> bool:
 
 async def open_repositories(
     path: str,
-) -> tuple["SqliteHistoryRepository", "DeviceConfigRepository", "AppConfigRepository"]:
+) -> tuple["SqliteHistoryRepository", "DeviceConfigRepository", "AppConfigRepository", "AuditRepository"]:
     """Open ONE connection (single DB thread) and build the repositories on it, so the
     app has a single SQLite handle. Use this from the app; the per-class `.open()` helpers
     are for standalone use/tests."""
     db = await AsyncDb().open(path)
-    return SqliteHistoryRepository(db), DeviceConfigRepository(db), AppConfigRepository(db)
+    return (
+        SqliteHistoryRepository(db),
+        DeviceConfigRepository(db),
+        AppConfigRepository(db),
+        AuditRepository(db),
+    )
+
+
+class AuditRepository:
+    """Append-only log of settings writes (plan.md §12 rule 6; task T078). Shares the DB."""
+
+    def __init__(self, db: AsyncDb) -> None:
+        self._db = db
+
+    @property
+    def _conn(self):
+        return self._db.conn
+
+    @classmethod
+    async def open(cls, path: str) -> "AuditRepository":
+        return cls(await AsyncDb().open(path))
+
+    async def record(
+        self, ts: float, device_id: str, section: str, changes: Mapping, result: str,
+        *, slot: int | None = None, source: str = "",
+    ) -> None:
+        payload = json.dumps(changes)
+
+        def _insert():
+            self._conn.execute(
+                "INSERT INTO audit (ts, device_id, source, section, slot, changes, result) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (ts, device_id, source, section, slot, payload, result),
+            )
+            self._conn.commit()
+
+        await self._db.run(_insert)
+
+    async def list(self, *, device_id: str | None = None, limit: int = 100) -> list[dict]:
+        """Most-recent writes first (optionally for one device)."""
+        def _query():
+            sql = "SELECT ts, device_id, source, section, slot, changes, result FROM audit"
+            params: list = []
+            if device_id is not None:
+                sql += " WHERE device_id = ?"
+                params.append(device_id)
+            sql += " ORDER BY ts DESC LIMIT ?"
+            params.append(int(limit))
+            return self._conn.execute(sql, params).fetchall()
+
+        rows = await self._db.run(_query)
+        return [
+            {**dict(r), "changes": json.loads(r["changes"])} for r in rows
+        ]
 
 
 class AppConfigRepository:

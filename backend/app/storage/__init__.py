@@ -6,6 +6,7 @@ from .db import connect
 from .migrations import SCHEMA_VERSION, run_migrations
 from .repository import (
     AppConfigRepository,
+    AuditRepository,
     DeviceConfigRepository,
     SeriesPoint,
     SqliteHistoryRepository,
@@ -19,6 +20,7 @@ __all__ = [
     "SqliteHistoryRepository",
     "DeviceConfigRepository",
     "AppConfigRepository",
+    "AuditRepository",
     "SeriesPoint",
     "open_repositories",
 ]

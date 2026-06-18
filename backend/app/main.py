@@ -10,17 +10,19 @@ production (one process, one port); in dev the Angular dev server proxies here.
 from __future__ import annotations
 
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import Body, FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import Body, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import Response
 from starlette.types import Scope
 
+from . import control
 from .config import Settings
 from .devices.base import TransportError, system_clock
 from .devices.factory import (
@@ -37,6 +39,7 @@ from .poller import Poller
 from .stats import StatsService
 from .storage.repository import (
     AppConfigRepository,
+    AuditRepository,
     DeviceConfigRepository,
     SqliteHistoryRepository,
     open_repositories,
@@ -79,10 +82,11 @@ async def lifespan(app: FastAPI):
     settings: Settings = app.state.settings
     clock = app.state.clock
 
-    history_repo, config_repo, app_config = await open_repositories(settings.db_path)
+    history_repo, config_repo, app_config, audit_repo = await open_repositories(settings.db_path)
     app.state.history_repo = history_repo
     app.state.config_repo = config_repo
     app.state.app_config = app_config
+    app.state.audit_repo = audit_repo
     app.state.stats = StatsService(history_repo, app_config)
     weather = app.state.weather or OpenMeteoClient()
     app.state.weather = weather
@@ -272,7 +276,8 @@ def create_app(
             "last_sample_age_s": live["last_sample_age_s"] if live else None,
             "capabilities": sorted(device.capabilities()) if device else [],
             "settings": bool(device and device.has_settings),  # read-only display available (Phase 5)
-            "control": app.state.settings.enable_control and bool(device and "control" in device.capabilities()),
+            # Editable only when the deploy flag is on AND the device is writable (Phase 6).
+            "control": app.state.settings.enable_control and bool(device and device.is_writable),
         }
 
     def _require_device(device_id: str):
@@ -296,11 +301,69 @@ def create_app(
     async def device_settings(device_id: str) -> JSONResponse:
         device = _require_device(device_id)
         values = await device.read_settings()
-        return JSONResponse({
+        etag = control.settings_etag(values) if values is not None else None
+        headers = {"ETag": etag} if etag else None
+        return JSONResponse(
+            {
+                "device_id": device_id,
+                "supported": values is not None,
+                "control_enabled": app.state.settings.enable_control and device.is_writable,
+                "etag": etag,
+                "values": values or {},
+            },
+            headers=headers,
+        )
+
+    # ---- settings write (Phase 6 / T076; GATED behind SOLARVOLT_ENABLE_CONTROL) ----
+    @app.put("/api/devices/{device_id}/settings")
+    async def write_device_settings(device_id: str, request: Request, body: dict = Body(...)) -> JSONResponse:
+        if not app.state.settings.enable_control:
+            # Write-back is a deploy decision; off ⇒ the endpoint doesn't function (§12).
+            raise HTTPException(status_code=403, detail="control is disabled (SOLARVOLT_ENABLE_CONTROL is off)")
+        device = _require_device(device_id)
+        section = body.get("section")
+        values = body.get("values")
+        index = body.get("index")
+        if not isinstance(section, str) or not section:
+            raise HTTPException(status_code=422, detail="body needs a 'section' and 'values'")
+        # If-Match header (preferred) or body etag — optimistic concurrency (§12 rule 5).
+        if_match = request.headers.get("If-Match") or body.get("etag")
+
+        try:
+            result = await control.apply_settings(device, section, values, index=index, if_match=if_match)
+        except control.SettingsValidationError as exc:
+            raise HTTPException(status_code=422, detail={"errors": exc.errors}) from exc
+        except control.StaleSettingsError as exc:
+            raise HTTPException(
+                status_code=412, detail={"error": str(exc), "current_etag": exc.current_etag}
+            ) from exc
+        except control.NotWritableError as exc:
+            raise HTTPException(status_code=400, detail={"error": str(exc), "addrs": exc.addrs}) from exc
+        except TransportError as exc:
+            await _audit(app, device_id, section, index, {}, "error", request)
+            raise HTTPException(status_code=502, detail=f"write failed on the device: {exc}") from exc
+        except control.SettingsError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        await _audit(app, device_id, section, index, result.changes, "ok" if result.ok else "mismatch", request)
+        payload = {
             "device_id": device_id,
-            "supported": values is not None,
-            "values": values or {},
-        })
+            "ok": result.ok,
+            "section": section,
+            "index": index,
+            "changes": result.changes,
+            "mismatches": result.mismatches,
+            "etag": result.etag,
+            "values": result.after,
+        }
+        # Read-back mismatch ⇒ NOT success: surface as a conflict with the rollback info (§12 rule 4).
+        status = 200 if result.ok else 409
+        return JSONResponse(payload, status_code=status, headers={"ETag": result.etag})
+
+    @app.get("/api/audit")
+    async def list_audit(device_id: str | None = None, limit: int = Query(100, ge=1, le=1000)) -> JSONResponse:
+        repo: AuditRepository = app.state.audit_repo
+        return JSONResponse({"entries": await repo.list(device_id=device_id, limit=limit)})
 
     @app.get("/api/devices")
     async def list_devices() -> JSONResponse:
@@ -362,6 +425,20 @@ class SpaStaticFiles(StaticFiles):
             if exc.status_code == 404 and "." not in path.rsplit("/", 1)[-1]:
                 return await super().get_response("index.html", scope)
             raise
+
+
+async def _audit(app, device_id, section, index, changes, result, request: Request) -> None:
+    """Record one settings write to the audit log (§12 rule 6). Never blocks the response —
+    an audit failure is logged, not surfaced (egress/side-effects off the hot path)."""
+    repo: AuditRepository = getattr(app.state, "audit_repo", None)
+    if repo is None:
+        return
+    source = request.client.host if request.client else ""
+    ts = app.state.clock().timestamp()
+    try:
+        await repo.record(ts, device_id, section, changes, result, slot=index, source=source)
+    except Exception as exc:  # pragma: no cover - audit must never break a write response
+        logging.getLogger("solarvolt").warning("audit record failed: %s", exc)
 
 
 def _validate_device_body(body: dict, *, require_id: bool) -> None:

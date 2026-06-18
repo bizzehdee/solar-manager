@@ -3,6 +3,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 
 import {
+  AuditEntry,
   DailyStats,
   DeviceConfig,
   DeviceSettingsResponse,
@@ -14,6 +15,7 @@ import {
   SettingsSchemaResponse,
   Snapshot,
   StatsConfig,
+  WriteSettingsResponse,
 } from './models';
 
 // REST surface (plan.md §7). Same-origin in production; proxied to the backend in dev.
@@ -82,6 +84,26 @@ export class ApiService {
   /** Decoded current settings values for a device (keyed by section). */
   getDeviceSettings(deviceId: string): Observable<DeviceSettingsResponse> {
     return this.http.get<DeviceSettingsResponse>(`/api/devices/${deviceId}/settings`);
+  }
+
+  // --- Settings write-back (plan.md §12 / Phase 6; gated by SOLARVOLT_ENABLE_CONTROL) ---
+
+  /** Write one section (or one timer slot via `index`) of settings. `etag` is sent as
+   *  If-Match for optimistic concurrency (412 if the device changed since it was read). */
+  putDeviceSettings(
+    deviceId: string,
+    body: { section: string; index?: number | null; values: Record<string, unknown> },
+    etag?: string | null,
+  ): Observable<WriteSettingsResponse> {
+    const headers = etag ? { 'If-Match': etag } : undefined;
+    return this.http.put<WriteSettingsResponse>(`/api/devices/${deviceId}/settings`, body, { headers });
+  }
+
+  /** Recent settings-write audit entries (most recent first), optionally for one device. */
+  getAudit(deviceId?: string, limit = 20): Observable<{ entries: AuditEntry[] }> {
+    let params = new HttpParams().set('limit', String(limit));
+    if (deviceId !== undefined) params = params.set('device_id', deviceId);
+    return this.http.get<{ entries: AuditEntry[] }>('/api/audit', { params });
   }
 
   // --- Statistics (plan.md §10) ---

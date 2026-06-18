@@ -291,34 +291,38 @@ those settings is Phase 6.*
     table) via a reusable presentational `<app-setting-value>` (no innerHTML). Playwright E2E
     drives the full stack (dummy decode → API → DOM). Editing arrives in Phase 6.
 
-## Phase 6 — Settings control / write-back (OFF by default; see CLAUDE.md §12 safety rules)
+## Phase 6 — Settings control / write-back ✅ complete (OFF by default; see CLAUDE.md §12 safety rules)
 
 *Add the ability to **modify** the settings surfaced in Phase 5. Gated behind
 `SOLARVOLT_ENABLE_CONTROL`: when off, the write endpoint 403s and the edit UI/“control”
 capability are suppressed — but the Phase-5 read-only view stays available. All seven §12
 write-safety rules apply (allow-list, validation, confirm, read-back, etag, audit, dummy-first).*
 
-- [ ] **T073 · `write_registers` + write-register allow-list** · Deps: T030
+*Status-code note: a failed `If-Match` returns **412 Precondition Failed** (the correct HTTP
+semantics) rather than 409; **409 Conflict** is reserved for a read-back mismatch (the write
+didn't verify ⇒ rollback signal). Validation ⇒ 422, control disabled ⇒ 403.*
+
+- [x] **T073 · `write_registers` + write-register allow-list** · Deps: T030
   - Transport write path; enforce the profile allow-list so only the holding registers declared
     in the settings map are writable — never arbitrary addresses through the API. *Refs: §12.*
-- [ ] **T074 · `encode_settings` + dummy in-memory writes** · Deps: T070, T014
+- [x] **T074 · `encode_settings` + dummy in-memory writes** · Deps: T070, T014
   - Profile `encode_settings()` (typed settings → register writes, bounds/enum validation); the
     dummy applies writes in-memory (mirroring its `read_settings`) so the whole
     validate→write→read-back flow is testable with zero risk. *Refs: §4, §12.*
-- [ ] **T075 · `apply_settings` flow** · Deps: T073, T074
+- [x] **T075 · `apply_settings` flow** · Deps: T073, T074
   - validate → encode → write → re-read → verify → return confirmed state; atomic-ish slot
     writes; etag/`If-Match` concurrency (409 on stale). *Refs: §4, §12.*
-- [ ] **T076 · Control write API (flag-gated)** · Deps: T075
+- [x] **T076 · Control write API (flag-gated)** · Deps: T075
   - `PUT …/settings`; 403 + write/“control” capability suppressed when
     `SOLARVOLT_ENABLE_CONTROL` is off (the T071 read endpoints stay available either way). *Refs: §7, §12.*
-- [ ] **T077 · Schema-driven Control UI (edit + diff + confirm)** · Deps: T076, T072, T024
+- [x] **T077 · Schema-driven Control UI (edit + diff + confirm)** · Deps: T076, T072, T024
   - Extend the Phase-5 read-only form with **editing**: current→proposed diff + confirm dialog;
     read-back result / rollback on mismatch; edit controls shown only when the flag is on. Works
     against the dummy first.
   - **Playwright E2E (high value):** edit a work-mode-timer slot → see the diff → confirm → assert
     the read-back-verified confirmed state renders (full validate→confirm→write→read-back loop
     against the dummy's in-memory write path, control enabled in the test env). *Refs: §8, §12, §21.*
-- [ ] **T078 · Write audit log** · Deps: T075
+- [x] **T078 · Write audit log** · Deps: T075
   - Record every write (when / source client / old→new / result). No "who" (no accounts). *Refs: §12.*
 
 ## Phase 7 — Alerts & integrations (off the hot path, brand-independent)

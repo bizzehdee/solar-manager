@@ -83,6 +83,23 @@ MIGRATIONS: list[tuple[int, str]] = [
         );
         """,
     ),
+    (
+        4,
+        """
+        -- Settings write audit (plan.md §12 rule 6; task T078): every control write,
+        -- success or not. No "who" — the app has no accounts (single-house, no auth).
+        CREATE TABLE audit (
+            ts        REAL NOT NULL,
+            device_id TEXT NOT NULL,
+            source    TEXT NOT NULL DEFAULT '',   -- client hint (e.g. request IP)
+            section   TEXT NOT NULL,
+            slot      INTEGER,                     -- timer-slot index, else NULL
+            changes   TEXT NOT NULL,               -- JSON {field: {old, new}}
+            result    TEXT NOT NULL                -- 'ok' | 'mismatch' | 'error'
+        );
+        CREATE INDEX ix_audit_ts ON audit (ts);
+        """,
+    ),
 ]
 
 SCHEMA_VERSION = MIGRATIONS[-1][0]

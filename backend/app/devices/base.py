@@ -127,9 +127,23 @@ class Device:
         read = getattr(self.profile, "read_settings", None)
         if read is None or self.settings_schema() is None:
             return None
-        blocks = getattr(self.profile, "settings_blocks", lambda: [])()
-        raw = await self._gather(blocks)
+        raw = await self.read_settings_raw()
         return read(raw)
+
+    async def read_settings_raw(self) -> dict[int, int]:
+        """Raw settings registers (empty for a synthesizing profile like the dummy). Used by
+        the control write path for register read-modify-write (Phase 6)."""
+        blocks = getattr(self.profile, "settings_blocks", lambda: [])()
+        return await self._gather(blocks)
+
+    @property
+    def is_writable(self) -> bool:
+        """Whether this device can apply settings writes — a register-backed profile with an
+        `encode_settings`, or a synthesizing profile with an in-memory `apply_settings`
+        (Phase 6). Independent of the SOLARVOLT_ENABLE_CONTROL deploy flag (gated in the API)."""
+        if self.settings_schema() is None:
+            return False
+        return hasattr(self.profile, "encode_settings") or hasattr(self.profile, "apply_settings")
 
     @property
     def info(self) -> DeviceInfo:

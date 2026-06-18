@@ -13,10 +13,11 @@ in Phase 6 (T074); for now the dummy is read-only.
 
 from __future__ import annotations
 
+import copy
 import math
 import random
 from datetime import datetime
-from typing import Mapping, Sequence
+from typing import Any, Mapping, Sequence
 
 from ..metrics import ALL_METRICS
 from ..models import DeviceInfo, MetricValue
@@ -59,6 +60,7 @@ class DummyProfile:
     def __init__(self, *, clock: Clock = system_clock, seed: int = 0) -> None:
         self._clock = clock
         self._seed = seed
+        self._settings = self._initial_settings()  # mutable: control writes apply in-memory
 
     # --- DeviceProfile protocol -------------------------------------------------
     def register_blocks(self) -> list[RegBlock]:
@@ -100,8 +102,8 @@ class DummyProfile:
             ]),
             Section("timer_slots", "Work-mode timer", [
                 FieldSpec("start_time", "Start time", "time"),
-                FieldSpec("power_w", "Power", "number", unit="W"),
-                FieldSpec("target_soc_pct", "Target SoC", "number", unit="%"),
+                FieldSpec("power_w", "Power", "number", unit="W", min=0, max=8000),
+                FieldSpec("target_soc_pct", "Target SoC", "number", unit="%", min=0, max=100),
                 FieldSpec("charge_from_grid", "Charge from grid", "bool"),
             ], repeating=True, count=6),
             Section("battery", "Battery", [
@@ -110,7 +112,8 @@ class DummyProfile:
             ]),
         ])
 
-    def read_settings(self, raw: Mapping[int, int]) -> dict:  # raw ignored
+    @staticmethod
+    def _initial_settings() -> dict:
         """Synthesized current settings — the validated cheap-night-rate plan from the real
         SG05LP1 (grid-charge to 65% overnight, 10% floor by day)."""
         soc = [65, 10, 10, 10, 10, 10]
@@ -124,6 +127,20 @@ class DummyProfile:
             ],
             "battery": {"float_voltage_v": 53.6, "max_charge_current_a": 140.0},
         }
+
+    def read_settings(self, raw: Mapping[int, int]) -> dict:  # raw ignored
+        """Current in-memory settings (a deep copy so callers can't mutate our state)."""
+        return copy.deepcopy(self._settings)
+
+    def apply_settings(self, section_key: str, values: Mapping[str, Any], *, index: int | None = None) -> None:
+        """Apply validated settings to the in-memory store (Phase 6 / T074). The dummy has
+        no registers, so writes are mirrored directly into the state `read_settings` returns
+        — exercising the full validate→write→read-back→verify flow with zero risk.
+        `values` is assumed already validated by control.validate_settings."""
+        if section_key == "timer_slots":
+            self._settings[section_key][index or 0].update(values)
+        else:
+            self._settings[section_key].update(values)
 
     # --- synthesis (pure function of ts; deterministic per second) --------------
     def synthesize(self, ts: datetime) -> dict[str, MetricValue]:

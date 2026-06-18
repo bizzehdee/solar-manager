@@ -33,7 +33,7 @@ async def _seed_day(history):
 
 
 async def test_daily_energy_totals_and_kpis():
-    history, _devices, cfg = await open_repositories(":memory:")
+    history, _devices, cfg, _audit = await open_repositories(":memory:")
     await _seed_day(history)
     stats = StatsService(history, cfg)
 
@@ -52,7 +52,7 @@ async def test_daily_energy_totals_and_kpis():
 
 
 async def test_daily_economics_with_flat_tariff():
-    history, _devices, cfg = await open_repositories(":memory:")
+    history, _devices, cfg, _audit = await open_repositories(":memory:")
     await _seed_day(history)
     await cfg.set("tariff", {"import_rate": 0.30, "export_rate": 0.05, "currency": "GBP"})
     await cfg.set("economics", {"co2_intensity_g_per_kwh": 200.0})
@@ -70,7 +70,7 @@ async def test_daily_economics_with_flat_tariff():
 
 
 async def test_daily_empty_day_is_safe():
-    history, _devices, cfg = await open_repositories(":memory:")
+    history, _devices, cfg, _audit = await open_repositories(":memory:")
     stats = StatsService(history, cfg)
     s = await stats.daily("d", DAY)
     assert s.energy_wh["pv"] == 0.0
