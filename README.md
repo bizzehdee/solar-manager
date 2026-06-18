@@ -17,12 +17,24 @@ and watch your panels, battery and grid in real time.
 
 - **Live "Now" dashboard** — PV, battery SoC/power, grid import/export and load, updating
   in real time over a WebSocket (falls back to polling if the socket drops).
+- **History & charts** — every reading is logged to a local SQLite database, rolled up
+  (5-minute / hourly / daily) and charted, with metric, resolution and date-range pickers.
+- **Multiple devices** — add, edit and remove devices from **Settings › Devices**; mix
+  brands/models freely (each is just a profile).
+- **Statistics** — daily energy totals, self-consumption & self-sufficiency, battery
+  round-trip efficiency, and **cost / savings / CO₂** from a configurable tariff (flat or
+  time-of-use, with seasonal variants).
+- **Fault & battery-health surfacing** — decoded inverter fault codes shown as a banner;
+  battery State-of-Health / cycles panel when the BMS reports them.
+- **Solar & battery forecast** — a weather-driven (free [Open-Meteo](https://open-meteo.com))
+  PV-generation forecast for your array (tilt/azimuth/kWp), plus a projected battery-SoC
+  curve with empty/full times. Configure your site and arrays in Settings.
 - **Works with no hardware out of the box** — a built-in **dummy inverter** produces
   realistic, time-of-day-aware data, so you can try the whole app on a fresh clone.
 - **Real inverter support** — read live instant data from a Sunsynk SG05LP1 over a
   USB-RS485 adapter.
-- *Coming:* history & charts, energy/cost/CO₂ stats, solar forecast, alerts, and opt-in
-  inverter control (work-mode timers). See `TASKS.md` for the roadmap.
+- *Coming:* alerts/notifications and opt-in inverter control (work-mode timers). See
+  `TASKS.md` for the roadmap.
 
 ## Try it (no hardware needed)
 
@@ -53,9 +65,18 @@ dummy. Control/write-back stays **off** unless you explicitly enable it
 ## Project status
 
 **Early development.** The app is fully usable today on the built-in **dummy** inverter
-(live dashboard, WebSocket, the full canonical metric set). **Real Sunsynk SG05LP1 instant
-data over Modbus RTU is now wired up** and validated against real register captures —
-including the **battery and grid power directions** (charge/discharge and import/export),
-which are now confirmed. A daytime capture will finalise one remaining detail (grid *export*
-polarity and PV voltage under load). History, statistics, forecasting and control are still
-on the roadmap (`TASKS.md`).
+(live dashboard, history & charts, multi-device config — the full canonical metric set).
+**Real Sunsynk SG05LP1 instant data over Modbus RTU is wired up** and validated against
+real register captures, including the **battery and grid power directions** (a daytime
+capture will finalise grid *export* polarity and PV voltage under load). **Persistence +
+History** (Phase 2), **Statistics — energy, self-consumption, cost/savings/CO₂, fault &
+battery-health surfacing** (Phase 3), and the **solar/battery Forecast** (Phase 4) are in.
+Alerts and opt-in control are still on the roadmap (`TASKS.md`).
+
+The forecast fetches weather from Open-Meteo's free public API — the **only** outbound
+request the app makes, and only when the Forecast view/config is used. Everything else
+runs entirely on your LAN.
+
+Data is stored in a local SQLite file (`solar-manager.db` by default); set
+`SOLAR_MANAGER_DB_PATH` to relocate it and `SOLAR_MANAGER_RETENTION_DAYS` to tune how long
+raw samples are kept (rollups are kept indefinitely).

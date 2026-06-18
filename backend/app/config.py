@@ -24,8 +24,12 @@ class Settings:
     enable_control: bool = False
     # How often the poller reads every device, in seconds (plan.md §10).
     poll_interval_s: float = 3.0
-    # SQLite file location (Phase 2 uses it; defined here so the surface is stable).
+    # SQLite file location (plan.md §5).
     db_path: str = "solar-manager.db"
+    # Persistence cadence + retention (plan.md §5, §10) — decoupled from poll rate.
+    persist_interval_s: float = 30.0
+    aggregate_interval_s: float = 300.0
+    history_retention_days: float = 14.0
 
     # Real-hardware device (Phase 1). When `modbus_port` is set, the default registry
     # serves this real inverter over RTU instead of the dummy. Unset ⇒ dummy default,
@@ -44,6 +48,9 @@ class Settings:
             enable_control=_env_bool("SOLAR_MANAGER_ENABLE_CONTROL", False),
             poll_interval_s=float(os.environ.get("SOLAR_MANAGER_POLL_INTERVAL_S", "3.0")),
             db_path=os.environ.get("SOLAR_MANAGER_DB_PATH", "solar-manager.db"),
+            persist_interval_s=float(os.environ.get("SOLAR_MANAGER_PERSIST_INTERVAL_S", "30.0")),
+            aggregate_interval_s=float(os.environ.get("SOLAR_MANAGER_AGGREGATE_INTERVAL_S", "300.0")),
+            history_retention_days=float(os.environ.get("SOLAR_MANAGER_RETENTION_DAYS", "14.0")),
             modbus_port=port,
             modbus_baudrate=int(os.environ.get("SOLAR_MANAGER_MODBUS_BAUD", "9600")),
             modbus_slave_id=int(os.environ.get("SOLAR_MANAGER_MODBUS_SLAVE_ID", "1")),

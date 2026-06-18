@@ -11,7 +11,21 @@ import { SocGauge } from '../../shared/soc-gauge';
   selector: 'app-now',
   imports: [MetricCard, SocGauge],
   template: `
-    <h4 class="mb-3">Now</h4>
+    <h4 class="mb-3 d-flex align-items-center gap-2">
+      Now
+      @if (runState(); as rs) {
+        <span class="badge text-bg-secondary text-capitalize">{{ rs }}</span>
+      }
+    </h4>
+
+    <!-- Fault banner (T054): prominent only when the inverter reports active fault codes. -->
+    @if (faultCodes().length > 0) {
+      <div class="alert alert-danger d-flex align-items-center" role="alert">
+        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+        <span>Inverter faults: {{ faultCodes().join(', ') }}</span>
+      </div>
+    }
+
     @if (metrics(); as m) {
       <div class="row g-3 align-items-stretch">
         <div class="col-12 col-lg-3">
@@ -48,6 +62,33 @@ import { SocGauge } from '../../shared/soc-gauge';
           </div>
         </div>
       </div>
+
+      <!-- Battery health panel (T055): capability-gated — shown only when SoH or cycles report. -->
+      @if (hasBatteryHealth()) {
+        <div class="card mt-3">
+          <div class="card-header"><i class="bi bi-battery-charging"></i> Battery health</div>
+          <div class="card-body">
+            <div class="row g-3">
+              <div class="col-6 col-md-3">
+                <div class="small text-secondary">State of Health</div>
+                <div class="fs-5 fw-semibold">{{ fmt(num(m['battery_soh_pct']), '%') }}</div>
+              </div>
+              <div class="col-6 col-md-3">
+                <div class="small text-secondary">Cycles</div>
+                <div class="fs-5 fw-semibold">{{ fmt(num(m['battery_cycles']), '') }}</div>
+              </div>
+              <div class="col-6 col-md-3">
+                <div class="small text-secondary">Temperature</div>
+                <div class="fs-5 fw-semibold">{{ fmt(num(m['battery_temp_c']), '°C') }}</div>
+              </div>
+              <div class="col-6 col-md-3">
+                <div class="small text-secondary">Voltage</div>
+                <div class="fs-5 fw-semibold">{{ fmt(num(m['battery_voltage_v']), 'V') }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      }
     } @else {
       <div class="text-secondary"><span class="spinner-border spinner-border-sm"></span> Waiting for first reading…</div>
     }
@@ -64,6 +105,24 @@ export class NowPage {
     return first?.metrics ?? null;
   });
 
+  /** Active fault codes (string[]) — empty when absent/healthy. Type-guarded (T054). */
+  readonly faultCodes = computed<string[]>(() => {
+    const v = this.metrics()?.['inverter_fault_codes'];
+    return Array.isArray(v) ? v : [];
+  });
+
+  /** Decoded run-state string for the title badge. */
+  readonly runState = computed<string | undefined>(() => {
+    const v = this.metrics()?.['run_state'];
+    return typeof v === 'string' ? v.replace(/_/g, ' ') : undefined;
+  });
+
+  /** Battery health is reported when SoH and/or cycle count are present (capability-gated). */
+  readonly hasBatteryHealth = computed(() => {
+    const m = this.metrics();
+    return this.num(m?.['battery_soh_pct']) !== undefined || this.num(m?.['battery_cycles']) !== undefined;
+  });
+
   readonly gridPower = computed(() => this.num(this.metrics()?.['grid_power_w']));
   readonly gridAbs = computed(() => {
     const v = this.gridPower();
@@ -78,5 +137,10 @@ export class NowPage {
   kwh(v: MetricValue | undefined): number | undefined {
     const n = this.num(v);
     return n === undefined ? undefined : n / 1000;
+  }
+  /** Render a number with an optional unit, or "—" when missing (missing ≠ zero). */
+  fmt(v: number | undefined, unit: string): string {
+    if (v === undefined) return '—';
+    return unit ? `${v} ${unit}` : `${v}`;
   }
 }

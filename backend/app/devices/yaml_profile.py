@@ -225,6 +225,10 @@ class ModbusYamlProfile:
                 # Firmware/protocol packed as high.low bytes: 0x0201 -> "2.1".
                 v = raw[addr] & 0xFFFF
                 return f"{(v >> 8) & 0xFF}.{v & 0xFF}"
+            if t == "enum":
+                raw_v = raw[addr] & 0xFFFF
+                values = spec.get("values", {})
+                return values.get(raw_v, str(raw_v))
             if t == "bits":
                 addrs = addr if isinstance(addr, list) else [addr]
                 mask = spec.get("mask")
@@ -233,6 +237,21 @@ class ModbusYamlProfile:
                     raw_val |= (raw[a] & 0xFFFF) << (16 * i)
                 if mask is not None:
                     raw_val &= mask
+                # With a flag map or bit-prefix, decode set bits to human-readable codes
+                # (plan.md §16): inverter_fault_codes -> ["F01", "F23", ...].
+                flags = spec.get("flags")
+                prefix = spec.get("bit_prefix")
+                if flags or prefix:
+                    names: list[str] = []
+                    for bit in range(16 * len(addrs)):
+                        if raw_val & (1 << bit):
+                            if flags and bit in flags:
+                                names.append(flags[bit])
+                            elif prefix:
+                                names.append(f"{prefix}{bit + 1:02d}")
+                            else:
+                                names.append(f"bit{bit}")
+                    return names
                 return raw_val
             if t in ("u16", "s16"):
                 v = raw[addr] & 0xFFFF

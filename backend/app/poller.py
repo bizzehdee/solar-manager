@@ -48,6 +48,10 @@ class Poller:
         self._broadcast()
         return readings
 
+    def latest_readings(self) -> list[Reading]:
+        """The most recent Reading per device (consumed by the persistence service)."""
+        return list(self._latest.values())
+
     async def ensure_polled(self) -> None:
         """Guarantee at least one snapshot exists (used by request handlers/tests so a
         fresh process serves data immediately rather than after the first interval)."""

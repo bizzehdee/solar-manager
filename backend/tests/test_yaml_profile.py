@@ -96,6 +96,29 @@ def test_capabilities_include_derived_pv_total():
     assert "pv_power_w" in _profile().capabilities()
 
 
+# --- fault / enum decoding (plan.md §16; task T054) -------------------------------
+def test_inverter_status_enum_decodes_to_string():
+    assert _profile().decode({59: 2})["inverter_status"] == "normal"
+    assert _profile().decode({59: 0})["inverter_status"] == "standby"
+    # Unknown enum value falls back to its number as a string.
+    assert _profile().decode({59: 99})["inverter_status"] == "99"
+
+
+def test_run_state_from_grid_connected():
+    assert _profile().decode({194: 1})["run_state"] == "on_grid"
+    assert _profile().decode({194: 0})["run_state"] == "off_grid"
+
+
+def test_fault_bits_decode_to_f_codes():
+    # bit 0 set -> F01; bit 0 of the 2nd register (addr 104) is global bit 16 -> F17.
+    out = _profile().decode({103: 0b1, 104: 0b1, 105: 0, 106: 0})
+    assert out["inverter_fault_codes"] == ["F01", "F17"]
+
+
+def test_no_faults_is_empty_list():
+    assert _profile().decode({103: 0, 104: 0, 105: 0, 106: 0})["inverter_fault_codes"] == []
+
+
 # --- identity / firmware registers (task T032) ------------------------------------
 def test_decode_identity_protocol_and_rated_power():
     # info: protocol addr 2 (version_be, 0x0201 -> "2.1"); rated_power_w [16,17] u32

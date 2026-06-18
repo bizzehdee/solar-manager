@@ -9,8 +9,10 @@ __pycache__/
 *.py[cod]
 htmlcov/
 
-# Databases / runtime data
+# Databases / runtime data (incl. SQLite WAL/SHM sidecars)
 *.db
+*.db-wal
+*.db-shm
 solar-manager.db
 
 # Builds

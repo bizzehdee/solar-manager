@@ -19,7 +19,8 @@ def _client(midday) -> TestClient:
     clock = lambda: midday  # noqa: E731 — deterministic readings
     reg = DeviceRegistry()
     reg.add(Device("dummy", NullTransport(), DummyProfile(clock=clock), clock=clock))
-    app = create_app(settings=Settings(poll_interval_s=60), registry=reg)
+    settings = Settings(poll_interval_s=60, db_path=":memory:", persist_interval_s=3600)
+    app = create_app(settings=settings, registry=reg)
     return TestClient(app)
 
 

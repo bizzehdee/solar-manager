@@ -1,0 +1,340 @@
+"""Repository over SQLite (plan.md §5; tasks T040/T042/T043/T044/T047).
+
+`SqliteHistoryRepository` persists the poller's readings, rolls raw samples up into
+5m/1h/1d buckets, serves history queries, and prunes raw past its retention window.
+`DeviceConfigRepository` stores the device list edited via Settings › Devices.
+
+Both share one `AsyncDb` — a sqlite connection pinned to a single dedicated worker thread
+(`db.py`) — so every statement runs off the event loop, never touches the connection
+concurrently, and is naturally serialized. SQL lives only here — callers see dataclasses
+and dicts (the repository abstraction the rest of the app depends on).
+"""
+
+from __future__ import annotations
+
+import json
+from collections.abc import Mapping
+from dataclasses import dataclass
+
+from ..aggregator import INTERVALS, bucket_rows
+from ..models import Reading
+from .db import AsyncDb
+
+# resolution name -> rollup table (None = raw samples).
+_TABLES: dict[str, str | None] = {"raw": None, "5m": "rollup_5m", "1h": "rollup_1h", "1d": "rollup_1d"}
+_WATERMARK_KEY = "rollup_watermark"
+
+
+@dataclass(frozen=True, slots=True)
+class SeriesPoint:
+    ts: float                 # epoch seconds (raw sample time, or bucket start)
+    value: float              # raw value, or the bucket average
+    min: float | None = None
+    max: float | None = None
+    last: float | None = None
+    n: int | None = None
+
+    def as_dict(self) -> dict:
+        d = {"ts": self.ts, "value": self.value}
+        if self.n is not None:
+            d.update(min=self.min, max=self.max, last=self.last, n=self.n)
+        return d
+
+
+def _is_number(v: object) -> bool:
+    # bool is an int subclass but is a status flag, not a measurement — exclude it.
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
+async def open_repositories(
+    path: str,
+) -> tuple["SqliteHistoryRepository", "DeviceConfigRepository", "AppConfigRepository"]:
+    """Open ONE connection (single DB thread) and build the repositories on it, so the
+    app has a single SQLite handle. Use this from the app; the per-class `.open()` helpers
+    are for standalone use/tests."""
+    db = await AsyncDb().open(path)
+    return SqliteHistoryRepository(db), DeviceConfigRepository(db), AppConfigRepository(db)
+
+
+class AppConfigRepository:
+    """JSON config sections by key (tariff, economics, site, arrays). Shares the DB."""
+
+    def __init__(self, db: AsyncDb) -> None:
+        self._db = db
+
+    @property
+    def _conn(self):
+        return self._db.conn
+
+    @classmethod
+    async def open(cls, path: str) -> "AppConfigRepository":
+        return cls(await AsyncDb().open(path))
+
+    async def get(self, key: str, default=None):
+        row = await self._db.run(
+            lambda: self._conn.execute("SELECT value FROM app_config WHERE key=?", (key,)).fetchone()
+        )
+        return json.loads(row["value"]) if row else default
+
+    async def set(self, key: str, value) -> None:
+        payload = json.dumps(value)
+
+        def _set():
+            self._conn.execute(
+                "INSERT INTO app_config (key, value) VALUES (?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (key, payload),
+            )
+            self._conn.commit()
+
+        await self._db.run(_set)
+
+
+class SqliteHistoryRepository:
+    """Time-series persistence + rollups + retention."""
+
+    def __init__(self, db: AsyncDb) -> None:
+        self._db = db
+
+    @property
+    def _conn(self):
+        return self._db.conn
+
+    @classmethod
+    async def open(cls, path: str) -> "SqliteHistoryRepository":
+        return cls(await AsyncDb().open(path))
+
+    # --- writes (T042) ----------------------------------------------------------
+    async def write_reading(self, reading: Reading) -> int:
+        """Persist the numeric metrics of one reading. Returns the number stored
+        (non-numeric metrics — status strings, fault-code lists — are skipped)."""
+        ts = reading.ts.timestamp()
+        rows = [
+            (ts, reading.device_id, metric, float(value))
+            for metric, value in reading.metrics.items()
+            if _is_number(value)
+        ]
+        if not rows:
+            return 0
+        await self._db.run(self._insert_samples, rows)
+        return len(rows)
+
+    def _insert_samples(self, rows: list[tuple]) -> None:
+        self._conn.executemany(
+            "INSERT INTO samples (ts, device_id, metric, value) VALUES (?, ?, ?, ?)", rows
+        )
+        self._conn.commit()
+
+    # --- rollups (T043) ---------------------------------------------------------
+    async def aggregate(self) -> dict[str, int]:
+        """Roll raw samples into 5m/1h/1d buckets. Recomputes from the start of the day
+        containing the watermark so in-progress buckets stay correct as samples arrive,
+        then advances the watermark. Returns the bucket count written per resolution."""
+        return await self._db.run(self._aggregate)
+
+    def _aggregate(self) -> dict[str, int]:
+        wm = self._get_meta(_WATERMARK_KEY, 0.0)
+        # Recompute the whole day around the watermark — cheap (raw retention is short)
+        # and keeps the current 5m/1h/1d buckets accurate via upsert.
+        start = float(int(wm // INTERVALS["1d"]) * INTERVALS["1d"])
+        cur = self._conn.execute(
+            "SELECT ts, device_id, metric, value FROM samples WHERE ts >= ? ORDER BY ts", (start,)
+        )
+        rows = [(r["ts"], r["device_id"], r["metric"], r["value"]) for r in cur.fetchall()]
+        written: dict[str, int] = {}
+        max_ts = wm
+        for name, interval in INTERVALS.items():
+            buckets = bucket_rows(rows, interval)
+            self._conn.executemany(
+                f"""INSERT INTO rollup_{name} (bucket, device_id, metric, avg, min, max, last, n)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(bucket, device_id, metric) DO UPDATE SET
+                      avg=excluded.avg, min=excluded.min, max=excluded.max,
+                      last=excluded.last, n=excluded.n""",
+                [(b.bucket, b.device_id, b.metric, b.avg, b.min, b.max, b.last, b.n) for b in buckets],
+            )
+            written[name] = len(buckets)
+        for ts, *_ in rows:
+            max_ts = max(max_ts, ts)
+        self._set_meta(_WATERMARK_KEY, max_ts)
+        self._conn.commit()
+        return written
+
+    # --- queries (T044) ---------------------------------------------------------
+    async def query(
+        self, device_id: str, metric: str, start: float, end: float, resolution: str = "raw"
+    ) -> list[SeriesPoint]:
+        if resolution not in _TABLES:
+            raise ValueError(f"Unknown resolution {resolution!r}; expected one of {list(_TABLES)}")
+        return await self._db.run(self._query, device_id, metric, start, end, resolution)
+
+    def _query(self, device_id, metric, start, end, resolution) -> list[SeriesPoint]:
+        table = _TABLES[resolution]
+        if table is None:
+            cur = self._conn.execute(
+                "SELECT ts, value FROM samples WHERE device_id=? AND metric=? AND ts BETWEEN ? AND ? ORDER BY ts",
+                (device_id, metric, start, end),
+            )
+            return [SeriesPoint(r["ts"], r["value"]) for r in cur.fetchall()]
+        cur = self._conn.execute(
+            f"SELECT bucket, avg, min, max, last, n FROM {table} "
+            "WHERE device_id=? AND metric=? AND bucket BETWEEN ? AND ? ORDER BY bucket",
+            (device_id, metric, start, end),
+        )
+        return [
+            SeriesPoint(r["bucket"], r["avg"], r["min"], r["max"], r["last"], r["n"])
+            for r in cur.fetchall()
+        ]
+
+    async def metrics(self, device_id: str) -> list[str]:
+        """Distinct metric names recorded for a device (drives the History picker)."""
+        return await self._db.run(self._metrics, device_id)
+
+    def _metrics(self, device_id: str) -> list[str]:
+        cur = self._conn.execute(
+            "SELECT DISTINCT metric FROM samples WHERE device_id=? ORDER BY metric", (device_id,)
+        )
+        return [r["metric"] for r in cur.fetchall()]
+
+    async def latest(self, device_id: str, metric: str) -> float | None:
+        return await self._db.run(self._latest, device_id, metric)
+
+    def _latest(self, device_id: str, metric: str) -> float | None:
+        cur = self._conn.execute(
+            "SELECT value FROM samples WHERE device_id=? AND metric=? ORDER BY ts DESC LIMIT 1",
+            (device_id, metric),
+        )
+        row = cur.fetchone()
+        return row["value"] if row else None
+
+    # --- retention (T043) -------------------------------------------------------
+    async def prune(self, before_ts: float) -> int:
+        """Delete raw samples older than `before_ts` (rollups are kept). Returns rows
+        removed. Always aggregate before pruning so the rollups already hold the data."""
+        return await self._db.run(self._prune, before_ts)
+
+    def _prune(self, before_ts: float) -> int:
+        cur = self._conn.execute("DELETE FROM samples WHERE ts < ?", (before_ts,))
+        self._conn.commit()
+        return cur.rowcount
+
+    # --- meta helpers -----------------------------------------------------------
+    def _get_meta(self, key: str, default: float) -> float:
+        row = self._conn.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
+        return row["value"] if row else default
+
+    def _set_meta(self, key: str, value: float) -> None:
+        self._conn.execute(
+            "INSERT INTO meta (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (key, value),
+        )
+
+    async def close(self) -> None:
+        await self._db.close()
+
+
+class DeviceConfigRepository:
+    """CRUD for configured devices (Settings › Devices, task T047). Shares the same DB."""
+
+    _FIELDS = ("id", "name", "vendor", "profile", "transport", "params", "poll_interval",
+               "bms_topology", "enabled")
+
+    def __init__(self, db: AsyncDb) -> None:
+        self._db = db
+
+    @property
+    def _conn(self):
+        return self._db.conn
+
+    @classmethod
+    async def open(cls, path: str) -> "DeviceConfigRepository":
+        return cls(await AsyncDb().open(path))
+
+    @staticmethod
+    def _row_to_dict(row) -> dict:
+        d = dict(row)
+        d["params"] = json.loads(d.get("params") or "{}")
+        d["enabled"] = bool(d["enabled"])
+        return d
+
+    async def list(self) -> list[dict]:
+        rows = await self._db.run(
+            lambda: self._conn.execute("SELECT * FROM devices ORDER BY id").fetchall()
+        )
+        return [self._row_to_dict(r) for r in rows]
+
+    async def get(self, device_id: str) -> dict | None:
+        row = await self._db.run(
+            lambda: self._conn.execute("SELECT * FROM devices WHERE id=?", (device_id,)).fetchone()
+        )
+        return self._row_to_dict(row) if row else None
+
+    async def create(self, device: Mapping) -> dict:
+        rec = self._normalize(device)
+        await self._db.run(self._insert, rec)
+        return self._row_to_dict_from_rec(rec)
+
+    def _insert(self, rec: dict) -> None:
+        self._conn.execute(
+            """INSERT INTO devices (id, name, vendor, profile, transport, params,
+                                    poll_interval, bms_topology, enabled)
+               VALUES (:id, :name, :vendor, :profile, :transport, :params,
+                       :poll_interval, :bms_topology, :enabled)""",
+            rec,
+        )
+        self._conn.commit()
+
+    async def update(self, device_id: str, fields: Mapping) -> dict | None:
+        existing = await self.get(device_id)
+        if existing is None:
+            return None
+        merged = {**existing, **{k: v for k, v in fields.items() if k in self._FIELDS}}
+        merged["id"] = device_id
+        rec = self._normalize(merged)
+        await self._db.run(self._update, rec)
+        return self._row_to_dict_from_rec(rec)
+
+    def _update(self, rec: dict) -> None:
+        self._conn.execute(
+            """UPDATE devices SET name=:name, vendor=:vendor, profile=:profile,
+                   transport=:transport, params=:params, poll_interval=:poll_interval,
+                   bms_topology=:bms_topology, enabled=:enabled WHERE id=:id""",
+            rec,
+        )
+        self._conn.commit()
+
+    async def delete(self, device_id: str) -> bool:
+        def _delete():
+            cur = self._conn.execute("DELETE FROM devices WHERE id=?", (device_id,))
+            self._conn.commit()
+            return cur.rowcount
+        return await self._db.run(_delete) > 0
+
+    async def count(self) -> int:
+        row = await self._db.run(
+            lambda: self._conn.execute("SELECT COUNT(*) AS c FROM devices").fetchone()
+        )
+        return row["c"]
+
+    @staticmethod
+    def _normalize(device: Mapping) -> dict:
+        params = device.get("params", {})
+        return {
+            "id": str(device["id"]),
+            "name": str(device.get("name") or device["id"]),
+            "vendor": str(device.get("vendor", "")),
+            "profile": str(device.get("profile", "")),
+            "transport": str(device.get("transport", "dummy")),
+            "params": params if isinstance(params, str) else json.dumps(params),
+            "poll_interval": device.get("poll_interval"),
+            "bms_topology": str(device.get("bms_topology", "inverter")),
+            "enabled": 1 if device.get("enabled", True) else 0,
+        }
+
+    @staticmethod
+    def _row_to_dict_from_rec(rec: dict) -> dict:
+        d = dict(rec)
+        d["params"] = json.loads(d["params"]) if isinstance(d["params"], str) else d["params"]
+        d["enabled"] = bool(d["enabled"])
+        return d

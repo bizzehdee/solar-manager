@@ -53,3 +53,58 @@ def build_registry_from_settings(settings, *, clock=system_clock) -> DeviceRegis
     else:
         registry.add(build_dummy_device(clock=clock))
     return registry
+
+
+def default_device_configs(settings) -> list[dict]:
+    """The rows to seed an empty config DB with — mirrors `build_registry_from_settings`:
+    a real RTU device when a Modbus port is set, else the dummy (plan.md §4/§13/§47)."""
+    if getattr(settings, "modbus_port", None):
+        return [{
+            "id": settings.modbus_device_id,
+            "name": f"{settings.modbus_profile}",
+            "vendor": "sunsynk",
+            "profile": settings.modbus_profile,
+            "transport": "modbus_rtu",
+            "params": {
+                "port": settings.modbus_port,
+                "baudrate": settings.modbus_baudrate,
+                "slave_id": settings.modbus_slave_id,
+            },
+            "bms_topology": "inverter",
+            "enabled": True,
+        }]
+    return [{
+        "id": "dummy", "name": "Simulated Inverter", "vendor": "dummy",
+        "profile": "", "transport": "dummy", "params": {},
+        "bms_topology": "inverter", "enabled": True,
+    }]
+
+
+def build_device_from_config(row: dict, *, clock=system_clock) -> Device | None:
+    """Construct a Device from a config-DB row. Returns None for a disabled or unknown
+    transport (the registry just skips it)."""
+    if not row.get("enabled", True):
+        return None
+    transport = row.get("transport", "dummy")
+    device_id = row["id"]
+    if transport == "dummy":
+        return build_dummy_device(device_id, clock=clock)
+    if transport == "modbus_rtu":
+        params = row.get("params") or {}
+        cfg = ModbusRtuConfig(
+            port=params["port"],
+            baudrate=int(params.get("baudrate", 9600)),
+            slave_id=int(params.get("slave_id", 1)),
+        )
+        return build_modbus_device(device_id, row["profile"], cfg, clock=clock)
+    return None
+
+
+def build_registry_from_configs(rows: list[dict], *, clock=system_clock) -> DeviceRegistry:
+    """Build the registry from config-DB rows (skipping disabled/unknown ones)."""
+    registry = DeviceRegistry()
+    for row in rows:
+        device = build_device_from_config(row, clock=clock)
+        if device is not None:
+            registry.add(device)
+    return registry

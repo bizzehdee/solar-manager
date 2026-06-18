@@ -150,63 +150,115 @@ If the deliverable changes what users can do or how they run/install the app, **
   - **Remaining (needs the unit + daylight):** live full-screen cross-check with PV producing,
     confirming grid **export** polarity and PV1 voltage under load — the pending daytime capture.
 
-## Phase 2 — Persistence & history
+## Phase 2 — Persistence & history ✅ complete
 
-- [ ] **T040 · Storage repository + SQLite schema** · Deps: T012
+- [x] **T040 · Storage repository + SQLite schema** · Deps: T012
   - Repository abstraction; `samples(ts,device_id,metric,value)` + `rollup_5m/1h/1d`. *Refs: §5.*
-- [ ] **T041 · Alembic migrations on startup** · Deps: T040
+  - **Done:** `app/storage/` — `SqliteHistoryRepository` over an `AsyncDb` (one sqlite
+    connection pinned to a single worker thread → off the event loop, serialized, no
+    cross-thread crash). `samples` (ts epoch REAL) + `rollup_5m/1h/1d` (avg/min/max/last/n).
+- [x] **T041 · Migrations on startup** · Deps: T040
   - Versioned schema, migrations run on boot behind the repository so upgrades never lose history. *Refs: §5, §19.*
-- [ ] **T042 · Persist poller output** · Deps: T016, T040
+  - **Done:** `app/storage/migrations.py` — a lightweight versioned migration runner
+    (`schema_version` + ordered, additive (version, SQL) steps applied on boot).
+  - **Deviation from task name:** uses a hand-rolled runner, **not Alembic**. Rationale:
+    Alembic pulls in SQLAlchemy, a heavy dep that fights the project's repeatedly-stated
+    Pi-leanness goal; the runner meets the same done-criteria (versioned, on-boot, additive).
+    Swapping to Alembic later is contained to the storage package. Documented in the module.
+- [x] **T042 · Persist poller output** · Deps: T016, T040
   - Write samples at a persistence rate decoupled from poll rate. *Refs: §5, §10.*
-- [ ] **T043 · Aggregator / rollup jobs + retention** · Deps: T042
-  - Roll raw→5m→1h→1d on a schedule; prune raw past retention; retention windows
-    user-configurable. *Refs: §5.*
-- [ ] **T044 · History API (`/api/history`)** · Deps: T043
-  - Query by metric/range/resolution (5m|1h|1d). *Refs: §7.*
-- [ ] **T045 · History view + charts** · Deps: T044, T011
-  - `ng2-charts` time-series + stacked energy bars; date-range + resolution pickers;
-    day/period comparison overlay; reusable `<time-series-chart>`. *Refs: §8.*
-- [ ] **T046 · Energy accounting** · Deps: T042
-  - Wh by integrating power over time OR diffing the inverter's daily counters (prefer
-    counters; detect midnight reset; handle missed samples). *Refs: §5, §10.*
-- [ ] **T047 · Config DB + Device CRUD (`/api/devices`) + Settings › Devices UI** · Deps: T015, T040, T011
-  - Devices table (vendor/profile, transport+params, poll interval, enabled) + BMS-topology
-    config (Decision #3); CRUD API exposing status + capabilities; Settings page to add/edit/
-    remove devices (dummy preconfigured). *Refs: §5, §7, §8.*
+  - **Done:** `app/persistence.py` `PersistenceService` — own cadence
+    (`SOLAR_MANAGER_PERSIST_INTERVAL_S`, default 30s), dedups by timestamp, DB errors
+    degrade to a warning (never blocks the poll loop).
+- [x] **T043 · Aggregator / rollup jobs + retention** · Deps: T042
+  - Roll raw→5m→1h→1d on a schedule; prune raw past retention; retention configurable. *Refs: §5.*
+  - **Done:** `app/aggregator.py` (pure bucketing, §21 critical, 100% cov) + repository
+    `aggregate()`/`prune()`; the persistence service rolls up then prunes raw past
+    `SOLAR_MANAGER_RETENTION_DAYS` (default 14). Re-aggregates the open day so in-progress
+    buckets stay correct.
+- [x] **T044 · History API (`/api/history`)** · Deps: T043
+  - Query by metric/range/resolution (raw|5m|1h|1d). *Refs: §7.*
+  - **Done:** `GET /api/history` + `GET /api/history/metrics`; epoch or ISO start/end,
+    defaults to last 24h; returns ts/value(+min/max/last/n for rollups).
+- [x] **T045 · History view + charts** · Deps: T044, T011
+  - `ng2-charts` time-series + energy bars; date-range + resolution pickers;
+    reusable `<time-series-chart>`. *Refs: §8.*
+  - **Done:** `pages/history/` + shared `<app-time-series-chart>` (self-hosted ng2-charts;
+    line for power/SoC, bars for `_wh`); metric + resolution + range presets.
+- [x] **T046 · Energy accounting** · Deps: T042
+  - Wh by integrating power OR diffing daily counters (prefer counters; detect midnight
+    reset; handle missed samples). *Refs: §5, §10.*
+  - **Done:** `app/energy.py` (§21 critical, 100% cov) — `integrate_wh` (gap-capped
+    trapezoid), `counter_to_wh` (reset/jitter-aware), self-consumption/-sufficiency ratios.
+    Consumed by the Phase 3 stats engine.
+- [x] **T047 · Config DB + Device CRUD (`/api/devices`) + Settings › Devices UI** · Deps: T015, T040, T011
+  - Devices table + BMS-topology field; CRUD API exposing status + capabilities; Settings
+    page to add/edit/remove devices (dummy preconfigured). *Refs: §5, §7, §8.*
+  - **Done:** `devices` table + `DeviceConfigRepository`; registry is **built from the
+    config DB** on boot (seeded with the dummy / env-configured device); `GET/POST/PUT/DELETE
+    /api/devices` live-update the registry; `pages/settings/` Devices UI.
 
-## Phase 3 — Statistics
+## Phase 3 — Statistics ✅ complete
 
-- [ ] **T050 · Daily/monthly stats engine** · Deps: T043, T046
+- [x] **T050 · Daily/monthly stats engine** · Deps: T043, T046
   - Energy totals, self-consumption %, self-sufficiency/autonomy %. *Refs: §3, §7.*
-- [ ] **T051 · Tariff model + config** · Deps: T047
-  - Import (purchase) & export (feed-in), each flat *or* time-of-use windows with optional
-    seasonal variants. *Refs: §5, Decision #5.*
-- [ ] **T052 · Cost / savings / CO₂ / ROI stats** · Deps: T050, T051
+  - **Done:** `app/stats.py` `StatsService.daily()` — energy per stream (prefers the daily
+    `today_*_wh` counters via the 1d rollup `last`, falls back to integrating power),
+    self-consumption / self-sufficiency / peak PV / round-trip efficiency (100% cov).
+- [x] **T051 · Tariff model + config** · Deps: T047
+  - Import & export, each flat *or* time-of-use windows + optional seasonal variants. *Refs: §5, Decision #5.*
+  - **Done:** `app/tariff.py` — `RateSchedule` (flat + TOU windows, midnight-wrap), `Season`
+    overrides, `Tariff` with dict round-trip; `hourly_deltas` attributes counter energy to
+    windows. Stored in the `app_config` table; edited via `PUT /api/stats/config`.
+- [x] **T052 · Cost / savings / CO₂ / ROI stats** · Deps: T050, T051
   - Cost & savings from tariffs; CO₂ avoided; payback/ROI. *Refs: §3, §19.*
-- [ ] **T053 · Stats API + KPI cards** · Deps: T052, T045
-  - `/api/stats/daily`; History KPI cards (self-consumption, peak, cost saved, CO₂, ROI). *Refs: §7, §8.*
-- [ ] **T054 · Inverter fault/alarm decoding** · Deps: T031, T042
-  - Profile maps raw fault/warning registers → human-readable code lists (`inverter_fault_codes`,
-    `inverter_warning_codes`, `run_state`); Now-view fault banner; logged to history. *Refs: §4, §16.*
-- [ ] **T055 · Battery-health metrics** · Deps: T031
-  - Capability-gated `battery_soh_pct`, `battery_cycles`, `battery_capacity_ah_measured`,
-    round-trip efficiency; battery-detail panel only when reported. *Refs: §4, §17.*
+  - **Done:** `app/economics.py` (100% cov) — import cost / export revenue / net / baseline
+    (TOU-priced) / savings / CO₂ avoided, plus `payback_years` + `roi_percent`. Wired into
+    `StatsService` (cost via TOU-bucketed hourly deltas).
+- [x] **T053 · Stats API + KPI cards** · Deps: T052, T045
+  - `/api/stats/daily`; History KPI cards (self-consumption, peak, cost saved, CO₂, RTE). *Refs: §7, §8.*
+  - **Done:** `GET /api/stats/daily` + `GET/PUT /api/stats/config`; History page KPI-card row
+    + `<app-stat-card>`; tariff/economics editor in Settings.
+- [x] **T054 · Inverter fault/alarm decoding** · Deps: T031, T042
+  - Profile maps fault/warning registers → human-readable code lists; Now-view fault banner. *Refs: §4, §16.*
+  - **Done:** profile `bits` decode gained `flags`/`bit_prefix` → `inverter_fault_codes`
+    decodes to Sunsynk `F01..F64` (active bits); `enum` type → `inverter_status` + derived
+    `run_state` (on/off-grid). Now-view fault banner + run-state badge.
+  - *Note:* no warning register is mapped on this unit (not invented — regscan showed none),
+    so `inverter_warning_codes` is omitted until a register is confirmed. Fault *event*
+    history (an events table) is deferred; faults are surfaced live (non-numeric ⇒ not a sample).
+- [x] **T055 · Battery-health metrics** · Deps: T031
+  - Capability-gated SoH / cycles / capacity, round-trip efficiency; battery-detail panel. *Refs: §4, §17.*
+  - **Done:** round-trip efficiency in `StatsService`/`economics`; Now-view battery-health
+    panel shown only when `battery_soh_pct`/`battery_cycles` are reported.
 
-## Phase 4 — Forecast (Projected)
+## Phase 4 — Forecast (Projected) ✅ complete
 
-- [ ] **T060 · Open-Meteo client + cache** · Deps: T010
+- [x] **T060 · Open-Meteo client + cache** · Deps: T010
   - Fetch `shortwave_radiation`, cloud cover, `temperature_2m`; cache, refresh a few times/day. *Refs: §6.*
-- [ ] **T061 · PV generation model (per array segment)** · Deps: T060, T064
-  - POA from GHI via tilt/azimuth; NMOT thermal derate from panel datasheet (γ_Pmax, NMOT);
-    sum segments; empirical performance-ratio correction. *Refs: §6.*
-- [ ] **T062 · Battery trajectory / SoC projection** · Deps: T061, T050
-  - Forecast PV − forecast load (historical load profile) → projected SoC 24–48h; flag
-    depletion/full-charge times. *Refs: §6.*
-- [ ] **T063 · Forecast API + Forecast view** · Deps: T062, T045
-  - `/api/forecast`; expected-generation curve, projected SoC line, forecast-vs-actual accuracy. *Refs: §6, §7, §8.*
-- [ ] **T064 · Array & site spec config** · Deps: T047
-  - Settings captures kWp, tilt, azimuth, string layout, lat/lon, panel γ_Pmax & NMOT;
-    multiple array segments (2 MPPTs). Defaults: γ_Pmax −0.26 %/°C, NMOT 41 °C. *Refs: §5, Decision #4.*
+  - **Done:** `app/forecast/openmeteo.py` — async client (injectable `fetch` ⇒ network-free
+    tests), 6 h TTL cache; a failed refresh degrades to last-cached/empty + warning (off the
+    hot path). `httpx` added to runtime deps.
+- [x] **T061 · PV generation model (per array segment)** · Deps: T060, T064
+  - POA from GHI via tilt/azimuth; NMOT thermal derate (γ_Pmax, NMOT); sum segments; PR. *Refs: §6.*
+  - **Done:** `app/forecast/model.py` (§21 critical) — PSA solar position, Erbs split +
+    isotropic transposition, NMOT cell-temp derate, per-segment `kWp×POA×temp×PR`, summed.
+    Defaults γ_Pmax −0.26 %/°C, NMOT 41 °C (Decision #4).
+- [x] **T062 · Battery trajectory / SoC projection** · Deps: T061, T050
+  - Forecast PV − forecast load → projected SoC; flag depletion/full times. *Refs: §6.*
+  - **Done:** `app/forecast/battery.py` (§21 critical) — `project_soc` (charge/discharge
+    bounded by power limits + SoC window, surplus/deficit to grid) + depletion/full detection;
+    load profile = historical average by hour-of-day from the 1h rollups.
+- [x] **T063 · Forecast API + Forecast view** · Deps: T062, T045
+  - `/api/forecast`; expected-generation curve, projected SoC line. *Refs: §6, §7, §8.*
+  - **Done:** `app/forecast/service.py` + `GET /api/forecast` + `GET/PUT /api/forecast/config`;
+    `pages/forecast/` view (generation curve, projected-SoC line, depletion/full + expected-today KPIs).
+  - *Note:* forecast-vs-actual **accuracy** is a lightweight `expected_today_wh` for now; a
+    stored-forecast accuracy history is a future refinement.
+- [x] **T064 · Array & site spec config** · Deps: T047
+  - Settings captures kWp/tilt/azimuth, lat/lon, γ_Pmax & NMOT; multiple segments. *Refs: §5, Decision #4.*
+  - **Done:** site/arrays/battery stored in `app_config`; editable in Settings (array-segment
+    list editor); `ArraySegment.from_dict` applies the datasheet defaults.
 
 ## Phase 5 — Control / write-back (OFF by default; see CLAUDE.md safety rules)
 

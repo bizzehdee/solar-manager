@@ -4,9 +4,9 @@ import { Routes } from '@angular/router';
 export const routes: Routes = [
   { path: '', pathMatch: 'full', redirectTo: 'now' },
   { path: 'now', loadComponent: () => import('./pages/now/now').then((m) => m.NowPage), title: 'Now' },
-  { path: 'history', loadComponent: () => import('./pages/placeholder').then((m) => m.HistoryPage), title: 'History' },
-  { path: 'forecast', loadComponent: () => import('./pages/placeholder').then((m) => m.ForecastPage), title: 'Forecast' },
+  { path: 'history', loadComponent: () => import('./pages/history/history').then((m) => m.HistoryPage), title: 'History' },
+  { path: 'forecast', loadComponent: () => import('./pages/forecast/forecast').then((m) => m.ForecastPage), title: 'Forecast' },
   { path: 'control', loadComponent: () => import('./pages/placeholder').then((m) => m.ControlPage), title: 'Control' },
-  { path: 'settings', loadComponent: () => import('./pages/placeholder').then((m) => m.SettingsPage), title: 'Settings' },
+  { path: 'settings', loadComponent: () => import('./pages/settings/settings').then((m) => m.SettingsPage), title: 'Settings' },
   { path: '**', redirectTo: 'now' },
 ];

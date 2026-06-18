@@ -63,11 +63,17 @@ metrics:
   inverter_frequency_hz:    { addr: 193, type: u16, scale: 0.01 }
   inverter_temp_c:          { addr: 91,  type: u16, scale: 0.1, offset: -100 }   # radiator/heatsink
   dc_transformer_temp_c:    { addr: 90,  type: u16, scale: 0.1, offset: -100 }
-  inverter_status:          { addr: 59,  type: u16 }              # "overall state" enum (decode TBD)
+  # "overall state" enum at [59] (validated value 2 = normal/on-grid on this unit).
+  # Seed mapping — verify the other states against the screen.
+  inverter_status:          { addr: 59,  type: enum, values: { 0: standby, 1: selftest, 2: normal, 3: alarm, 4: fault } }
   grid_connected:           { addr: 194, type: u16 }              # 1 = on-grid
+  # Canonical run-state derived from the grid-connection register (plan.md §4/§16).
+  run_state:                { addr: 194, type: enum, values: { 0: off_grid, 1: on_grid } }
 
   # ── faults / alarms (plan.md §16) ──
-  inverter_fault_codes:     { addr: [103, 104, 105, 106], type: bits }   # 4×16-bit fault bitfield
+  # 4×16-bit fault bitfield -> Sunsynk F01..F64 codes (active bits, low word first).
+  # The F-number convention is standard; the per-bit meaning is verified against the screen.
+  inverter_fault_codes:     { addr: [103, 104, 105, 106], type: bits, bit_prefix: "F" }
 
   # ── daily energy counters (raw is kWh ×0.1; ×100 -> Wh per canonical keys) ──
   today_pv_wh:              { addr: 108, type: u16, scale: 100 }
