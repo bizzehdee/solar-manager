@@ -356,8 +356,11 @@ deferred — tracked under "Later — Integrations & notifications" below.*
     error, RTT — tracked in `ModbusRtuSource`). *Refs: §7, §19.*
 - [ ] **T093 · Localization & formatting** · Deps: T011
   - Configurable currency, units, date/time format, timezone; i18n scaffolding (English ships first). *Refs: §19.*
-- [ ] **T094 · Installable PWA** · Deps: T018
-  - Manifest + service worker; installs to phone home screen; rides out brief network blips. *Refs: §19.*
+- [x] **T094 · Installable PWA** · Deps: T018
+  - Self-hosted `manifest.webmanifest` + SVG icon + hand-written `sw.js` (network-first
+    navigations, stale-while-revalidate assets, never caches /api·/ws); registered in
+    production only (main.ts, `isDevMode` guard) so it can't fight `ng serve`. No new deps,
+    no CDN. *Refs: §19.*
 - [x] **T095 · Grid-outage / backup-power event log** · Deps: T042
   - `grid_events.py`: infer grid presence (run_state / grid voltage) + a pure transition
     detector → log outage_start/outage_end. `GridEventService` runs off the poller (off the hot

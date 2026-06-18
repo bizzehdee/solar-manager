@@ -1,0 +1,14 @@
+{
+  "name": "SolarVolt",
+  "short_name": "SolarVolt",
+  "description": "Monitor and control your home solar + battery system, from your own LAN.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#212529",
+  "theme_color": "#ffc107",
+  "icons": [
+    { "src": "icon.svg", "type": "image/svg+xml", "sizes": "any", "purpose": "any maskable" }
+  ]
+}
