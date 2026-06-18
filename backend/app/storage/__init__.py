@@ -5,6 +5,7 @@ repository interface, never on SQL — so the storage engine stays swappable."""
 from .db import connect
 from .migrations import SCHEMA_VERSION, run_migrations
 from .repository import (
+    AlertRepository,
     AppConfigRepository,
     AuditRepository,
     DeviceConfigRepository,
@@ -21,6 +22,7 @@ __all__ = [
     "DeviceConfigRepository",
     "AppConfigRepository",
     "AuditRepository",
+    "AlertRepository",
     "SeriesPoint",
     "open_repositories",
 ]

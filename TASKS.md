@@ -327,22 +327,27 @@ didn't verify ⇒ rollback signal). Validation ⇒ 422, control disabled ⇒ 403
 
 ## Phase 7 — Alerts & integrations (off the hot path, brand-independent)
 
-- [ ] **T080 · Alert rule engine** · Deps: T042
+*Alerts core + Prometheus done; the bigger external publishers (MQTT/HA, PVOutput) and the
+brand-specific notification channels (email/Telegram/Pushover) remain.*
+
+- [x] **T080 · Alert rule engine** · Deps: T042
   - User conditions on any canonical metric/state (low SoC, device offline/stale, inverter fault,
-    forecast depletion, over-temp) with thresholds, hysteresis, debounce, quiet hours;
-    sensible defaults shipped on. *Refs: §15.*
-- [ ] **T081 · Notification channels** · Deps: T080
-  - Pluggable: email (SMTP), Telegram, ntfy, Pushover/Gotify, webhook, in-app; selectable per rule. *Refs: §15.*
-- [ ] **T082 · Alert API + inbox UI** · Deps: T080, T011
-  - `/api/alerts`, `/api/alert-rules` CRUD; inbox with ack/snooze/history; header bell badge. *Refs: §7, §15.*
+    over-temp) with thresholds, hysteresis, debounce, quiet hours; sensible defaults shipped on.
+    Pure engine (`app/alerts/engine.py`, 98% covered) + evaluation service off the hot path. *Refs: §15.*
+- [x] **T081 · Notification channels** *(partial)* · Deps: T080
+  - Pluggable channel seam + **in-app inbox** + **generic webhook** (failure→warning, off the hot
+    path). email (SMTP) / Telegram / ntfy / Pushover/Gotify are webhook-shaped and slot in next. *Refs: §15.*
+- [x] **T082 · Alert API + inbox UI** · Deps: T080, T011
+  - `/api/alerts` (+ack/snooze) and `/api/alert-rules` CRUD; inbox with active/history + ack/snooze;
+    header bell badge. *(Rule-editor UI deferred — rules seed with sensible defaults, editable via API.)* *Refs: §7, §15.*
 - [ ] **T083 · MQTT publisher + Home Assistant auto-discovery** · Deps: T016
   - Publish each `Reading` + per-device status; emit HA discovery configs (zero manual YAML). *Refs: §14.*
 - [ ] **T084 · PVOutput.org upload** · Deps: T050
   - Optional periodic upload (generation, consumption, SoC, temp); API key + system id in Settings. *Refs: §14.*
-- [ ] **T085 · Prometheus `/metrics` endpoint** · Deps: T016
-  - Expose live metrics for Grafana users. *Refs: §7, §14.*
-- [ ] **T086 · Generic outbound webhook** · Deps: T016
-  - POST readings/events to a user URL (Node-RED/IFTTT/custom). *Refs: §14.*
+- [x] **T085 · Prometheus `/metrics` endpoint** · Deps: T016
+  - Exposes live numeric metrics (`solarvolt_<metric>{device=…}`) for Grafana users. *Refs: §7, §14.*
+- [ ] **T086 · Generic outbound webhook** *(alerts covered)* · Deps: T016
+  - Alert egress via the webhook channel (T081); a periodic readings/events webhook still to add. *Refs: §14.*
 
 ## Phase 8 — Polish & operational
 

@@ -48,7 +48,10 @@ def _is_number(v: object) -> bool:
 
 async def open_repositories(
     path: str,
-) -> tuple["SqliteHistoryRepository", "DeviceConfigRepository", "AppConfigRepository", "AuditRepository"]:
+) -> tuple[
+    "SqliteHistoryRepository", "DeviceConfigRepository", "AppConfigRepository",
+    "AuditRepository", "AlertRepository",
+]:
     """Open ONE connection (single DB thread) and build the repositories on it, so the
     app has a single SQLite handle. Use this from the app; the per-class `.open()` helpers
     are for standalone use/tests."""
@@ -58,7 +61,121 @@ async def open_repositories(
         DeviceConfigRepository(db),
         AppConfigRepository(db),
         AuditRepository(db),
+        AlertRepository(db),
     )
+
+
+class AlertRepository:
+    """Alert rules + fired-alert events (plan.md §15; tasks T080/T082). Shares the DB."""
+
+    def __init__(self, db: AsyncDb) -> None:
+        self._db = db
+
+    @property
+    def _conn(self):
+        return self._db.conn
+
+    @classmethod
+    async def open(cls, path: str) -> "AlertRepository":
+        return cls(await AsyncDb().open(path))
+
+    # --- rules ------------------------------------------------------------------
+    async def list_rules(self) -> list[dict]:
+        rows = await self._db.run(
+            lambda: self._conn.execute("SELECT config FROM alert_rules").fetchall()
+        )
+        return [json.loads(r["config"]) for r in rows]
+
+    async def upsert_rule(self, rule: Mapping) -> None:
+        rid, payload = str(rule["id"]), json.dumps(dict(rule))
+
+        def _set():
+            self._conn.execute(
+                "INSERT INTO alert_rules (id, config) VALUES (?, ?) "
+                "ON CONFLICT(id) DO UPDATE SET config=excluded.config",
+                (rid, payload),
+            )
+            self._conn.commit()
+
+        await self._db.run(_set)
+
+    async def delete_rule(self, rule_id: str) -> bool:
+        def _del():
+            cur = self._conn.execute("DELETE FROM alert_rules WHERE id=?", (rule_id,))
+            self._conn.commit()
+            return cur.rowcount
+
+        return await self._db.run(_del) > 0
+
+    async def seed_rules(self, rules: list[Mapping]) -> None:
+        """Insert default rules only when none exist (idempotent first-run seeding)."""
+        existing = await self._db.run(
+            lambda: self._conn.execute("SELECT COUNT(*) AS c FROM alert_rules").fetchone()["c"]
+        )
+        if existing == 0:
+            for r in rules:
+                await self.upsert_rule(r)
+
+    # --- fired alerts -----------------------------------------------------------
+    async def insert_alert(
+        self, *, rule_id, device_id, severity, metric, value, message, fired_at,
+    ) -> int:
+        def _ins():
+            cur = self._conn.execute(
+                "INSERT INTO alerts (rule_id, device_id, severity, metric, value, message, fired_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (rule_id, device_id, severity, metric, value, message, fired_at),
+            )
+            self._conn.commit()
+            return cur.lastrowid
+
+        return await self._db.run(_ins)
+
+    async def clear_active(self, rule_id: str, device_id: str | None, cleared_at: float) -> int:
+        """Mark the open alert(s) for this rule+device cleared. Returns rows updated."""
+        def _clear():
+            cur = self._conn.execute(
+                "UPDATE alerts SET cleared_at=? WHERE rule_id=? AND cleared_at IS NULL "
+                "AND (device_id IS ? OR device_id=?)",
+                (cleared_at, rule_id, device_id, device_id),
+            )
+            self._conn.commit()
+            return cur.rowcount
+
+        return await self._db.run(_clear)
+
+    async def list_alerts(self, *, active_only: bool = False, limit: int = 100) -> list[dict]:
+        def _q():
+            sql = "SELECT * FROM alerts"
+            if active_only:
+                sql += " WHERE cleared_at IS NULL"
+            sql += " ORDER BY fired_at DESC LIMIT ?"
+            return self._conn.execute(sql, (int(limit),)).fetchall()
+
+        return [dict(r) for r in await self._db.run(_q)]
+
+    async def active_count(self) -> int:
+        return await self._db.run(
+            lambda: self._conn.execute(
+                "SELECT COUNT(*) AS c FROM alerts WHERE cleared_at IS NULL AND acked_at IS NULL"
+            ).fetchone()["c"]
+        )
+
+    async def ack(self, alert_id: int, ts: float) -> bool:
+        def _a():
+            cur = self._conn.execute("UPDATE alerts SET acked_at=? WHERE id=?", (ts, alert_id))
+            self._conn.commit()
+            return cur.rowcount
+
+        return await self._db.run(_a) > 0
+
+    async def snooze(self, alert_id: int, until: float) -> bool:
+        def _s():
+            cur = self._conn.execute("UPDATE alerts SET snooze_until=? WHERE id=?", (until, alert_id))
+            self._conn.commit()
+            return cur.rowcount
+
+        return await self._db.run(_s) > 0
 
 
 class AuditRepository:

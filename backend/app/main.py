@@ -23,6 +23,8 @@ from starlette.responses import Response
 from starlette.types import Scope
 
 from . import control
+from .alerts import AlertRule
+from .alerts.service import AlertService
 from .config import Settings
 from .devices.base import TransportError, system_clock
 from .devices.factory import (
@@ -38,6 +40,7 @@ from .persistence import PersistenceService
 from .poller import Poller
 from .stats import StatsService
 from .storage.repository import (
+    AlertRepository,
     AppConfigRepository,
     AuditRepository,
     DeviceConfigRepository,
@@ -82,11 +85,12 @@ async def lifespan(app: FastAPI):
     settings: Settings = app.state.settings
     clock = app.state.clock
 
-    history_repo, config_repo, app_config, audit_repo = await open_repositories(settings.db_path)
+    history_repo, config_repo, app_config, audit_repo, alert_repo = await open_repositories(settings.db_path)
     app.state.history_repo = history_repo
     app.state.config_repo = config_repo
     app.state.app_config = app_config
     app.state.audit_repo = audit_repo
+    app.state.alert_repo = alert_repo
     app.state.stats = StatsService(history_repo, app_config)
     weather = app.state.weather or OpenMeteoClient()
     app.state.weather = weather
@@ -113,9 +117,14 @@ async def lifespan(app: FastAPI):
     )
     app.state.persistence = persistence
     await persistence.start()
+
+    alerts = AlertService(alert_repo, poller, app_config, interval_s=settings.alert_interval_s)
+    app.state.alerts = alerts
+    await alerts.start()
     try:
         yield
     finally:
+        await alerts.stop()
         await persistence.stop()
         await poller.stop()
         await registry.close_all()
@@ -372,6 +381,69 @@ def create_app(
     async def list_audit(device_id: str | None = None, limit: int = Query(100, ge=1, le=1000)) -> JSONResponse:
         repo: AuditRepository = app.state.audit_repo
         return JSONResponse({"entries": await repo.list(device_id=device_id, limit=limit)})
+
+    # ---- alerts (Phase 7 / T082) ----------------------------------------------
+    @app.get("/api/alerts")
+    async def list_alerts(active: bool = False, limit: int = Query(100, ge=1, le=1000)) -> JSONResponse:
+        repo: AlertRepository = app.state.alert_repo
+        return JSONResponse({
+            "alerts": await repo.list_alerts(active_only=active, limit=limit),
+            "active_count": await repo.active_count(),
+        })
+
+    @app.post("/api/alerts/{alert_id}/ack")
+    async def ack_alert(alert_id: int) -> JSONResponse:
+        repo: AlertRepository = app.state.alert_repo
+        if not await repo.ack(alert_id, app.state.clock().timestamp()):
+            raise HTTPException(status_code=404, detail=f"alert {alert_id} not found")
+        return JSONResponse({"ok": True})
+
+    @app.post("/api/alerts/{alert_id}/snooze")
+    async def snooze_alert(alert_id: int, body: dict = Body(default={})) -> JSONResponse:
+        repo: AlertRepository = app.state.alert_repo
+        minutes = float(body.get("minutes", 60))
+        until = app.state.clock().timestamp() + minutes * 60.0
+        if not await repo.snooze(alert_id, until):
+            raise HTTPException(status_code=404, detail=f"alert {alert_id} not found")
+        return JSONResponse({"ok": True, "snooze_until": until})
+
+    @app.get("/api/alert-rules")
+    async def list_alert_rules() -> JSONResponse:
+        repo: AlertRepository = app.state.alert_repo
+        return JSONResponse({"rules": await repo.list_rules()})
+
+    @app.put("/api/alert-rules/{rule_id}")
+    async def put_alert_rule(rule_id: str, body: dict = Body(...)) -> JSONResponse:
+        repo: AlertRepository = app.state.alert_repo
+        body["id"] = rule_id
+        try:
+            rule = AlertRule.from_dict(body)  # validate by round-tripping the model
+        except (KeyError, ValueError, TypeError) as exc:
+            raise HTTPException(status_code=422, detail=f"invalid alert rule: {exc}") from exc
+        await repo.upsert_rule(rule.to_dict())
+        await app.state.alerts.reload()  # pick up the edit on the next tick
+        return JSONResponse(rule.to_dict())
+
+    @app.delete("/api/alert-rules/{rule_id}", status_code=204)
+    async def delete_alert_rule(rule_id: str):
+        repo: AlertRepository = app.state.alert_repo
+        await repo.delete_rule(rule_id)
+        app.state.alerts._engine.forget(rule_id)
+        await app.state.alerts.reload()
+        return JSONResponse(None, status_code=204)
+
+    # ---- Prometheus metrics (Phase 7 / T085) ----------------------------------
+    @app.get("/metrics")
+    async def prometheus_metrics() -> Response:
+        poller: Poller = app.state.poller
+        lines: list[str] = []
+        for device_id, dev in poller.snapshot().get("devices", {}).items():
+            for metric, value in dev.get("metrics", {}).items():
+                if isinstance(value, bool) or not isinstance(value, (int, float)):
+                    continue  # only numeric gauges
+                name = f"solarvolt_{metric}"
+                lines.append(f'{name}{{device="{device_id}"}} {value}')
+        return Response("\n".join(lines) + "\n", media_type="text/plain; version=0.0.4")
 
     @app.get("/api/devices")
     async def list_devices() -> JSONResponse:

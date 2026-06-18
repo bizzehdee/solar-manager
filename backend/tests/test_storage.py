@@ -121,7 +121,7 @@ async def test_device_crud_roundtrip():
 
 
 async def test_open_repositories_shares_one_connection():
-    history, config, _app_config, _audit = await open_repositories(":memory:")
+    history, config, _app_config, _audit, _alerts = await open_repositories(":memory:")
     # Both repos see the same DB: a device written via config is visible to a fresh list,
     # and history writes work on the same connection without cross-thread errors.
     await config.create({"id": "d", "name": "D", "transport": "dummy"})

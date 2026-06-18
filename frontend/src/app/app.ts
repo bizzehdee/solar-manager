@@ -21,6 +21,14 @@ import { StatusPill } from './shared/status-pill';
         <span class="navbar-brand mb-0 h5"><i class="bi bi-sun text-warning"></i> SolarVolt</span>
         <div class="ms-auto d-flex align-items-center gap-3">
           <app-status-pill [status]="live.status()" />
+          <a class="btn btn-sm btn-outline-secondary position-relative" routerLink="alerts" aria-label="Alerts">
+            <i class="bi bi-bell"></i>
+            @if (alertCount() > 0) {
+              <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill text-bg-danger">
+                {{ alertCount() }}<span class="visually-hidden">active alerts</span>
+              </span>
+            }
+          </a>
           <button class="btn btn-sm btn-outline-secondary" (click)="theme.toggle()" aria-label="Toggle theme">
             <i class="bi" [class.bi-moon-stars]="theme.theme() === 'light'" [class.bi-sun]="theme.theme() === 'dark'"></i>
           </button>
@@ -64,12 +72,14 @@ export class App implements OnInit {
   readonly sidebarOpen = signal(isWideViewport());
   readonly version = signal('');
   readonly now = signal(new Date());
+  readonly alertCount = signal(0); // active+unacked alerts, polled for the header bell badge
 
   readonly nav = [
     { path: 'now', label: 'Now', icon: 'bi-speedometer2' },
     { path: 'history', label: 'History', icon: 'bi-graph-up' },
     { path: 'forecast', label: 'Forecast', icon: 'bi-cloud-sun' },
     { path: 'control', label: 'Control', icon: 'bi-sliders' },
+    { path: 'alerts', label: 'Alerts', icon: 'bi-bell' },
     { path: 'settings', label: 'Settings', icon: 'bi-gear' },
   ];
 
@@ -77,6 +87,13 @@ export class App implements OnInit {
     this.live.start();
     this.api.getHealth().subscribe({ next: (h) => this.version.set(h.version) });
     setInterval(() => this.now.set(new Date()), 1000);
+    // Poll the active-alert count for the header bell (the alert engine runs server-side).
+    this.refreshAlertCount();
+    setInterval(() => this.refreshAlertCount(), 30000);
+  }
+
+  private refreshAlertCount(): void {
+    this.api.getAlerts(true, 1).subscribe({ next: (r) => this.alertCount.set(r.active_count) });
   }
 
   toggleSidebar(): void {

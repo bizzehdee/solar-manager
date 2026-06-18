@@ -3,6 +3,8 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 
 import {
+  Alert,
+  AlertsResponse,
   AuditEntry,
   DailyStats,
   DeviceConfig,
@@ -104,6 +106,22 @@ export class ApiService {
     let params = new HttpParams().set('limit', String(limit));
     if (deviceId !== undefined) params = params.set('device_id', deviceId);
     return this.http.get<{ entries: AuditEntry[] }>('/api/audit', { params });
+  }
+
+  // --- Alerts (plan.md §15) ---
+
+  /** Alerts inbox: active-only or full history, with the active-unacked count for the bell. */
+  getAlerts(active = false, limit = 100): Observable<AlertsResponse> {
+    const params = new HttpParams().set('active', String(active)).set('limit', String(limit));
+    return this.http.get<AlertsResponse>('/api/alerts', { params });
+  }
+
+  ackAlert(id: number): Observable<unknown> {
+    return this.http.post(`/api/alerts/${id}/ack`, {});
+  }
+
+  snoozeAlert(id: number, minutes = 60): Observable<unknown> {
+    return this.http.post(`/api/alerts/${id}/snooze`, { minutes });
   }
 
   // --- Statistics (plan.md §10) ---

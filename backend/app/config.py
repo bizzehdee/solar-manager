@@ -30,6 +30,8 @@ class Settings:
     persist_interval_s: float = 30.0
     aggregate_interval_s: float = 300.0
     history_retention_days: float = 14.0
+    # How often the alert engine evaluates rules against the live snapshot (plan.md §15).
+    alert_interval_s: float = 30.0
 
     # Real-hardware device (Phase 1). When `modbus_port` is set, the default registry
     # serves this real inverter over RTU instead of the dummy. Unset ⇒ dummy default,
@@ -51,6 +53,7 @@ class Settings:
             persist_interval_s=float(os.environ.get("SOLARVOLT_PERSIST_INTERVAL_S", "30.0")),
             aggregate_interval_s=float(os.environ.get("SOLARVOLT_AGGREGATE_INTERVAL_S", "300.0")),
             history_retention_days=float(os.environ.get("SOLARVOLT_RETENTION_DAYS", "14.0")),
+            alert_interval_s=float(os.environ.get("SOLARVOLT_ALERT_INTERVAL_S", "30.0")),
             modbus_port=port,
             modbus_baudrate=int(os.environ.get("SOLARVOLT_MODBUS_BAUD", "9600")),
             modbus_slave_id=int(os.environ.get("SOLARVOLT_MODBUS_SLAVE_ID", "1")),

@@ -268,6 +268,26 @@ export interface WriteSettingsResponse {
   values: Record<string, unknown>;
 }
 
+// Alerts (plan.md §15). A fired alert row + the active count for the header bell.
+export interface Alert {
+  id: number;
+  rule_id: string;
+  device_id: string | null;
+  severity: 'info' | 'warning' | 'critical' | string;
+  metric: string;
+  value: number | null;
+  message: string;
+  fired_at: number; // epoch seconds
+  cleared_at: number | null; // null ⇒ still active
+  acked_at: number | null;
+  snooze_until: number | null;
+}
+
+export interface AlertsResponse {
+  alerts: Alert[];
+  active_count: number; // active AND unacknowledged — drives the bell badge
+}
+
 /** One audit-log entry: every settings write is recorded (when / source / old→new / result). */
 export interface AuditEntry {
   ts: number;

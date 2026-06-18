@@ -42,7 +42,13 @@ and watch your panels, battery and grid in real time.
   realistic, time-of-day-aware data, so you can try the whole app on a fresh clone.
 - **Real inverter support** — read live instant data from a Sunsynk SG05LP1 over a
   USB-RS485 adapter.
-- *Coming:* alerts/notifications. See `TASKS.md` for the roadmap.
+- **Alerts** — a rule engine (low battery SoC, device offline/stale, inverter fault, over-temp…)
+  with thresholds, hysteresis, debounce and quiet hours; sensible rules shipped on. Active/history
+  **inbox** with acknowledge & snooze and a header **bell badge**. Optional **webhook** delivery
+  (more channels coming). All off the hot path — a failing notifier never disrupts monitoring.
+- **Integrations** — a **Prometheus `/metrics`** endpoint exposes live readings for Grafana users.
+  (MQTT / Home-Assistant discovery and PVOutput are on the roadmap.)
+- *Coming:* more notification channels (email/Telegram/…), MQTT + Home Assistant, PVOutput. See `TASKS.md`.
 
 ## Try it (no hardware needed)
 
@@ -80,8 +86,9 @@ capture will finalise grid *export* polarity and PV voltage under load). **Persi
 History** (Phase 2), **Statistics — energy, self-consumption, cost/savings/CO₂, fault &
 battery-health surfacing** (Phase 3), the **solar/battery Forecast** (Phase 4), the read-only
 **settings viewer** (Phase 5) and **opt-in settings control / write-back** (Phase 6, off by
-default, with validation → confirm → read-back-verify → audit) are all in. Alerts &
-notifications are still on the roadmap (`TASKS.md`).
+default, with validation → confirm → read-back-verify → audit) and the **alerts engine +
+inbox + Prometheus endpoint** (Phase 7) are all in. The remaining integrations (MQTT/Home
+Assistant, PVOutput) and extra notification channels are on the roadmap (`TASKS.md`).
 
 The forecast fetches weather from Open-Meteo's free public API — the **only** outbound
 request the app makes, and only when the Forecast view/config is used. Everything else

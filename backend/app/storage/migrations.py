@@ -100,6 +100,33 @@ MIGRATIONS: list[tuple[int, str]] = [
         CREATE INDEX ix_audit_ts ON audit (ts);
         """,
     ),
+    (
+        5,
+        """
+        -- Alert rules (plan.md §15; task T080): one row per rule, config as JSON.
+        CREATE TABLE alert_rules (
+            id     TEXT PRIMARY KEY,
+            config TEXT NOT NULL
+        );
+        -- Fired alerts (active + history). cleared_at NULL = still active; acked_at /
+        -- snooze_until NULL = unacknowledged / not snoozed.
+        CREATE TABLE alerts (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            rule_id      TEXT NOT NULL,
+            device_id    TEXT,
+            severity     TEXT NOT NULL,
+            metric       TEXT NOT NULL,
+            value        REAL,
+            message      TEXT NOT NULL DEFAULT '',
+            fired_at     REAL NOT NULL,
+            cleared_at   REAL,
+            acked_at     REAL,
+            snooze_until REAL
+        );
+        CREATE INDEX ix_alerts_fired ON alerts (fired_at);
+        CREATE INDEX ix_alerts_active ON alerts (cleared_at);
+        """,
+    ),
 ]
 
 SCHEMA_VERSION = MIGRATIONS[-1][0]
