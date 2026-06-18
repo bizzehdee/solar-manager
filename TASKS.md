@@ -402,14 +402,24 @@ versioned releases.*
 
 - [-] **L05 · Import historical data from a Solar Assistant backup** · Deps: T040, T043, T046
   - **Deliverable:** a one-off importer (CLI + an upload in Settings) that ingests a
-    [Solar Assistant](https://solar-assistant.io) export/backup, maps its series to our
-    **canonical metric vocabulary** (§4), bulk-loads into `samples`, and re-runs the rollups —
-    so people migrating off Solar Assistant keep their history.
-  - **Done when:** a real SA backup imports into a fresh DB and the History/Stats views show the
+    [Solar Assistant](https://solar-assistant.io) backup, maps its series to our **canonical
+    metric vocabulary** (§4), bulk-loads into `samples`, and re-runs the rollups — so people
+    migrating off Solar Assistant keep their history.
+  - **Backup format:** a `tar.gz` of **metadata files + `.tsm` files** → SA stores its
+    time-series in **InfluxDB**, and `.tsm` = InfluxDB's *Time-Structured Merge* shard format
+    (the metadata is the Influx catalog/retention info). So the importer reads InfluxDB data,
+    not CSV. Realistic ingestion paths, cheapest-first:
+    1. **`influx_inspect export … -out <lineprotocol>`** → parse InfluxDB **line protocol**
+       (simple text: `measurement,tags field=val ts`) → map → load. Needs the `influx_inspect`
+       binary but no running server; preferred.
+    2. Restore the backup into a throwaway **InfluxDB** instance and query it out (heavier; pulls
+       in InfluxDB as a migration-time dependency).
+    3. Parse raw **`.tsm`** directly (documented format, but fiddly — last resort).
+  - **Done when:** a real SA backup imports into a fresh DB and History/Stats show the
     back-filled data; import is **idempotent** (re-running doesn't double-count) and reports
     rows imported / skipped / unmapped.
-  - *First step:* inspect a real backup to pin the **format** (its time-series store and/or CSV
-    export) and the SA→canonical field-name mapping — don't assume; verify against a sample.
+  - *First step:* unpack a real backup, confirm the InfluxDB version + measurement/field names,
+    and pin the **SA-measurement → canonical-metric** mapping against a sample — don't assume.
     Reuse the energy-counter handling (§5) for cumulative series. *Refs: §5, §19.*
 
 - [-] **L06 · Customisable dashboards (incl. the home/Now dashboard)** · Deps: T018, T045, T047
