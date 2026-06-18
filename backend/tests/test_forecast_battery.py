@@ -59,3 +59,26 @@ def test_depletion_and_full_detection():
 def test_battery_spec_from_dict_defaults():
     b = BatterySpec.from_dict({})
     assert b.capacity_wh == 10000.0 and b.min_soc_pct == 10.0
+
+
+def test_daily_summary_groups_by_calendar_day():
+    from datetime import datetime, timezone
+
+    from app.forecast.service import daily_summary
+
+    d1 = datetime(2026, 6, 21, 0, 0, tzinfo=timezone.utc).timestamp()
+    d2 = d1 + 86400
+    generation = [
+        {"ts": d1, "pv_w": 0.0}, {"ts": d1 + 3600, "pv_w": 2000.0}, {"ts": d1 + 7200, "pv_w": 0.0},
+        {"ts": d2, "pv_w": 0.0}, {"ts": d2 + 3600, "pv_w": 1000.0},
+    ]
+    soc = [
+        {"ts": d1, "soc_pct": 50.0}, {"ts": d1 + 3600, "soc_pct": 8.0},
+        {"ts": d2, "soc_pct": 60.0}, {"ts": d2 + 3600, "soc_pct": 70.0},
+    ]
+    rows = daily_summary(generation, soc, min_soc_pct=10.0)
+    assert [r["date"] for r in rows] == ["2026-06-21", "2026-06-22"]
+    # Day 1: trapezoid 0->2000->0 over two hours = 2000 Wh; SoC dipped to floor.
+    assert rows[0]["expected_wh"] == 2000.0
+    assert rows[0]["min_soc_pct"] == 8.0 and rows[0]["battery_depleted"] is True
+    assert rows[1]["battery_depleted"] is False and rows[1]["max_soc_pct"] == 70.0

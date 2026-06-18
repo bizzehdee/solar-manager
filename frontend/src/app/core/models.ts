@@ -128,10 +128,19 @@ export interface SocPoint {
 }
 
 /** Full forecast: expected generation curve, projected SoC, and derived projections. */
+export interface DailyForecast {
+  date: string; // ISO date (UTC)
+  expected_wh: number; // expected PV generation that day
+  min_soc_pct: number | null;
+  max_soc_pct: number | null;
+  battery_depleted: boolean; // projected to hit the SoC floor that day
+}
 export interface ForecastResponse {
   device_id: string;
+  days: number; // horizon requested (1–7)
   generation: GenerationPoint[];
   soc: SocPoint[];
+  daily: DailyForecast[]; // per-day summary (the multi-day report)
   depletion_ts: number | null; // epoch seconds the battery hits min SoC, or null (not projected)
   full_ts: number | null; // epoch seconds the battery hits max SoC, or null
   expected_today_wh: number;

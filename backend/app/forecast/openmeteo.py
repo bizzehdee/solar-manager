@@ -47,36 +47,41 @@ def _now() -> datetime:
 
 
 class OpenMeteoClient:
+    # Open-Meteo serves up to 16 forecast days on the free endpoint; we cap at 7.
+    MAX_DAYS = 7
+
     def __init__(
         self,
         *,
         fetch: Fetch | None = None,
         ttl_s: float = 21600.0,
-        forecast_days: int = 2,
+        forecast_days: int = 7,
         clock: Callable[[], datetime] = _now,
     ) -> None:
         self._fetch = fetch or _httpx_fetch
         self._ttl = ttl_s
         self._forecast_days = forecast_days
         self._clock = clock
-        self._cache: dict[tuple[float, float], tuple[float, list[WeatherPoint]]] = {}
+        self._cache: dict[tuple[float, float, int], tuple[float, list[WeatherPoint]]] = {}
 
-    def _url(self, lat: float, lon: float) -> str:
+    def _url(self, lat: float, lon: float, days: int) -> str:
         return (
             f"{_BASE_URL}?latitude={lat}&longitude={lon}&hourly={_HOURLY}"
-            f"&forecast_days={self._forecast_days}&timezone=UTC"
+            f"&forecast_days={days}&timezone=UTC"
         )
 
-    async def forecast(self, lat: float, lon: float) -> list[WeatherPoint]:
-        """Hourly weather for (lat, lon), served from cache within the TTL. On a failed
-        refresh, returns the last cached value if any, else an empty list."""
-        key = (round(lat, 3), round(lon, 3))
+    async def forecast(self, lat: float, lon: float, days: int | None = None) -> list[WeatherPoint]:
+        """Hourly weather for (lat, lon) over `days` (1..7) days, served from cache within
+        the TTL (cached per range). On a failed refresh, returns the last cached value if
+        any, else an empty list."""
+        days = max(1, min(self.MAX_DAYS, days or self._forecast_days))
+        key = (round(lat, 3), round(lon, 3), days)
         now = self._clock().timestamp()
         cached = self._cache.get(key)
         if cached is not None and now - cached[0] < self._ttl:
             return cached[1]
         try:
-            data = await self._fetch(self._url(lat, lon))
+            data = await self._fetch(self._url(lat, lon, days))
             points = self._parse(data)
         except Exception as exc:  # network/parse failure — degrade, never raise
             log.warning("Open-Meteo fetch failed for %s: %s", key, exc)

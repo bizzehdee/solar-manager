@@ -237,10 +237,10 @@ def create_app(
 
     # ---- forecast (Phase 4, T063/T064) ----------------------------------------
     @app.get("/api/forecast")
-    async def forecast(device_id: str | None = None) -> JSONResponse:
+    async def forecast(device_id: str | None = None, days: int = Query(7, ge=1, le=7)) -> JSONResponse:
         svc: ForecastService = app.state.forecast
         device_id = device_id or _default_device_id()
-        return JSONResponse(await svc.forecast(device_id))
+        return JSONResponse(await svc.forecast(device_id, days))
 
     @app.get("/api/forecast/config")
     async def get_forecast_config() -> JSONResponse:

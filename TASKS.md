@@ -253,6 +253,9 @@ If the deliverable changes what users can do or how they run/install the app, **
   - `/api/forecast`; expected-generation curve, projected SoC line. *Refs: §6, §7, §8.*
   - **Done:** `app/forecast/service.py` + `GET /api/forecast` + `GET/PUT /api/forecast/config`;
     `pages/forecast/` view (generation curve, projected-SoC line, depletion/full + expected-today KPIs).
+  - **Multi-day report:** `/api/forecast?days=N` (1–7, default 7) + `daily_summary()` ⇒ a
+    per-day outlook (expected Wh, SoC min/max, depletion flag); the view has a 1/3/7-day
+    horizon selector and a per-day table. Open-Meteo client fetches up to 7 days, cached per range.
   - *Note:* forecast-vs-actual **accuracy** is a lightweight `expected_today_wh` for now; a
     stored-forecast accuracy history is a future refinement.
 - [x] **T064 · Array & site spec config** · Deps: T047

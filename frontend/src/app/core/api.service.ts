@@ -92,10 +92,12 @@ export class ApiService {
 
   // --- Forecast (plan.md §13 / Phase 4) ---
 
-  /** Expected generation + projected SoC for a device (omit ⇒ first/only device). */
-  getForecast(deviceId?: string): Observable<ForecastResponse> {
+  /** Expected generation + projected SoC for a device over `days` (1–7) days
+   *  (omit deviceId ⇒ first/only device). */
+  getForecast(deviceId?: string, days?: number): Observable<ForecastResponse> {
     let params = new HttpParams();
     if (deviceId !== undefined) params = params.set('device_id', deviceId);
+    if (days !== undefined) params = params.set('days', String(days));
     return this.http.get<ForecastResponse>('/api/forecast', { params });
   }
 

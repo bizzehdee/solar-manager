@@ -51,7 +51,7 @@ class ForecastService:
             buckets.setdefault(hour, []).append(p.value)
         return {h: sum(v) / len(v) for h, v in buckets.items()}
 
-    async def forecast(self, device_id: str) -> dict:
+    async def forecast(self, device_id: str, days: int = 7) -> dict:
         cfg = await self.config()
         site, arrays_cfg, battery_cfg = cfg["site"], cfg["arrays"], cfg["battery"]
         lat, lon = site["lat"], site["lon"]
@@ -59,7 +59,7 @@ class ForecastService:
         segments = [model.ArraySegment.from_dict(a) for a in arrays_cfg]
         battery = BatterySpec.from_dict(battery_cfg)
 
-        weather = await self._weather.forecast(lat, lon)
+        weather = await self._weather.forecast(lat, lon, days)
         profile = await self._load_profile(device_id)
         default_load = (sum(profile.values()) / len(profile)) if profile else 400.0
 
@@ -74,11 +74,14 @@ class ForecastService:
 
         start_soc = await self._repo.latest(device_id, "battery_soc_pct")
         soc_points = project_soc(start_soc if start_soc is not None else 50.0, hourly, battery)
+        soc_dicts = [p.as_dict() for p in soc_points]
 
         return {
             "device_id": device_id,
+            "days": days,
             "generation": generation,
-            "soc": [p.as_dict() for p in soc_points],
+            "soc": soc_dicts,
+            "daily": daily_summary(generation, soc_dicts, battery.min_soc_pct),
             "depletion_ts": first_time_at_or_below(soc_points, battery.min_soc_pct),
             "full_ts": first_time_at_or_above(soc_points, battery.max_soc_pct),
             "expected_today_wh": round(self._today_energy(generation), 1),
@@ -96,3 +99,34 @@ class ForecastService:
             if datetime.fromtimestamp(g["ts"], tz=timezone.utc).date() == today
         ]
         return energy.integrate_wh(pts, max_gap_s=7200.0)
+
+
+def daily_summary(generation: list[dict], soc: list[dict], min_soc_pct: float) -> list[dict]:
+    """Collapse the hourly forecast into one row per calendar day (UTC) — the 7-day report.
+
+    Each row: expected generation (Wh, trapezoidal integral of the day's PV curve), the
+    day's SoC min/max, and whether the battery is projected to hit its floor that day.
+    Pure function of its inputs (no clock/I/O) so it's unit-tested directly."""
+    from .. import energy
+
+    gen_by_day: dict[str, list[tuple[float, float]]] = {}
+    for g in generation:
+        day = datetime.fromtimestamp(g["ts"], tz=timezone.utc).date().isoformat()
+        gen_by_day.setdefault(day, []).append((g["ts"], g["pv_w"]))
+
+    soc_by_day: dict[str, list[float]] = {}
+    for p in soc:
+        day = datetime.fromtimestamp(p["ts"], tz=timezone.utc).date().isoformat()
+        soc_by_day.setdefault(day, []).append(p["soc_pct"])
+
+    out: list[dict] = []
+    for day in sorted(set(gen_by_day) | set(soc_by_day)):
+        socs = soc_by_day.get(day, [])
+        out.append({
+            "date": day,
+            "expected_wh": round(energy.integrate_wh(gen_by_day.get(day, []), max_gap_s=7200.0), 1),
+            "min_soc_pct": round(min(socs), 1) if socs else None,
+            "max_soc_pct": round(max(socs), 1) if socs else None,
+            "battery_depleted": any(s <= min_soc_pct + 1e-9 for s in socs),
+        })
+    return out

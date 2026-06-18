@@ -48,6 +48,32 @@ async def test_caches_within_ttl_then_refetches():
     assert len(calls) == 2                    # refetched
 
 
+async def test_days_param_in_url_and_cached_per_range():
+    urls = []
+
+    async def fetch(url):
+        urls.append(url)
+        return _sample()
+
+    c = OpenMeteoClient(fetch=fetch, clock=lambda: _T0)
+    await c.forecast(51.5, -0.13, days=7)
+    await c.forecast(51.5, -0.13, days=7)   # cached -> no new fetch
+    await c.forecast(51.5, -0.13, days=3)   # different range -> separate cache entry
+    assert "forecast_days=7" in urls[0]
+    assert len(urls) == 2 and "forecast_days=3" in urls[1]
+
+
+async def test_days_clamped_to_max():
+    urls = []
+
+    async def fetch(url):
+        urls.append(url)
+        return _sample()
+
+    await OpenMeteoClient(fetch=fetch, clock=lambda: _T0).forecast(51.5, -0.13, days=99)
+    assert f"forecast_days={OpenMeteoClient.MAX_DAYS}" in urls[0]
+
+
 async def test_failure_returns_cached_then_empty():
     state = {"ok": True}
     now = [_T0]
