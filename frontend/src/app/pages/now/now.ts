@@ -118,16 +118,39 @@ export class NowPage implements OnInit {
   readonly acRatedW = signal(8000);
   private readonly pvInstalledW = signal<number | null>(null);
   private readonly batteryMaxConfiguredW = signal<number | null>(null);
+  // Confirmed max charge current (A) from the device's battery-charging settings; the battery
+  // ring scales to it × battery voltage (the inverter's actual charge-power limit).
+  private readonly maxChargeCurrentA = signal<number | null>(null);
+  private readonly nominalBatteryV = 51.2; // fallback when no live voltage yet (16S LiFePO4)
+
   readonly solarMax = computed(() => this.pvInstalledW() ?? this.acRatedW());
-  readonly batteryMax = computed(() => this.batteryMaxConfiguredW() ?? this.acRatedW());
+  readonly batteryMax = computed(() => {
+    const a = this.maxChargeCurrentA();
+    if (a && a > 0) {
+      const v = this.num(this.metrics()?.['battery_voltage_v']);
+      return a * (v && v > 0 ? v : this.nominalBatteryV);
+    }
+    return this.batteryMaxConfiguredW() ?? this.acRatedW();
+  });
 
   ngOnInit(): void {
-    // Inverter AC rating (load/grid scale) from the active device's ratings.
+    // Inverter AC rating (load/grid scale) + battery charge-current limit from the device.
     this.api.getDevices().subscribe((res) => {
-      const ac = Number(res.devices[0]?.ratings?.['ac_power_w']);
+      const dev = res.devices[0];
+      const ac = Number(dev?.ratings?.['ac_power_w']);
       if (Number.isFinite(ac) && ac > 0) this.acRatedW.set(ac);
+      if (dev?.id) {
+        this.api.getDeviceSettings(dev.id).subscribe({
+          next: (s) => {
+            const bc = (s.values?.['battery_charging'] ?? {}) as Record<string, unknown>;
+            const a = Number(bc['max_charge_current_a']);
+            if (Number.isFinite(a) && a > 0) this.maxChargeCurrentA.set(a);
+          },
+          error: () => {},
+        });
+      }
     });
-    // Installed PV (Σ kWp) + battery max power from the forecast/site config.
+    // Installed PV (Σ kWp) + battery max power fallback from the forecast/site config.
     this.api.getForecastConfig().subscribe((cfg) => {
       const pv = (cfg.arrays ?? []).reduce((sum, a) => sum + (a.kwp ?? 0) * 1000, 0);
       if (pv > 0) this.pvInstalledW.set(pv);

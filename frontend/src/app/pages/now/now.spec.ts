@@ -18,6 +18,8 @@ class FakeLiveService {
 // ApiService stub: NowPage fetches device ratings + forecast config on init for gauge scales.
 const fakeApi = {
   getDevices: () => of({ devices: [{ id: 'd1', ratings: { ac_power_w: 5000 } }] }),
+  getDeviceSettings: () =>
+    of({ device_id: 'd1', supported: true, values: { battery_charging: { max_charge_current_a: 140 } } }),
   getForecastConfig: () =>
     of({
       site: { lat: 0, lon: 0, performance_ratio: 0.85 },
@@ -95,14 +97,17 @@ describe('NowPage', () => {
     expect(el.textContent).toContain('6.5 kW'); // solar gauge
   });
 
-  it('scales gauges to the actual installation (AC rating, installed PV, battery max)', () => {
+  it('scales gauges to the actual installation (AC rating, installed PV, battery charge limit)', () => {
     const fixture = TestBed.createComponent(NowPage);
-    live.set({ battery_soc_pct: 60 });
-    fixture.detectChanges(); // triggers ngOnInit → fetches ratings + forecast config
+    // Provide a live battery voltage so the battery scale is deterministic.
+    live.set({ battery_soc_pct: 60, battery_voltage_v: 50 });
+    fixture.detectChanges(); // triggers ngOnInit → fetches ratings + settings + forecast config
     const c = fixture.componentInstance;
     expect(c.acRatedW()).toBe(5000); // inverter rated AC (load/grid scale)
     expect(c.solarMax()).toBe(6500); // Σ array kWp × 1000
-    expect(c.batteryMax()).toBe(4000); // battery max charge/discharge
+    // Battery ring = max_charge_current_a (140) × battery voltage (50) — takes precedence
+    // over the forecast max_charge_w.
+    expect(c.batteryMax()).toBe(7000);
   });
 
   it('hides the battery health panel when neither soh nor cycles present (T055)', () => {
