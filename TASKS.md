@@ -271,20 +271,25 @@ just more monitoring). The settings register map is already screen-validated in
 `profiles/deye-base.yaml` (`settings:` block — work-mode timer, globals, battery). Writing
 those settings is Phase 6.*
 
-- [ ] **T070 · `SettingsSchema` + `read_settings` (schema + decode current values)** · Deps: T013, T031
+- [x] **T070 · `SettingsSchema` + `read_settings` (schema + decode current values)** · Deps: T013, T031
   - `Field`/`RepeatingGroup` schema model; profile declares `settings_schema()` + `read_settings()`
-    covering the **work-mode timer** (6 slots) + **globals** (timer_enabled, grid_charge, work_mode,
-    energy_pattern, solar_export, max_sell/solar power, start_grid_charge_soc) + **battery**
-    (voltages, currents, SoC thresholds, capacity, BMS protocol). Decodes the live holding
-    registers → typed settings. The **dummy implements `read_settings`** so it's exercised
-    hardware-free. *Refs: §4, §12.*
-- [ ] **T071 · Settings read API (`GET …/settings` + `…/settings/schema`)** · Deps: T070
+    covering the **work-mode timer** (6 slots) + **globals** + **battery**. Decodes live holding
+    registers → typed settings. The dummy implements `read_settings`. *Refs: §4, §12.*
+  - **Done:** `app/settings_schema.py` (Field/Section/SettingsSchema, 100% cov) + `ModbusYamlProfile`
+    `settings_schema()`/`settings_blocks()`/`read_settings()` (built from the validated `settings:`
+    map); `DummyProfile` synthesizes the validated cheap-night-rate plan; `Device.read_settings()`
+    reads the settings registers via transport then decodes.
+- [x] **T071 · Settings read API (`GET …/settings` + `…/settings/schema`)** · Deps: T070
   - Expose the schema (form spec) + current decoded values per device. **Ungated** —
     read-only; the `SOLAR_MANAGER_ENABLE_CONTROL` flag is not required to view settings. *Refs: §7, §12.*
-- [ ] **T072 · Settings display UI (read-only)** · Deps: T071, T011
-  - Generic `<schema-form>`/`<schema-field>` renders any device's settings + current values
-    **read-only** (no edit controls) — a "Device settings" view under Settings. Reusable by the
-    Phase-6 control form. *Refs: §8.*
+  - **Done:** `GET /api/devices/{id}/settings/schema` + `…/settings` (404 unknown device); device
+    list advertises `settings: bool`. Tested ungated (control off → still 200).
+- [x] **T072 · Settings display UI (read-only)** · Deps: T071, T011
+  - Schema-driven read-only view of every device setting + current value (Control page; reused by
+    the Phase-6 edit form). Value formatting per field type (enum→label, bool→Yes/No, units). *Refs: §8.*
+  - **Done:** `pages/control/` renders the schema as section cards (repeating timer-slots as a
+    table) via a reusable presentational `<app-setting-value>` (no innerHTML). Playwright E2E
+    drives the full stack (dummy decode → API → DOM). Editing arrives in Phase 6.
 
 ## Phase 6 — Settings control / write-back (OFF by default; see CLAUDE.md §12 safety rules)
 

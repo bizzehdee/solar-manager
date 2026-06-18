@@ -268,8 +268,36 @@ def create_app(
             "online": bool(live and live["online"]),
             "last_sample_age_s": live["last_sample_age_s"] if live else None,
             "capabilities": sorted(device.capabilities()) if device else [],
+            "settings": bool(device and device.has_settings),  # read-only display available (Phase 5)
             "control": app.state.settings.enable_control and bool(device and "control" in device.capabilities()),
         }
+
+    def _require_device(device_id: str):
+        device = app.state.registry.get(device_id)
+        if device is None:
+            raise HTTPException(status_code=404, detail=f"device {device_id!r} not found")
+        return device
+
+    # ---- device settings (read-only, Phase 5 / T071; UNGATED — reading is monitoring) ----
+    @app.get("/api/devices/{device_id}/settings/schema")
+    async def device_settings_schema(device_id: str) -> JSONResponse:
+        device = _require_device(device_id)
+        schema = device.settings_schema()
+        return JSONResponse({
+            "device_id": device_id,
+            "supported": schema is not None,
+            "sections": schema.as_dict()["sections"] if schema else [],
+        })
+
+    @app.get("/api/devices/{device_id}/settings")
+    async def device_settings(device_id: str) -> JSONResponse:
+        device = _require_device(device_id)
+        values = await device.read_settings()
+        return JSONResponse({
+            "device_id": device_id,
+            "supported": values is not None,
+            "values": values or {},
+        })
 
     @app.get("/api/devices")
     async def list_devices() -> JSONResponse:

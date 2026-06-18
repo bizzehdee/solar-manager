@@ -78,6 +78,30 @@ describe('ApiService', () => {
     req.flush(null);
   });
 
+  it('getDeviceSettingsSchema() GETs the schema URL and parses sections', () => {
+    api.getDeviceSettingsSchema('d1').subscribe((res) => {
+      expect(res.supported).toBe(true);
+      expect(res.sections[0].key).toBe('globals');
+    });
+    const req = http.expectOne('/api/devices/d1/settings/schema');
+    expect(req.request.method).toBe('GET');
+    req.flush({
+      device_id: 'd1',
+      supported: true,
+      sections: [{ key: 'globals', label: 'Globals', repeating: false, fields: [] }],
+    });
+  });
+
+  it('getDeviceSettings() GETs the settings URL and parses values', () => {
+    api.getDeviceSettings('d1').subscribe((res) => {
+      expect(res.supported).toBe(true);
+      expect(res.values['globals']).toEqual({ work_mode: 2 });
+    });
+    const req = http.expectOne('/api/devices/d1/settings');
+    expect(req.request.method).toBe('GET');
+    req.flush({ device_id: 'd1', supported: true, values: { globals: { work_mode: 2 } } });
+  });
+
   it('getDailyStats() with no args GETs /api/stats/daily without params', () => {
     api.getDailyStats().subscribe((res) => expect(res.currency).toBe('GBP'));
     const req = http.expectOne((r) => r.url === '/api/stats/daily');

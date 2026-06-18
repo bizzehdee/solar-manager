@@ -26,6 +26,9 @@ and watch your panels, battery and grid in real time.
   time-of-use, with seasonal variants).
 - **Fault & battery-health surfacing** — decoded inverter fault codes shown as a banner;
   battery State-of-Health / cycles panel when the BMS reports them.
+- **Inverter settings viewer** — the Control page shows every decoded setting (work-mode
+  timer slots, charge/SoC limits, battery voltages, work mode) read-only. *Editing those
+  settings is coming next, gated behind an explicit opt-in flag.*
 - **Solar & battery forecast** — a weather-driven (free [Open-Meteo](https://open-meteo.com))
   PV-generation forecast for your array (tilt/azimuth/kWp), plus a projected battery-SoC
   curve with empty/full times. Choose a **1, 3 or 7-day horizon** and see a per-day outlook

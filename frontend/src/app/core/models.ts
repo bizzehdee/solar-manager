@@ -196,4 +196,41 @@ export interface DeviceConfig {
   last_sample_age_s: number | null;
   capabilities: string[];
   control: boolean;
+  settings?: boolean; // read-only settings display available (Phase 5 / T072)
+}
+
+// Read-only settings display (plan.md §12 / Phase 5). The SettingsSchema describes the
+// shape (sections + fields); /settings returns the decoded current values. Editing/write
+// arrives in Phase 6 — these shapes carry no register detail (the device seam stays intact).
+
+/** One settings field: its decoded type plus presentation hints (unit, enum options). */
+export interface SettingsField {
+  key: string;
+  label: string;
+  type: 'bool' | 'enum' | 'number' | 'time' | 'int';
+  unit?: string;
+  options?: { value: number; label: string }[]; // enum machine value → human label
+}
+
+/** A group of related fields. `repeating` sections (e.g. timer slots) hold `count` entries. */
+export interface SettingsSection {
+  key: string;
+  label: string;
+  repeating: boolean;
+  count?: number;
+  fields: SettingsField[];
+}
+
+export interface SettingsSchemaResponse {
+  device_id: string;
+  supported: boolean;
+  sections: SettingsSection[];
+}
+
+/** Decoded current values keyed by section. Non-repeating ⇒ object; repeating ⇒ array of objects.
+ *  enum ⇒ integer machine value, time ⇒ "HH:MM", bool ⇒ boolean, number/int ⇒ number. */
+export interface DeviceSettingsResponse {
+  device_id: string;
+  supported: boolean;
+  values: Record<string, unknown>;
 }

@@ -6,7 +6,7 @@ export const routes: Routes = [
   { path: 'now', loadComponent: () => import('./pages/now/now').then((m) => m.NowPage), title: 'Now' },
   { path: 'history', loadComponent: () => import('./pages/history/history').then((m) => m.HistoryPage), title: 'History' },
   { path: 'forecast', loadComponent: () => import('./pages/forecast/forecast').then((m) => m.ForecastPage), title: 'Forecast' },
-  { path: 'control', loadComponent: () => import('./pages/placeholder').then((m) => m.ControlPage), title: 'Control' },
+  { path: 'control', loadComponent: () => import('./pages/control/control').then((m) => m.ControlPage), title: 'Control' },
   { path: 'settings', loadComponent: () => import('./pages/settings/settings').then((m) => m.SettingsPage), title: 'Settings' },
   { path: '**', redirectTo: 'now' },
 ];

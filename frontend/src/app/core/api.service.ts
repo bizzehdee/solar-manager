@@ -5,11 +5,13 @@ import { Observable } from 'rxjs';
 import {
   DailyStats,
   DeviceConfig,
+  DeviceSettingsResponse,
   ForecastConfig,
   ForecastResponse,
   Health,
   HistoryMetrics,
   HistoryResponse,
+  SettingsSchemaResponse,
   Snapshot,
   StatsConfig,
 } from './models';
@@ -68,6 +70,18 @@ export class ApiService {
 
   deleteDevice(id: string): Observable<void> {
     return this.http.delete<void>(`/api/devices/${id}`);
+  }
+
+  // --- Settings display (plan.md §12 / Phase 5, read-only) ---
+
+  /** Settings schema (sections + fields) for a device's read-only settings view. */
+  getDeviceSettingsSchema(deviceId: string): Observable<SettingsSchemaResponse> {
+    return this.http.get<SettingsSchemaResponse>(`/api/devices/${deviceId}/settings/schema`);
+  }
+
+  /** Decoded current settings values for a device (keyed by section). */
+  getDeviceSettings(deviceId: string): Observable<DeviceSettingsResponse> {
+    return this.http.get<DeviceSettingsResponse>(`/api/devices/${deviceId}/settings`);
   }
 
   // --- Statistics (plan.md §10) ---

@@ -98,8 +98,11 @@ class Device:
         return Reading(ts=ts, device_id=self.device_id, metrics=metrics)
 
     async def _gather_raw(self) -> dict[int, int]:
+        return await self._gather(self.profile.register_blocks())
+
+    async def _gather(self, blocks) -> dict[int, int]:
         raw: dict[int, int] = {}
-        for block in self.profile.register_blocks():
+        for block in blocks:
             regs = await self.transport.read_registers(block.start, block.count, block.table)
             for offset, value in enumerate(regs):
                 raw[block.start + offset] = value
@@ -107,6 +110,26 @@ class Device:
 
     def capabilities(self) -> set[str]:
         return self.profile.capabilities()
+
+    # --- settings (read-only, Phase 5 / T070) -----------------------------------
+    def settings_schema(self):
+        """The device's SettingsSchema, or None if it exposes no settings."""
+        fn = getattr(self.profile, "settings_schema", None)
+        return fn() if fn else None
+
+    @property
+    def has_settings(self) -> bool:
+        return self.settings_schema() is not None
+
+    async def read_settings(self) -> dict | None:
+        """Read the device's current settings values (reads the settings registers via the
+        transport, then decodes). None if the profile has no settings."""
+        read = getattr(self.profile, "read_settings", None)
+        if read is None or self.settings_schema() is None:
+            return None
+        blocks = getattr(self.profile, "settings_blocks", lambda: [])()
+        raw = await self._gather(blocks)
+        return read(raw)
 
     @property
     def info(self) -> DeviceInfo:

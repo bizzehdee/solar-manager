@@ -18,7 +18,15 @@ from typing import Any, Mapping
 import yaml
 
 from ..models import DeviceInfo, MetricValue
+from ..settings_schema import FieldSpec, Section, SettingsSchema, enum_options, humanize, unit_for
 from .base import RegBlock
+
+# Friendlier labels for the known settings sections (falls back to humanize()).
+_SECTION_LABELS = {
+    "globals": "Work mode & limits",
+    "timer_slots": "Work-mode timer",
+    "battery": "Battery",
+}
 
 # Where the checked-in profile YAMLs live (repo-root/profiles).
 PROFILES_DIR = Path(__file__).resolve().parents[3] / "profiles"
@@ -108,6 +116,89 @@ class ModbusYamlProfile:
         """The writable-settings map (globals / timer_slots / battery, plan.md §4/§12).
         Consumed by the Phase 5 SettingsSchema; exposed here so it's inspectable/testable."""
         return self._spec.get("settings", {})
+
+    # --- settings schema + read (plan.md §4/§12; task T070) ---------------------
+    def settings_schema(self) -> SettingsSchema | None:
+        """Build a render-ready SettingsSchema from the YAML `settings:` map, or None when
+        the profile declares no settings (read-only-monitoring device)."""
+        spec = self.settings
+        if not spec:
+            return None
+        sections: list[Section] = []
+        for skey, sval in spec.items():
+            label = _SECTION_LABELS.get(skey, humanize(skey))
+            if skey == "timer_slots":
+                fields = [self._field_spec(k, v) for k, v in sval.get("fields", {}).items()]
+                sections.append(Section(skey, label, fields, repeating=True, count=int(sval.get("count", 0))))
+            else:
+                fields = [self._field_spec(k, v) for k, v in sval.items()]
+                sections.append(Section(skey, label, fields))
+        return SettingsSchema(sections)
+
+    @staticmethod
+    def _field_spec(key: str, spec: dict[str, Any]) -> FieldSpec:
+        t = spec.get("type", "u16")
+        if t == "bool":
+            return FieldSpec(key, humanize(key), "bool")
+        if t == "enum":
+            return FieldSpec(key, humanize(key), "enum", options=enum_options(spec.get("values", {})))
+        if t == "time_hhmm":
+            return FieldSpec(key, humanize(key), "time")
+        if t == "bits":
+            return FieldSpec(key, humanize(key), "int")
+        return FieldSpec(key, humanize(key), "number", unit=unit_for(key))
+
+    def settings_blocks(self) -> list[RegBlock]:
+        """Register blocks covering every settings address (for the transport read)."""
+        return self._blocks_for(self._settings_addresses())
+
+    def _settings_addresses(self) -> set[int]:
+        addrs: set[int] = set()
+        for skey, sval in self.settings.items():
+            if skey == "timer_slots":
+                count = int(sval.get("count", 0))
+                for spec in sval.get("fields", {}).values():
+                    addrs.update(spec["base_addr"] + i for i in range(count))
+            else:
+                for spec in sval.values():
+                    if spec.get("addr") is not None:
+                        addrs.add(int(spec["addr"]))
+        return addrs
+
+    def read_settings(self, raw: Mapping[int, int]) -> dict:
+        """Decode the current settings values from a raw register map into a structured
+        dict: {section_key: {field: value}} (or a list of `count` rows for timer_slots)."""
+        out: dict = {}
+        for skey, sval in self.settings.items():
+            if skey == "timer_slots":
+                count = int(sval.get("count", 0))
+                fields = sval.get("fields", {})
+                out[skey] = [
+                    {k: self._decode_setting(spec, raw, spec["base_addr"] + i) for k, spec in fields.items()}
+                    for i in range(count)
+                ]
+            else:
+                out[skey] = {k: self._decode_setting(spec, raw, spec.get("addr")) for k, spec in sval.items()}
+        return out
+
+    def _decode_setting(self, spec: dict[str, Any], raw: Mapping[int, int], addr) -> Any:
+        if addr is None or addr not in raw:
+            return None
+        v = raw[addr] & 0xFFFF
+        t = spec.get("type", "u16")
+        if t == "bool":
+            return bool(v & spec.get("mask", 0xFFFF))
+        if t == "enum":
+            return v  # the machine value; UI maps to a label via the schema's options
+        if t == "time_hhmm":
+            return f"{v // 100:02d}:{v % 100:02d}"
+        if t == "bits":
+            mask = spec.get("mask", 0xFFFF)
+            shift = (mask & -mask).bit_length() - 1
+            return (v & mask) >> shift
+        if t == "s16":
+            v = _signed(v, 16)
+        return round(v * spec.get("scale", 1) + spec.get("offset", 0), 3)
 
     @property
     def info(self) -> DeviceInfo:

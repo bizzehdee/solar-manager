@@ -20,6 +20,7 @@ from typing import Mapping, Sequence
 
 from ..metrics import ALL_METRICS
 from ..models import DeviceInfo, MetricValue
+from ..settings_schema import FieldSpec, Section, SettingsSchema
 from .base import Clock, RegBlock, system_clock
 
 # Synthetic system shape (a believable ~6.5 kWp / 8 kW / 16 kWh home rig).
@@ -78,6 +79,51 @@ class DummyProfile:
 
     def decode(self, raw: Mapping[int, int]) -> dict[str, MetricValue]:  # raw ignored
         return self.synthesize(self._clock())
+
+    # --- settings (read-only display, Phase 5; write path arrives in Phase 6/T072) ---
+    def settings_blocks(self) -> list[RegBlock]:
+        return []  # synthesizes settings directly; no wire reads
+
+    def settings_schema(self) -> SettingsSchema:
+        """A representative work-mode-timer schema so the read-only settings UI is
+        exercisable on the dummy (mirrors the real SG05LP1 shape)."""
+        work_mode = FieldSpec(
+            "work_mode", "Work mode", "enum",
+            options=[{"value": 0, "label": "Selling first"}, {"value": 2, "label": "Zero export to CT"}],
+        )
+        return SettingsSchema([
+            Section("globals", "Work mode & limits", [
+                FieldSpec("timer_enabled", "Timer enabled", "bool"),
+                FieldSpec("grid_charge", "Grid charge", "bool"),
+                work_mode,
+                FieldSpec("max_sell_power_w", "Max sell power", "number", unit="W"),
+            ]),
+            Section("timer_slots", "Work-mode timer", [
+                FieldSpec("start_time", "Start time", "time"),
+                FieldSpec("power_w", "Power", "number", unit="W"),
+                FieldSpec("target_soc_pct", "Target SoC", "number", unit="%"),
+                FieldSpec("charge_from_grid", "Charge from grid", "bool"),
+            ], repeating=True, count=6),
+            Section("battery", "Battery", [
+                FieldSpec("float_voltage_v", "Float voltage", "number", unit="V"),
+                FieldSpec("max_charge_current_a", "Max charge current", "number", unit="A"),
+            ]),
+        ])
+
+    def read_settings(self, raw: Mapping[int, int]) -> dict:  # raw ignored
+        """Synthesized current settings — the validated cheap-night-rate plan from the real
+        SG05LP1 (grid-charge to 65% overnight, 10% floor by day)."""
+        soc = [65, 10, 10, 10, 10, 10]
+        starts = ["00:05", "05:55", "09:00", "13:00", "17:00", "21:00"]
+        return {
+            "globals": {"timer_enabled": True, "grid_charge": True, "work_mode": 2, "max_sell_power_w": 8000.0},
+            "timer_slots": [
+                {"start_time": starts[i], "power_w": 8000.0, "target_soc_pct": soc[i],
+                 "charge_from_grid": i == 0}
+                for i in range(6)
+            ],
+            "battery": {"float_voltage_v": 53.6, "max_charge_current_a": 140.0},
+        }
 
     # --- synthesis (pure function of ts; deterministic per second) --------------
     def synthesize(self, ts: datetime) -> dict[str, MetricValue]:

@@ -100,6 +100,34 @@ def test_stats_config_get_and_put(midday):
         assert back["economics"]["co2_intensity_g_per_kwh"] == 180.0
 
 
+def test_device_settings_schema_and_values_ungated(midday):
+    # Control is OFF by default in this client — the read-only settings endpoints must
+    # still work (Phase 5 display is not gated).
+    with _client(midday) as client:
+        assert client.get("/api/health").json()["control_enabled"] is False
+
+        schema = client.get("/api/devices/dummy/settings/schema").json()
+        assert schema["supported"] is True
+        sections = {s["key"]: s for s in schema["sections"]}
+        assert sections["timer_slots"]["count"] == 6
+
+        vals = client.get("/api/devices/dummy/settings").json()
+        assert vals["supported"] is True
+        assert vals["values"]["globals"]["work_mode"] == 2
+        assert len(vals["values"]["timer_slots"]) == 6
+        assert vals["values"]["timer_slots"][0]["start_time"] == "00:05"
+
+        # device list advertises that settings display is available
+        dev = client.get("/api/devices").json()["devices"][0]
+        assert dev["settings"] is True
+
+
+def test_device_settings_unknown_device_404(midday):
+    with _client(midday) as client:
+        assert client.get("/api/devices/nope/settings").status_code == 404
+        assert client.get("/api/devices/nope/settings/schema").status_code == 404
+
+
 def test_device_create_validation(midday):
     with _client(midday) as client:
         # modbus_rtu needs profile + params.port
