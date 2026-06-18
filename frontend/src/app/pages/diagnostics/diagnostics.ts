@@ -1,14 +1,14 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
-import { DecimalPipe } from '@angular/common';
+import { DatePipe, DecimalPipe } from '@angular/common';
 
 import { ApiService } from '../../core/api.service';
-import { Diagnostics } from '../../core/models';
+import { Diagnostics, GridEvent } from '../../core/models';
 
 // Diagnostics (plan.md §19 / T092): a read-only operational snapshot — build/schema, DB
 // size, rollup lag, active alerts, and per-device online + Modbus comms health.
 @Component({
   selector: 'app-diagnostics',
-  imports: [DecimalPipe],
+  imports: [DecimalPipe, DatePipe],
   template: `
     <div class="d-flex align-items-center justify-content-between mb-3">
       <h4 class="mb-0"><i class="bi bi-clipboard-pulse"></i> Diagnostics</h4>
@@ -73,11 +73,34 @@ import { Diagnostics } from '../../core/models';
     } @else {
       <div class="alert alert-secondary mb-0">Diagnostics unavailable.</div>
     }
+
+    <!-- Grid-outage timeline (T095). -->
+    <div class="card mt-3">
+      <div class="card-header"><i class="bi bi-plug"></i> Grid events</div>
+      @if (gridEvents().length === 0) {
+        <div class="card-body py-2 small text-secondary">No grid loss/return events recorded.</div>
+      } @else {
+        <ul class="list-group list-group-flush">
+          @for (e of gridEvents(); track $index) {
+            <li class="list-group-item d-flex justify-content-between align-items-center py-2 small">
+              <span>
+                <span class="badge text-bg-{{ e.event === 'outage_start' ? 'danger' : 'success' }} me-2">
+                  {{ e.event === 'outage_start' ? 'grid lost' : 'grid restored' }}
+                </span>
+                {{ e.device_id }}
+              </span>
+              <span class="text-secondary">{{ e.ts * 1000 | date: 'MMM d, HH:mm:ss' }}</span>
+            </li>
+          }
+        </ul>
+      }
+    </div>
   `,
 })
 export class DiagnosticsPage implements OnInit {
   private readonly api = inject(ApiService);
   readonly diag = signal<Diagnostics | null>(null);
+  readonly gridEvents = signal<GridEvent[]>([]);
   readonly loading = signal(true);
 
   ngOnInit(): void {
@@ -90,6 +113,7 @@ export class DiagnosticsPage implements OnInit {
       next: (d) => (this.diag.set(d), this.loading.set(false)),
       error: () => (this.diag.set(null), this.loading.set(false)),
     });
+    this.api.getGridEvents().subscribe({ next: (r) => this.gridEvents.set(r.events), error: () => {} });
   }
 
   /** Bytes → human (KB/MB/GB). */

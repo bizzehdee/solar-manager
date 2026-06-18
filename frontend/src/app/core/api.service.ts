@@ -9,6 +9,7 @@ import {
   DailyStats,
   DeviceClock,
   Diagnostics,
+  GridEvent,
   DeviceConfig,
   DeviceSettingsResponse,
   ForecastConfig,
@@ -34,6 +35,13 @@ export class ApiService {
   /** Operational diagnostics (build/schema, DB size, rollup lag, per-device comms). */
   getDiagnostics(): Observable<Diagnostics> {
     return this.http.get<Diagnostics>('/api/diagnostics');
+  }
+
+  /** Grid loss/return events (newest first) for the outage timeline (T095). */
+  getGridEvents(limit = 50): Observable<{ events: GridEvent[] }> {
+    return this.http.get<{ events: GridEvent[] }>('/api/grid-events', {
+      params: new HttpParams().set('limit', String(limit)),
+    });
   }
 
   /** Restore the database from an uploaded backup (T091). Backup + CSV export are plain

@@ -127,6 +127,19 @@ MIGRATIONS: list[tuple[int, str]] = [
         CREATE INDEX ix_alerts_active ON alerts (cleared_at);
         """,
     ),
+    (
+        6,
+        """
+        -- Grid-outage / backup-power event log (plan.md §19; task T095). One row per
+        -- grid loss/return transition, building the islanding timeline.
+        CREATE TABLE grid_events (
+            ts        REAL NOT NULL,
+            device_id TEXT NOT NULL,
+            event     TEXT NOT NULL   -- 'outage_start' | 'outage_end'
+        );
+        CREATE INDEX ix_grid_events_ts ON grid_events (ts);
+        """,
+    ),
 ]
 
 SCHEMA_VERSION = MIGRATIONS[-1][0]

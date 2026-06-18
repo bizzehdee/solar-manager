@@ -37,6 +37,7 @@ describe('DiagnosticsPage', () => {
     const fixture = TestBed.createComponent(DiagnosticsPage);
     fixture.detectChanges();
     http.expectOne('/api/diagnostics').flush(diag());
+    http.expectOne((r) => r.url === '/api/grid-events').flush({ events: [] });
     fixture.detectChanges();
 
     const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
@@ -46,6 +47,23 @@ describe('DiagnosticsPage', () => {
     expect(text).toContain('10 / 1 / 2'); // comms tx/fail/retry for the modbus device
     expect(text).toContain('— (no wire)'); // dummy has no comms
     expect(text).toContain('timeout'); // last error surfaced
+    expect(text).toContain('No grid loss/return events'); // empty grid timeline
+  });
+
+  it('renders the grid-outage timeline when events exist', () => {
+    const fixture = TestBed.createComponent(DiagnosticsPage);
+    fixture.detectChanges();
+    http.expectOne('/api/diagnostics').flush(diag());
+    http.expectOne((r) => r.url === '/api/grid-events').flush({
+      events: [
+        { ts: 1_700_000_500, device_id: 'inv', event: 'outage_end' },
+        { ts: 1_700_000_000, device_id: 'inv', event: 'outage_start' },
+      ],
+    });
+    fixture.detectChanges();
+    const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(text).toContain('grid lost');
+    expect(text).toContain('grid restored');
   });
 
   it('humanBytes formats sizes', () => {

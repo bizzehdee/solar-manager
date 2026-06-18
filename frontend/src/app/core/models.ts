@@ -287,6 +287,13 @@ export interface Diagnostics {
   }[];
 }
 
+/** Grid loss/return event (plan.md §19 / T095) for the outage timeline. */
+export interface GridEvent {
+  ts: number;
+  device_id: string;
+  event: 'outage_start' | 'outage_end' | string;
+}
+
 /** Inverter RTC vs system time (plan.md §19 / T097). `syncable` ⇒ correction is allowed
  *  (control flag on AND the RTC registers are confirmed-writable). */
 export interface DeviceClock {

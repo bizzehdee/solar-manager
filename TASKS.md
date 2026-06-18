@@ -358,8 +358,10 @@ deferred — tracked under "Later — Integrations & notifications" below.*
   - Configurable currency, units, date/time format, timezone; i18n scaffolding (English ships first). *Refs: §19.*
 - [ ] **T094 · Installable PWA** · Deps: T018
   - Manifest + service worker; installs to phone home screen; rides out brief network blips. *Refs: §19.*
-- [ ] **T095 · Grid-outage / backup-power event log** · Deps: T042
-  - Detect & log grid loss/return (islanding) from grid metrics; timeline view. *Refs: §19.*
+- [x] **T095 · Grid-outage / backup-power event log** · Deps: T042
+  - `grid_events.py`: infer grid presence (run_state / grid voltage) + a pure transition
+    detector → log outage_start/outage_end. `GridEventService` runs off the poller (off the hot
+    path); `/api/grid-events` + a timeline on the Diagnostics page. *Refs: §19.*
 - [ ] **T096 · Calibrate performance-ratio factor** · Deps: T063, T046
   - Tune PR empirically against measured history. *Refs: §6, §19.*
 - [x] **T097 · Inverter clock sync** · Deps: T076

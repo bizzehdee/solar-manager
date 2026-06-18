@@ -392,6 +392,25 @@ class SqliteHistoryRepository:
         """Epoch seconds of the last-aggregated sample (0 if none) — diagnostics rollup lag."""
         return await self._db.run(self._get_meta, _WATERMARK_KEY, 0.0)
 
+    # --- grid-outage event log (T095) -------------------------------------------
+    async def insert_grid_event(self, ts: float, device_id: str, event: str) -> None:
+        def _ins():
+            self._conn.execute(
+                "INSERT INTO grid_events (ts, device_id, event) VALUES (?, ?, ?)",
+                (ts, device_id, event),
+            )
+            self._conn.commit()
+
+        await self._db.run(_ins)
+
+    async def list_grid_events(self, *, limit: int = 100) -> list[dict]:
+        rows = await self._db.run(
+            lambda: self._conn.execute(
+                "SELECT ts, device_id, event FROM grid_events ORDER BY ts DESC LIMIT ?", (int(limit),)
+            ).fetchall()
+        )
+        return [dict(r) for r in rows]
+
     # --- backup / restore (T091) ------------------------------------------------
     async def backup_bytes(self) -> bytes:
         """A consistent snapshot of the whole database (samples, rollups, config, alerts…)."""

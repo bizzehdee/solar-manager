@@ -27,6 +27,7 @@ from . import control
 from .alerts import AlertRule
 from .alerts.service import AlertService
 from .config import Settings
+from .grid_events import GridEventService
 from .devices.base import TransportError, system_clock
 from .devices.factory import (
     build_device_from_config,
@@ -123,9 +124,14 @@ async def lifespan(app: FastAPI):
     alerts = AlertService(alert_repo, poller, app_config, interval_s=settings.alert_interval_s)
     app.state.alerts = alerts
     await alerts.start()
+
+    grid_events = GridEventService(history_repo, poller, interval_s=settings.alert_interval_s, clock=clock)
+    app.state.grid_events = grid_events
+    await grid_events.start()
     try:
         yield
     finally:
+        await grid_events.stop()
         await alerts.stop()
         await persistence.stop()
         await poller.stop()
@@ -474,6 +480,11 @@ def create_app(
     async def list_audit(device_id: str | None = None, limit: int = Query(100, ge=1, le=1000)) -> JSONResponse:
         repo: AuditRepository = app.state.audit_repo
         return JSONResponse({"entries": await repo.list(device_id=device_id, limit=limit)})
+
+    @app.get("/api/grid-events")
+    async def list_grid_events(limit: int = Query(100, ge=1, le=1000)) -> JSONResponse:
+        repo: SqliteHistoryRepository = app.state.history_repo
+        return JSONResponse({"events": await repo.list_grid_events(limit=limit)})
 
     # ---- alerts (Phase 7 / T082) ----------------------------------------------
     @app.get("/api/alerts")
