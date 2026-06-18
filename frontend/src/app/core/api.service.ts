@@ -12,6 +12,7 @@ import {
   GridEvent,
   DeviceConfig,
   DeviceSettingsResponse,
+  ForecastCalibration,
   ForecastConfig,
   ForecastResponse,
   Health,
@@ -171,6 +172,13 @@ export class ApiService {
   /** Tariff + economics configuration backing the savings calculations. */
   getStatsConfig(): Observable<StatsConfig> {
     return this.http.get<StatsConfig>('/api/stats/config');
+  }
+
+  /** Suggest a performance ratio from modelled-vs-measured history (T096). */
+  getForecastCalibration(deviceId?: string): Observable<ForecastCalibration> {
+    let params = new HttpParams();
+    if (deviceId !== undefined) params = params.set('device_id', deviceId);
+    return this.http.get<ForecastCalibration>('/api/forecast/calibrate', { params });
   }
 
   /** Update tariff/economics. `import_rate`/`export_rate` accept a bare number (flat). */

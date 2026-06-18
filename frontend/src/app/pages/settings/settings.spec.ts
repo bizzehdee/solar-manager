@@ -64,6 +64,32 @@ describe('SettingsPage', () => {
     http.expectOne('/api/forecast/config').flush(forecastConfig());
   }
 
+  it('calibratePr() fetches a suggestion and pre-fills the performance ratio (T096)', () => {
+    const fixture = TestBed.createComponent(SettingsPage);
+    fixture.detectChanges();
+    http.expectOne('/api/devices').flush({ devices: [] });
+    flushConfig();
+
+    fixture.componentInstance.calibratePr();
+    http.expectOne((r) => r.url === '/api/forecast/calibrate').flush({
+      device_id: 'd1', current_pr: 0.85, expected_wh: 1000, actual_wh: 800, suggested_pr: 0.68,
+    });
+    expect(fixture.componentInstance.forecast.site.performance_ratio).toBe(0.68);
+    expect(fixture.componentInstance.calibrateMsg()?.cls).toBe('info');
+  });
+
+  it('calibratePr() reports when there is not enough data', () => {
+    const fixture = TestBed.createComponent(SettingsPage);
+    fixture.detectChanges();
+    http.expectOne('/api/devices').flush({ devices: [] });
+    flushConfig();
+    fixture.componentInstance.calibratePr();
+    http.expectOne((r) => r.url === '/api/forecast/calibrate').flush({
+      device_id: 'd1', current_pr: 0.85, expected_wh: 0, actual_wh: 0, suggested_pr: null,
+    });
+    expect(fixture.componentInstance.calibrateMsg()?.cls).toBe('secondary');
+  });
+
   it('restore() POSTs the chosen backup file to /api/restore', () => {
     const fixture = TestBed.createComponent(SettingsPage);
     fixture.detectChanges();

@@ -268,9 +268,18 @@ import { ArraySpec, DeviceConfig, ForecastConfig, StatsConfig } from '../../core
             </div>
             <div class="col-6 col-md-4">
               <label class="form-label small text-secondary" for="f-pr">Performance ratio</label>
-              <input id="f-pr" type="number" step="any" class="form-control" [(ngModel)]="forecast.site.performance_ratio" name="pr" />
+              <div class="input-group">
+                <input id="f-pr" type="number" step="any" class="form-control" [(ngModel)]="forecast.site.performance_ratio" name="pr" />
+                <button type="button" class="btn btn-outline-secondary" (click)="calibratePr()"
+                        title="Suggest from measured history">
+                  <i class="bi bi-magic"></i>
+                </button>
+              </div>
             </div>
           </div>
+          @if (calibrateMsg(); as msg) {
+            <div class="alert alert-{{ msg.cls }} py-2">{{ msg.text }}</div>
+          }
 
           <h6 class="text-secondary">Battery</h6>
           <div class="row g-3 mb-3">
@@ -369,6 +378,7 @@ export class SettingsPage implements OnInit {
 
   // Forecast config form (T064) — site/array/battery driving the Phase 4 forecast.
   readonly forecastSaved = signal(false);
+  readonly calibrateMsg = signal<{ cls: string; text: string } | null>(null);
   forecast: ForecastConfig = {
     site: { lat: 0, lon: 0, performance_ratio: 0.85 },
     arrays: [],
@@ -411,6 +421,25 @@ export class SettingsPage implements OnInit {
         this.forecast = cfg;
         this.forecastSaved.set(true);
       });
+  }
+
+  /** Suggest a performance ratio from measured history and pre-fill the field (T096). */
+  calibratePr(): void {
+    this.calibrateMsg.set(null);
+    this.api.getForecastCalibration().subscribe({
+      next: (c) => {
+        if (c.suggested_pr === null) {
+          this.calibrateMsg.set({ cls: 'secondary', text: 'Not enough generation yet today to suggest a ratio.' });
+          return;
+        }
+        this.forecast = { ...this.forecast, site: { ...this.forecast.site, performance_ratio: c.suggested_pr } };
+        this.calibrateMsg.set({
+          cls: 'info',
+          text: `Suggested ${c.suggested_pr} (measured ${c.actual_wh} Wh vs modelled ${c.expected_wh} Wh so far). Save to apply.`,
+        });
+      },
+      error: () => this.calibrateMsg.set({ cls: 'danger', text: 'Could not calibrate.' }),
+    });
   }
 
   private loadTariff(): void {

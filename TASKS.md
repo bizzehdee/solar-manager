@@ -362,8 +362,10 @@ deferred — tracked under "Later — Integrations & notifications" below.*
   - `grid_events.py`: infer grid presence (run_state / grid voltage) + a pure transition
     detector → log outage_start/outage_end. `GridEventService` runs off the poller (off the hot
     path); `/api/grid-events` + a timeline on the Diagnostics page. *Refs: §19.*
-- [ ] **T096 · Calibrate performance-ratio factor** · Deps: T063, T046
-  - Tune PR empirically against measured history. *Refs: §6, §19.*
+- [x] **T096 · Calibrate performance-ratio factor** · Deps: T063, T046
+  - `model.calibrate_pr()` scales the PR by measured/modelled PV (clamped); `ForecastService
+    .calibrate()` compares today's expected-so-far vs `today_pv_wh`. `/api/forecast/calibrate`
+    + a "suggest from history" button on the Settings PR field. *Refs: §6, §19.*
 - [x] **T097 · Inverter clock sync** · Deps: T076
   - Reads the inverter RTC and shows drift vs system time (Now page); **Sync** correction gated
     behind the control flag AND confirmed-writable RTC registers. Dummy: synthetic drift +

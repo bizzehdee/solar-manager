@@ -371,6 +371,11 @@ def create_app(
         svc: ForecastService = app.state.forecast
         return JSONResponse(await svc.config())
 
+    @app.get("/api/forecast/calibrate")
+    async def calibrate_forecast(device_id: str | None = None) -> JSONResponse:
+        svc: ForecastService = app.state.forecast
+        return JSONResponse(await svc.calibrate(device_id or _default_device_id()))
+
     # ---- device config CRUD (Phase 2, T047) -----------------------------------
     def _device_status(row: dict) -> dict:
         registry: DeviceRegistry = app.state.registry

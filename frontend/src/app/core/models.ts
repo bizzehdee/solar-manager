@@ -184,6 +184,15 @@ export interface ForecastConfig {
   battery: BatterySpec;
 }
 
+/** Performance-ratio calibration suggestion (plan.md §6 / T096). */
+export interface ForecastCalibration {
+  device_id: string;
+  current_pr: number;
+  expected_wh: number;
+  actual_wh: number;
+  suggested_pr: number | null;
+}
+
 // Device registry entry (plan.md §6, §11). Returned by /api/devices CRUD.
 export interface DeviceConfig {
   id: string;

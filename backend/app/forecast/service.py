@@ -94,6 +94,31 @@ class ForecastService:
             "currency": None,
         }
 
+    async def calibrate(self, device_id: str) -> dict:
+        """Suggest a performance ratio from today's modelled-vs-measured PV (T096): compare
+        the forecast's expected generation **up to now** against the inverter's `today_pv_wh`,
+        and scale the current PR by their ratio. Best read late in the day."""
+        from .. import energy
+
+        cfg = await self.config()
+        current_pr = cfg["site"].get("performance_ratio", model.DEFAULT_PR)
+        fc = await self.forecast(device_id, days=1)
+        now = datetime.now(timezone.utc)
+        today = now.date()
+        elapsed = [
+            (g["ts"], g["pv_w"]) for g in fc["generation"]
+            if datetime.fromtimestamp(g["ts"], tz=timezone.utc).date() == today and g["ts"] <= now.timestamp()
+        ]
+        expected_wh = energy.integrate_wh(elapsed, max_gap_s=7200.0)
+        actual_wh = await self._repo.latest(device_id, "today_pv_wh") or 0.0
+        return {
+            "device_id": device_id,
+            "current_pr": current_pr,
+            "expected_wh": round(expected_wh, 1),
+            "actual_wh": round(float(actual_wh), 1),
+            "suggested_pr": model.calibrate_pr(current_pr, expected_wh, float(actual_wh)),
+        }
+
     @staticmethod
     def _today_energy(generation: list[dict]) -> float:
         """Trapezoidal Wh of the expected-generation curve for the current UTC day."""

@@ -73,6 +73,23 @@ def test_forecast_days_param_clamped():
         assert client.get("/api/forecast", params={"days": 3}).json()["days"] == 3
 
 
+def test_calibrate_pr_pure():
+    from app.forecast.model import calibrate_pr
+
+    assert calibrate_pr(0.85, 1000.0, 900.0) == 0.765      # 0.85 × 0.9
+    assert calibrate_pr(0.85, 0.0, 900.0) is None          # nothing modelled yet
+    assert calibrate_pr(0.85, 1000.0, 5000.0) == 1.1       # clamped high
+    assert calibrate_pr(0.85, 1000.0, 0.0) == 0.3          # clamped low
+
+
+def test_forecast_calibrate_endpoint():
+    with _client() as client:
+        body = client.get("/api/forecast/calibrate").json()
+        assert body["device_id"] == "dummy"
+        assert set(body) >= {"current_pr", "expected_wh", "actual_wh", "suggested_pr"}
+        assert body["current_pr"] > 0
+
+
 def test_forecast_config_get_and_put():
     with _client() as client:
         cfg = client.get("/api/forecast/config").json()

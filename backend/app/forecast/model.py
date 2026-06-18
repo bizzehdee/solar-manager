@@ -180,3 +180,16 @@ def expected_power_w(
         segment_power_w(s, ghi, air_temp_c, elevation, azimuth, doy, performance_ratio)
         for s in segments
     )
+
+
+def calibrate_pr(
+    current_pr: float, expected_wh: float, actual_wh: float, *, lo: float = 0.3, hi: float = 1.1
+) -> float | None:
+    """Suggest a performance ratio that reconciles modelled vs measured generation (T096):
+    `current_pr × actual/expected`, clamped to a sane band. None when there's nothing to
+    compare against (no modelled energy yet). The PR folds in inverter/wiring/soiling losses,
+    so tuning it to real history is the cheapest way to make the forecast match this site."""
+    if expected_wh <= 0:
+        return None
+    suggested = current_pr * (actual_wh / expected_wh)
+    return round(max(lo, min(hi, suggested)), 3)
