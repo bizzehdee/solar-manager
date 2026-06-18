@@ -31,8 +31,9 @@ and watch your panels, battery and grid in real time.
   settings is coming next, gated behind an explicit opt-in flag.*
 - **Solar & battery forecast** — a weather-driven (free [Open-Meteo](https://open-meteo.com))
   PV-generation forecast for your array (tilt/azimuth/kWp), plus a projected battery-SoC
-  curve with empty/full times. Choose a **1, 3 or 7-day horizon** and see a per-day outlook
-  (expected generation + SoC range + low-battery warnings). Configure your site/arrays in Settings.
+  curve with empty/full times. Switch between **today / tomorrow / 3-day / 7-day** views
+  (defaults to today) with a per-day outlook (expected generation + SoC range + low-battery
+  warnings). Configure your site/arrays in Settings.
 - **Works with no hardware out of the box** — a built-in **dummy inverter** produces
   realistic, time-of-day-aware data, so you can try the whole app on a fresh clone.
 - **Real inverter support** — read live instant data from a Sunsynk SG05LP1 over a

@@ -46,8 +46,23 @@ body { overflow: hidden; }
   .app-content { left: 0; }
 }
 
+// Mobile backdrop behind the off-canvas sidebar (hidden on desktop / when closed).
+.sidebar-backdrop { display: none; }
+
 @media (max-width: 768px) {
+  // Sidebar is an off-canvas overlay: hidden by default, slides in when `.sidebar-open`,
+  // and the content stays full-width underneath (no horizontal push).
   .app-sidebar { transform: translateX(-#{$sidebar-w}); }
   .app-content { left: 0; }
   .sidebar-open .app-sidebar { transform: translateX(0); }
+  .sidebar-open .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    top: $header-h;
+    bottom: $footer-h;
+    left: 0;
+    right: 0;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 1029; // under the sidebar (1030), over the content
+  }
 }

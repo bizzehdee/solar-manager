@@ -81,35 +81,47 @@ describe('ForecastPage', () => {
     expect(el.querySelectorAll('app-time-series-chart').length).toBe(0);
   });
 
-  it('requests a 7-day horizon by default and renders the per-day report', () => {
+  it('fetches the full 7-day forecast once and defaults to the Today scope', () => {
     const fixture = TestBed.createComponent(ForecastPage);
     fixture.detectChanges();
     const req = http.expectOne((r) => r.url === '/api/forecast');
-    expect(req.request.params.get('days')).toBe('7');
+    expect(req.request.params.get('days')).toBe('7'); // always fetch the full week
     req.flush(forecast());
     fixture.detectChanges();
 
     const el = fixture.nativeElement as HTMLElement;
-    expect(el.textContent).toContain('7-day outlook');
-    expect(el.querySelectorAll('tbody tr').length).toBe(2); // two daily rows
-    expect(el.textContent).toContain('may deplete'); // day 2 flagged
+    expect(el.textContent).toContain('Today outlook');
+    // Today only → just the first daily row (2023-11-14, not depleted).
+    expect(el.querySelectorAll('tbody tr').length).toBe(1);
+    expect(el.textContent).not.toContain('may deplete');
+    expect(el.textContent).toContain('Expected today');
   });
 
-  it('re-fetches with the selected horizon when a preset is clicked', () => {
+  function clickScope(fixture: ReturnType<typeof TestBed.createComponent>, label: string): void {
+    const buttons = Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll('.btn-group button'),
+    ) as HTMLButtonElement[];
+    buttons.find((b) => b.textContent?.trim() === label)!.click();
+    fixture.detectChanges();
+  }
+
+  it('switches scope client-side without re-fetching', () => {
     const fixture = TestBed.createComponent(ForecastPage);
     fixture.detectChanges();
     http.expectOne((r) => r.url === '/api/forecast').flush(forecast());
     fixture.detectChanges();
 
-    // Click the "3 days" preset (first horizon button matching text).
-    const buttons = Array.from(
-      (fixture.nativeElement as HTMLElement).querySelectorAll('.btn-group button'),
-    ) as HTMLButtonElement[];
-    buttons.find((b) => b.textContent?.includes('3 day'))!.click();
-    fixture.detectChanges();
+    // 7 days → both daily rows, including the depleted day 2. No new HTTP request
+    // (afterEach http.verify() would fail if a fetch fired).
+    clickScope(fixture, '7 days');
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelectorAll('tbody tr').length).toBe(2);
+    expect(el.textContent).toContain('may deplete');
 
-    const req = http.expectOne((r) => r.url === '/api/forecast');
-    expect(req.request.params.get('days')).toBe('3');
-    req.flush(forecast({ days: 3 }));
+    // Tomorrow → just day 2 (the depleted one).
+    clickScope(fixture, 'Tomorrow');
+    expect(el.querySelectorAll('tbody tr').length).toBe(1);
+    expect(el.textContent).toContain('may deplete');
+    expect(el.textContent).toContain('Expected tomorrow');
   });
 });

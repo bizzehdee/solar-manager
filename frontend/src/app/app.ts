@@ -13,7 +13,7 @@ import { StatusPill } from './shared/status-pill';
   selector: 'app-root',
   imports: [RouterOutlet, RouterLink, RouterLinkActive, StatusPill, DatePipe],
   template: `
-    <div [class.sidebar-collapsed]="!sidebarOpen()">
+    <div [class.sidebar-collapsed]="!sidebarOpen()" [class.sidebar-open]="sidebarOpen()">
       <header class="app-header navbar navbar-expand bg-body-tertiary border-bottom fixed-top px-3">
         <button class="btn btn-sm btn-outline-secondary me-2" (click)="toggleSidebar()" aria-label="Toggle sidebar">
           <i class="bi bi-list"></i>
@@ -27,11 +27,15 @@ import { StatusPill } from './shared/status-pill';
         </div>
       </header>
 
+      <!-- Mobile-only scrim behind the off-canvas sidebar; tap to dismiss. -->
+      <div class="sidebar-backdrop" (click)="sidebarOpen.set(false)"></div>
+
       <nav class="app-sidebar p-2">
         <ul class="nav nav-pills flex-column gap-1">
           @for (item of nav; track item.path) {
             <li class="nav-item">
-              <a class="nav-link d-flex align-items-center gap-2" [routerLink]="item.path" routerLinkActive="active">
+              <a class="nav-link d-flex align-items-center gap-2" [routerLink]="item.path"
+                 routerLinkActive="active" (click)="onNavigate()">
                 <i class="bi {{ item.icon }}"></i> {{ item.label }}
               </a>
             </li>
@@ -55,7 +59,9 @@ export class App implements OnInit {
   readonly live = inject(LiveService);
   private readonly api = inject(ApiService);
 
-  readonly sidebarOpen = signal(true);
+  // Open by default on desktop, closed on mobile (where the sidebar is an off-canvas
+  // overlay). The hamburger toggles it; on mobile it slides in over a backdrop.
+  readonly sidebarOpen = signal(isWideViewport());
   readonly version = signal('');
   readonly now = signal(new Date());
 
@@ -76,4 +82,16 @@ export class App implements OnInit {
   toggleSidebar(): void {
     this.sidebarOpen.update((v) => !v);
   }
+
+  /** After tapping a nav item, dismiss the off-canvas sidebar on mobile (on desktop it
+   *  stays pinned). */
+  onNavigate(): void {
+    if (!isWideViewport()) this.sidebarOpen.set(false);
+  }
+}
+
+/** True on desktop-width viewports (matches the ≤768px sidebar media query in styles.scss).
+ *  Guards `window` so it's safe under jsdom/SSR. */
+function isWideViewport(): boolean {
+  return typeof window === 'undefined' || window.innerWidth > 768;
 }

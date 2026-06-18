@@ -2,29 +2,32 @@ import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { DatePipe, DecimalPipe } from '@angular/common';
 
 import { ApiService } from '../../core/api.service';
-import { ForecastResponse, HistoryPoint } from '../../core/models';
+import { DailyForecast, ForecastResponse, HistoryPoint } from '../../core/models';
 import { StatCard } from '../../shared/stat-card';
 import { TimeSeriesChart } from '../../shared/time-series-chart';
 
-// Forecast view (plan.md §13 / Phase 4): expected PV generation + projected battery SoC over a
-// selectable 1–7 day horizon, a per-day report, plus headline KPIs (expected energy, battery
-// empty/full times). Read-only — the model is configured under Settings › Solar array & site (T064).
+type ScopeKey = 'today' | 'tomorrow' | '3d' | '7d';
+
+// Forecast view (plan.md §13 / Phase 4): expected PV generation + projected battery SoC,
+// scoped to today / tomorrow / 3d / 7d. The full 7-day forecast is fetched once and the
+// scope just *filters* it client-side — so switching is instant (no refetch). Read-only;
+// the model is configured under Settings › Solar array & site (T064).
 @Component({
   selector: 'app-forecast',
   imports: [TimeSeriesChart, StatCard, DatePipe, DecimalPipe],
   template: `
     <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
       <h4 class="mb-0"><i class="bi bi-cloud-sun"></i> Forecast</h4>
-      <div class="btn-group btn-group-sm" role="group" aria-label="Forecast horizon">
-        @for (d of horizons; track d) {
+      <div class="btn-group btn-group-sm" role="group" aria-label="Forecast range">
+        @for (s of scopes; track s.key) {
           <button
             type="button"
             class="btn"
-            [class.btn-primary]="days() === d"
-            [class.btn-outline-secondary]="days() !== d"
-            (click)="setDays(d)"
+            [class.btn-primary]="scope() === s.key"
+            [class.btn-outline-secondary]="scope() !== s.key"
+            (click)="scope.set(s.key)"
           >
-            {{ d }} day{{ d === 1 ? '' : 's' }}
+            {{ s.label }}
           </button>
         }
       </div>
@@ -35,32 +38,22 @@ import { TimeSeriesChart } from '../../shared/time-series-chart';
         <span class="spinner-border spinner-border-sm"></span> Loading…
       </div>
     } @else if (forecast(); as f) {
-      <!-- KPI row: today's expected yield + projected battery empty/full times. -->
+      <!-- KPI row: expected yield for the selected range + projected battery empty/full times. -->
       <div class="row g-3 mb-3">
         <div class="col-12 col-md-4">
           <app-stat-card
-            label="Expected today"
-            [value]="kwh(f.expected_today_wh)"
+            [label]="'Expected ' + scopeLabel().toLowerCase()"
+            [value]="expectedKwh()"
             unit="kWh"
             icon="bi-sun"
             role="warning"
           />
         </div>
         <div class="col-6 col-md-4">
-          <app-stat-card
-            label="Battery empty at"
-            [value]="depletionLabel()"
-            icon="bi-battery"
-            role="danger"
-          />
+          <app-stat-card label="Battery empty at" [value]="depletionLabel()" icon="bi-battery" role="danger" />
         </div>
         <div class="col-6 col-md-4">
-          <app-stat-card
-            label="Battery full at"
-            [value]="fullLabel()"
-            icon="bi-battery-full"
-            role="success"
-          />
+          <app-stat-card label="Battery full at" [value]="fullLabel()" icon="bi-battery-full" role="success" />
         </div>
       </div>
 
@@ -72,31 +65,20 @@ import { TimeSeriesChart } from '../../shared/time-series-chart';
         <div class="card mb-3">
           <div class="card-header"><i class="bi bi-sun"></i> Expected generation</div>
           <div class="card-body">
-            <app-time-series-chart
-              [points]="generationPoints()"
-              label="Expected PV"
-              unit="W"
-              kind="line"
-            />
+            <app-time-series-chart [points]="generationPoints()" label="Expected PV" unit="W" kind="line" />
           </div>
         </div>
 
         <div class="card mb-3">
           <div class="card-header"><i class="bi bi-battery-charging"></i> Projected battery SoC</div>
           <div class="card-body">
-            <app-time-series-chart
-              [points]="socPoints()"
-              label="Projected SoC"
-              unit="%"
-              kind="line"
-              color="#198754"
-            />
+            <app-time-series-chart [points]="socPoints()" label="Projected SoC" unit="%" kind="line" color="#198754" />
           </div>
         </div>
 
-        <!-- Per-day report: one row per calendar day across the horizon. -->
+        <!-- Per-day report for the selected range (one row per calendar day). -->
         <div class="card">
-          <div class="card-header"><i class="bi bi-calendar-week"></i> {{ f.days }}-day outlook</div>
+          <div class="card-header"><i class="bi bi-calendar-week"></i> {{ scopeLabel() }} outlook</div>
           <div class="table-responsive">
             <table class="table table-sm mb-0 align-middle">
               <thead>
@@ -108,7 +90,7 @@ import { TimeSeriesChart } from '../../shared/time-series-chart';
                 </tr>
               </thead>
               <tbody>
-                @for (d of f.daily; track d.date) {
+                @for (d of visibleDaily(); track d.date) {
                   <tr>
                     <td>{{ d.date | date: 'EEE d MMM' }}</td>
                     <td class="text-end">{{ d.expected_wh / 1000 | number: '1.1-1' }} kWh</td>
@@ -143,40 +125,67 @@ import { TimeSeriesChart } from '../../shared/time-series-chart';
 export class ForecastPage implements OnInit {
   private readonly api = inject(ApiService);
 
-  readonly horizons = [1, 3, 7];
-  readonly days = signal(7);
+  readonly scopes: { key: ScopeKey; label: string }[] = [
+    { key: 'today', label: 'Today' },
+    { key: 'tomorrow', label: 'Tomorrow' },
+    { key: '3d', label: '3 days' },
+    { key: '7d', label: '7 days' },
+  ];
+  readonly scope = signal<ScopeKey>('today');
   readonly forecast = signal<ForecastResponse | null>(null);
   readonly loading = signal(true);
 
-  /** Expected PV power curve, mapped to the chart's {ts,value} point shape. */
+  readonly scopeLabel = computed(() => this.scopes.find((s) => s.key === this.scope())!.label);
+
+  /** Calendar dates (UTC) in the forecast, ascending; daily[0] is today. */
+  private readonly dates = computed(() => (this.forecast()?.daily ?? []).map((d) => d.date));
+
+  /** The set of dates included by the current scope (today / tomorrow / first 3 / all 7). */
+  private readonly selectedDates = computed<Set<string>>(() => {
+    const d = this.dates();
+    switch (this.scope()) {
+      case 'today':
+        return new Set(d.slice(0, 1));
+      case 'tomorrow':
+        return new Set(d.slice(1, 2));
+      case '3d':
+        return new Set(d.slice(0, 3));
+      default:
+        return new Set(d);
+    }
+  });
+
+  /** Per-day report rows within the selected scope. */
+  readonly visibleDaily = computed<DailyForecast[]>(() =>
+    (this.forecast()?.daily ?? []).filter((d) => this.selectedDates().has(d.date)),
+  );
+
+  /** Expected PV power curve for the scope, mapped to the chart's {ts,value} shape. */
   readonly generationPoints = computed<HistoryPoint[]>(() =>
-    (this.forecast()?.generation ?? []).map((g) => ({ ts: g.ts, value: g.pv_w })),
+    (this.forecast()?.generation ?? [])
+      .filter((g) => this.selectedDates().has(utcDate(g.ts)))
+      .map((g) => ({ ts: g.ts, value: g.pv_w })),
   );
 
-  /** Projected battery SoC curve, mapped to the chart's {ts,value} point shape. */
+  /** Projected SoC curve for the scope. */
   readonly socPoints = computed<HistoryPoint[]>(() =>
-    (this.forecast()?.soc ?? []).map((p) => ({ ts: p.ts, value: p.soc_pct })),
+    (this.forecast()?.soc ?? [])
+      .filter((p) => this.selectedDates().has(utcDate(p.ts)))
+      .map((p) => ({ ts: p.ts, value: p.soc_pct })),
   );
 
-  /** "Battery empty at" — a local time, or a sentinel when no depletion is projected. */
+  /** Total expected generation across the selected range, in kWh (1dp). */
+  readonly expectedKwh = computed(() =>
+    (this.visibleDaily().reduce((sum, d) => sum + d.expected_wh, 0) / 1000).toFixed(1),
+  );
+
+  /** Battery empty/full are whole-projection facts (forward-looking, may be a future day). */
   readonly depletionLabel = computed(() => this.timeLabel(this.forecast()?.depletion_ts ?? null));
-  /** "Battery full at" — a local time, or a sentinel when no full charge is projected. */
   readonly fullLabel = computed(() => this.timeLabel(this.forecast()?.full_ts ?? null));
 
   ngOnInit(): void {
-    this.load();
-  }
-
-  /** Switch the forecast horizon (1/3/7 days) and reload. */
-  setDays(days: number): void {
-    if (days === this.days()) return;
-    this.days.set(days);
-    this.load();
-  }
-
-  private load(): void {
-    this.loading.set(true);
-    this.api.getForecast(undefined, this.days()).subscribe({
+    // Fetch the full 7-day forecast once; scope switching filters it client-side.
+    this.api.getForecast(undefined, 7).subscribe({
       next: (f) => {
         this.forecast.set(f);
         this.loading.set(false);
@@ -188,17 +197,19 @@ export class ForecastPage implements OnInit {
     });
   }
 
-  /** Wh → kWh to 1dp for the headline KPI. */
-  kwh(wh: number): string {
-    return (wh / 1000).toFixed(1);
-  }
-
-  /** Epoch seconds → localised hh:mm, or "not projected" when the event won't occur. */
+  /** Epoch seconds → localised weekday + time (weekday disambiguates a future day),
+   *  or "not projected" when the event won't occur within the forecast. */
   private timeLabel(ts: number | null): string {
     if (ts === null) return 'not projected';
-    return new Date(ts * 1000).toLocaleTimeString(undefined, {
+    return new Date(ts * 1000).toLocaleString(undefined, {
+      weekday: 'short',
       hour: '2-digit',
       minute: '2-digit',
     });
   }
+}
+
+/** Epoch seconds → UTC YYYY-MM-DD, matching the backend's per-day grouping. */
+function utcDate(ts: number): string {
+  return new Date(ts * 1000).toISOString().slice(0, 10);
 }
