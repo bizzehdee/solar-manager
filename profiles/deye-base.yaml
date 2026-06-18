@@ -93,35 +93,56 @@ metrics:
 
 # Writable control settings -> SettingsSchema (plan.md §4/§12). The work-mode
 # timer is 6 repeating slots; slot i uses base_addr + i.
+# All addresses below are VALIDATED against the SG05LP1's own screen (2026-06-18 config
+# read-out + the grid-charging regscan dump). See validation block in the child profile.
 settings:
   globals:
-    timer_enabled:   { addr: 248, type: bool, mask: 0x01 }
-    grid_charge:     { addr: 232, type: bool, mask: 0x01 }
-    work_mode:       { addr: 244, type: enum }                  # "Load Limit" / priority mode (values TBD)
+    timer_enabled:   { addr: 248, type: bool, mask: 0x01 }      # "Use Timer"
+    grid_charge:     { addr: 232, type: bool, mask: 0x01 }      # confirmed Enabled = 1
+    # "Work mode" — confirmed [244]=2 = "Zero export to CT" on this unit. Other enum
+    # values are NOT yet screen-verified (decode falls back to the raw int for unknowns).
+    work_mode:       { addr: 244, type: enum, values: { 2: zero_export_to_ct } }
+    energy_pattern:  { addr: 243, type: enum, values: { 0: battery_first, 1: load_first } }  # confirmed 1 = Load first
+    solar_export:    { addr: 247, type: bool, mask: 0x01 }      # "Solar export when battery full" (confirmed 0 = off)
+    max_sell_power_w:    { addr: 245, type: u16 }               # confirmed 8000 W
+    max_solar_power_w:   { addr: 53,  type: u16 }               # confirmed 4800 W
+    start_grid_charge_soc_pct: { addr: 229, type: u16 }         # "Start grid charge capacity" (confirmed 30 %)
+  # Work-mode timer: 6 repeating slots, slot i = base_addr + i. ALL fields confirmed against
+  # the screen. There is NO end-time register — a slot ends when the next begins (cyclic,
+  # wraps the last slot → the first). Example validated config (this unit, cheap-night plan):
+  #   start  power  soc  grid gen     ── grid-charge to 65% overnight, 10% floor by day:
+  #   00:05  8kW    65%  on   off       slot1 [250]=5  [256]=8000 [268]=65 [274]=5 (bit0 grid on)
+  #   05:55  8kW    10%  off  off       slot2 [251]=555 ...                  [275]=4 (grid off)
+  #   09:00 / 13:00 / 17:00 / 21:00 — all 8kW / 10% / grid off / gen off.
   timer_slots:
     count: 6
     fields:
-      start_time:        { base_addr: 250, type: time_hhmm }    # 250..255  (e.g. 1300 -> 13:00)
+      start_time:        { base_addr: 250, type: time_hhmm }    # 250..255  (raw 5 -> 00:05, 555 -> 05:55)
       power_w:           { base_addr: 256, type: u16 }          # 256..261
       target_soc_pct:    { base_addr: 268, type: u16 }          # 268..273
-      voltage_v:         { base_addr: 262, type: u16, scale: 0.01 }  # 262..267
-      charge_from_grid:  { base_addr: 274, type: bool, mask: 0x01 }  # 274..279 bit0
+      voltage_v:         { base_addr: 262, type: u16, scale: 0.01 }  # 262..267 (unused in SoC mode)
+      charge_from_grid:  { base_addr: 274, type: bool, mask: 0x01 }  # 274..279 bit0 (confirmed)
       charge_from_gen:   { base_addr: 274, type: bool, mask: 0x02 }  #          bit1
       mode:              { base_addr: 274, type: bits, mask: 0x1C }  #          bits 2-4
-  # Battery protection / charge settings (writable holding registers; °×0.01 V).
+  # Battery protection / charge settings (writable holding registers; voltages ×0.01 V).
+  # Screen labels: shutdown_soc = "Output shutdown capacity"; low_soc = "Stop battery
+  # discharge capacity"; restart_soc = "Start battery discharge capacity".
   battery:
-    equalization_voltage_v:  { addr: 201, type: u16, scale: 0.01 }
-    absorption_voltage_v:    { addr: 202, type: u16, scale: 0.01 }
-    float_voltage_v:         { addr: 203, type: u16, scale: 0.01 }
-    shutdown_soc_pct:        { addr: 217, type: u16 }
-    restart_soc_pct:         { addr: 218, type: u16 }
-    low_soc_pct:             { addr: 219, type: u16 }
+    equalization_voltage_v:  { addr: 201, type: u16, scale: 0.01 }   # confirmed 56.0 V
+    absorption_voltage_v:    { addr: 202, type: u16, scale: 0.01 }   # confirmed 56.0 V
+    float_voltage_v:         { addr: 203, type: u16, scale: 0.01 }   # confirmed 53.6 V
+    shutdown_soc_pct:        { addr: 217, type: u16 }                # confirmed 5 %
+    restart_soc_pct:         { addr: 218, type: u16 }                # confirmed 25 % (start discharge)
+    low_soc_pct:             { addr: 219, type: u16 }                # confirmed 10 % (stop discharge)
     shutdown_voltage_v:      { addr: 220, type: u16, scale: 0.01 }
     restart_voltage_v:       { addr: 221, type: u16, scale: 0.01 }
     low_voltage_v:           { addr: 222, type: u16, scale: 0.01 }
-    max_charge_current_a:    { addr: 210, type: u16 }
-    max_discharge_current_a: { addr: 211, type: u16 }
-    grid_charge_current_a:   { addr: 230, type: u16 }
+    max_charge_current_a:    { addr: 210, type: u16 }                # confirmed 140 A
+    max_discharge_current_a: { addr: 211, type: u16 }                # confirmed 180 A
+    grid_charge_current_a:   { addr: 230, type: u16 }                # confirmed 80 A
+    gen_charge_current_a:    { addr: 227, type: u16 }                # confirmed 40 A
+    battery_capacity_ah:     { addr: 204, type: u16 }                # confirmed 312 Ah (≈16 kWh @ 51.2 V)
+    bms_protocol:            { addr: 325, type: enum, values: { 0: can } }   # Lithium, CAN protocol 0
 
 # Device identity.
 info:

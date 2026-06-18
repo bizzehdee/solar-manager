@@ -468,7 +468,7 @@ Writing to the inverter is the one feature that can do harm, so it's deliberatel
 6. **Host: a Raspberry Pi running fresh Ubuntu, native install (primary path); Docker optional.** Could also be a NAS or home server. Low-footprint design (SQLite, no heavy DB) keeps it Pi-friendly. **Native is the supported default** (see §13); Docker support is maintained as an alternative. The host with the USB-RS485 adapter must be physically near the inverter; if it can't be, that's a reason to move to the **SolarmanV5 Wi-Fi transport** later, which removes the proximity constraint.
 
 ### Still to confirm on-site (pre-Phase 1)
-- **Battery nominal/system voltage** (48 V vs 51.2 V class) to convert the inverter's **312 Ah** into kWh, and the **min-SoC / depth-of-discharge** setting to derive *usable* kWh.
+- **Battery capacity** — ✓ **resolved** from the inverter config: **312 Ah** (reg [204]), Lithium / CAN / SoC-mode (reg [325]=0). At the ~51.2 V class that's **≈16 kWh** (matches the forecast default `capacity_wh:16000` and the dummy). Usable depth: min-SoC (stop-discharge) **10 %**, output-shutdown 5 %.
 - **Battery & grid power sign conventions** — ✓ **resolved** by the grid-charging capture (battery is discharge-positive → negated to +charge/−discharge; grid is import-positive → matches canonical). Still open: a daytime **exporting** scan to confirm grid export polarity directly (currently assumed s16-negative), and a re-check of PV1 voltage by day under load (night residual only).
 
 ---

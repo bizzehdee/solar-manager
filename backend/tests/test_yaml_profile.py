@@ -119,6 +119,37 @@ def test_no_faults_is_empty_list():
     assert _profile().decode({103: 0, 104: 0, 105: 0, 106: 0})["inverter_fault_codes"] == []
 
 
+# --- writable-settings map, validated vs the inverter screen (plan.md §4/§12; T071) -----
+def test_settings_map_inherited_and_complete():
+    s = _profile().settings  # inherited from deye-base
+    assert {"globals", "timer_slots", "battery"} <= set(s)
+    g = s["globals"]
+    # work_mode enum resolved: [244] = 2 -> "Zero export to CT".
+    assert g["work_mode"]["addr"] == 244
+    assert g["work_mode"]["values"][2] == "zero_export_to_ct"
+    # newly-confirmed global settings registers are present at their screen-validated addrs.
+    assert g["energy_pattern"]["addr"] == 243 and g["energy_pattern"]["values"][1] == "load_first"
+    assert g["max_sell_power_w"]["addr"] == 245
+    assert g["max_solar_power_w"]["addr"] == 53
+    assert g["start_grid_charge_soc_pct"]["addr"] == 229
+
+
+def test_settings_battery_and_timer_addresses():
+    s = _profile().settings
+    b = s["battery"]
+    assert b["max_charge_current_a"]["addr"] == 210 and b["max_discharge_current_a"]["addr"] == 211
+    assert b["gen_charge_current_a"]["addr"] == 227
+    assert b["battery_capacity_ah"]["addr"] == 204      # 312 Ah on this unit
+    assert b["bms_protocol"]["values"][0] == "can"
+    # 6 cyclic timer slots, base addresses match the validated screen read-out.
+    t = s["timer_slots"]
+    assert t["count"] == 6
+    assert t["fields"]["start_time"]["base_addr"] == 250
+    assert t["fields"]["target_soc_pct"]["base_addr"] == 268
+    assert t["fields"]["charge_from_grid"]["base_addr"] == 274
+    assert t["fields"]["charge_from_grid"]["mask"] == 0x01
+
+
 # --- identity / firmware registers (task T032) ------------------------------------
 def test_decode_identity_protocol_and_rated_power():
     # info: protocol addr 2 (version_be, 0x0201 -> "2.1"); rated_power_w [16,17] u32

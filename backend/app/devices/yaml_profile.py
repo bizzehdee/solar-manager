@@ -104,6 +104,12 @@ class ModbusYamlProfile:
         return caps
 
     @property
+    def settings(self) -> dict[str, Any]:
+        """The writable-settings map (globals / timer_slots / battery, plan.md §4/§12).
+        Consumed by the Phase 5 SettingsSchema; exposed here so it's inspectable/testable."""
+        return self._spec.get("settings", {})
+
+    @property
     def info(self) -> DeviceInfo:
         return DeviceInfo(
             vendor=self.vendor,
