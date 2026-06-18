@@ -43,6 +43,26 @@ PROFILES_DIR = Path(__file__).resolve().parents[3] / "profiles"
 _MAX_BLOCK = 64  # registers per read transaction when clustering (Phase 1 transport)
 
 
+def available_profiles() -> list[dict]:
+    """The selectable device profiles for the setup UI: every concrete YAML in
+    `profiles/`, as ``{name, vendor, model, label}`` sorted by label. Abstract base
+    profiles (no `model:` — e.g. `deye-base`, meant only to be `extends:`-ed) are
+    skipped, as are any that fail to parse."""
+    out: list[dict] = []
+    for path in sorted(PROFILES_DIR.glob("*.yaml")):
+        try:
+            spec = ModbusYamlProfile._load_with_inheritance(path)
+        except Exception:
+            continue  # a malformed profile shouldn't break the whole dropdown
+        model = spec.get("model")
+        if not model:
+            continue  # abstract base (deye-base) — extend it, don't select it
+        vendor = spec.get("vendor", "")
+        label = " ".join(p for p in (vendor, model) if p) or path.stem
+        out.append({"name": path.stem, "vendor": vendor, "model": model, "label": label})
+    return sorted(out, key=lambda p: p["label"])
+
+
 def _signed(value: int, bits: int) -> int:
     if value >= 1 << (bits - 1):
         value -= 1 << bits

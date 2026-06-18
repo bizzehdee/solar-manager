@@ -11,7 +11,10 @@ import {
   Diagnostics,
   GridEvent,
   DeviceConfig,
+  DeviceProfileOption,
   DeviceSettingsResponse,
+  DeviceTestResult,
+  SerialPort,
   ForecastCalibration,
   ForecastConfig,
   ForecastResponse,
@@ -96,6 +99,21 @@ export class ApiService {
 
   getDevices(): Observable<{ devices: DeviceConfig[] }> {
     return this.http.get<{ devices: DeviceConfig[] }>('/api/devices');
+  }
+
+  /** Serial/tty ports present on the host (for the port dropdown). */
+  getSerialPorts(): Observable<{ ports: SerialPort[] }> {
+    return this.http.get<{ ports: SerialPort[] }>('/api/serial-ports');
+  }
+
+  /** Selectable device profiles (for the profile dropdown). */
+  getProfiles(): Observable<{ profiles: DeviceProfileOption[] }> {
+    return this.http.get<{ profiles: DeviceProfileOption[] }>('/api/profiles');
+  }
+
+  /** Probe a prospective device's connection without saving it. */
+  testDevice(body: Record<string, unknown>): Observable<DeviceTestResult> {
+    return this.http.post<DeviceTestResult>('/api/devices/test', body);
   }
 
   createDevice(body: Record<string, unknown>): Observable<DeviceConfig> {

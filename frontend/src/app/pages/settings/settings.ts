@@ -3,7 +3,15 @@ import { FormsModule } from '@angular/forms';
 
 import { ApiService } from '../../core/api.service';
 import { PreferencesService } from '../../core/preferences.service';
-import { ArraySpec, DeviceConfig, ForecastConfig, StatsConfig } from '../../core/models';
+import {
+  ArraySpec,
+  DeviceConfig,
+  DeviceProfileOption,
+  DeviceTestResult,
+  ForecastConfig,
+  SerialPort,
+  StatsConfig,
+} from '../../core/models';
 
 // Settings › Devices (plan.md §6, §11): the device registry. Lists configured devices and
 // offers an inline add/edit/delete form. Single-house deployment, no auth (CLAUDE.md).
@@ -113,11 +121,32 @@ import { ArraySpec, DeviceConfig, ForecastConfig, StatsConfig } from '../../core
             @if (form.transport === 'modbus_rtu') {
               <div class="col-12 col-md-4">
                 <label class="form-label small text-secondary" for="dev-profile">Profile</label>
-                <input id="dev-profile" class="form-control" [(ngModel)]="form.profile" name="profile" />
+                <select id="dev-profile" class="form-select" [(ngModel)]="form.profile" name="profile">
+                  <option value="" disabled>Select a profile…</option>
+                  @for (p of profiles(); track p.name) {
+                    <option [value]="p.name">{{ p.label }}</option>
+                  }
+                </select>
               </div>
               <div class="col-12 col-md-4">
                 <label class="form-label small text-secondary" for="dev-port">Serial port</label>
-                <input id="dev-port" class="form-control" [(ngModel)]="form.port" name="port" placeholder="/dev/ttyUSB0" />
+                <div class="input-group">
+                  <select id="dev-port" class="form-select" [(ngModel)]="form.port" name="port">
+                    <option value="" disabled>Select a port…</option>
+                    @for (p of serialPorts(); track p.device) {
+                      <option [value]="p.device">
+                        {{ p.device }}{{ p.description ? ' — ' + p.description : '' }}
+                      </option>
+                    }
+                  </select>
+                  <button type="button" class="btn btn-outline-secondary" (click)="refreshPorts()"
+                          title="Rescan serial ports">
+                    <i class="bi bi-arrow-clockwise"></i>
+                  </button>
+                </div>
+                @if (serialPorts().length === 0) {
+                  <div class="form-text">No serial ports detected — plug in your RS485 adapter and rescan.</div>
+                }
               </div>
               <div class="col-12 col-md-4">
                 <label class="form-label small text-secondary" for="dev-slave">Slave ID</label>
@@ -125,10 +154,25 @@ import { ArraySpec, DeviceConfig, ForecastConfig, StatsConfig } from '../../core
               </div>
             }
           </div>
-          <div class="mt-3">
+          @if (testResult(); as r) {
+            <div class="alert mt-3 mb-0" [class]="r.ok ? 'alert-success' : 'alert-danger'">
+              <i class="bi" [class]="r.ok ? 'bi-check-circle' : 'bi-x-circle'"></i> {{ r.message }}
+            </div>
+          }
+          <div class="mt-3 d-flex gap-2">
             <button type="submit" class="btn btn-primary" [disabled]="!form.id">
               <i class="bi bi-plus-lg"></i> Add device
             </button>
+            @if (form.transport === 'modbus_rtu') {
+              <button type="button" class="btn btn-outline-secondary"
+                      [disabled]="testing() || !form.profile || !form.port" (click)="testConnection()">
+                @if (testing()) {
+                  <span class="spinner-border spinner-border-sm me-1"></span> Testing…
+                } @else {
+                  <i class="bi bi-plug"></i> Test connection
+                }
+              </button>
+            }
           </div>
         </form>
       </div>
@@ -379,6 +423,12 @@ export class SettingsPage implements OnInit {
   readonly renameId = signal<string | null>(null);
   renameValue = '';
 
+  // Add-device form helpers: enumerated ports/profiles + connection-test feedback.
+  readonly serialPorts = signal<SerialPort[]>([]);
+  readonly profiles = signal<DeviceProfileOption[]>([]);
+  readonly testing = signal(false);
+  readonly testResult = signal<DeviceTestResult | null>(null);
+
   form = {
     id: '',
     name: '',
@@ -422,8 +472,41 @@ export class SettingsPage implements OnInit {
 
   ngOnInit(): void {
     this.refresh();
+    this.refreshPorts();
+    this.loadProfiles();
     this.loadTariff();
     this.loadForecast();
+  }
+
+  /** Re-enumerate the host's serial ports (also the rescan button). */
+  refreshPorts(): void {
+    this.api.getSerialPorts().subscribe((res) => this.serialPorts.set(res.ports));
+  }
+
+  private loadProfiles(): void {
+    this.api.getProfiles().subscribe((res) => this.profiles.set(res.profiles));
+  }
+
+  /** Probe the connection for the values currently in the Add-device form. */
+  testConnection(): void {
+    this.testing.set(true);
+    this.testResult.set(null);
+    this.api
+      .testDevice({
+        transport: this.form.transport,
+        profile: this.form.profile,
+        params: { port: this.form.port, slave_id: this.form.slaveId },
+      })
+      .subscribe({
+        next: (r) => {
+          this.testResult.set(r);
+          this.testing.set(false);
+        },
+        error: () => {
+          this.testResult.set({ ok: false, message: 'Could not run the connection test.' });
+          this.testing.set(false);
+        },
+      });
   }
 
   private loadForecast(): void {
@@ -602,6 +685,7 @@ export class SettingsPage implements OnInit {
     this.api.createDevice(body).subscribe({
       next: () => {
         this.form = { id: '', name: '', transport: 'dummy', profile: '', port: '', slaveId: 1 };
+        this.testResult.set(null);
         this.refresh();
       },
       error: (err) => {

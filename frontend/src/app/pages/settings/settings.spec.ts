@@ -64,6 +64,12 @@ describe('SettingsPage', () => {
     http.expectOne('/api/forecast/config').flush(forecastConfig());
   }
 
+  /** Flush the serial-port + profile lookups the page loads on init. */
+  function flushDeviceLookups(): void {
+    http.expectOne('/api/serial-ports').flush({ ports: [{ device: '/dev/ttyUSB0', description: 'USB', hwid: '' }] });
+    http.expectOne('/api/profiles').flush({ profiles: [{ name: 'sunsynk-8k-sg05lp1', vendor: 'sunsynk', model: 'X', label: 'sunsynk X' }] });
+  }
+
   it('saveLocale() persists the locale via /api/preferences (T093)', () => {
     const fixture = TestBed.createComponent(SettingsPage);
     fixture.componentInstance.reloadApp = () => {}; // don't navigate in tests
@@ -316,6 +322,52 @@ describe('SettingsPage', () => {
     expect(fixture.componentInstance.forecast.arrays.length).toBe(2);
     fixture.componentInstance.removeSegment(0);
     expect(fixture.componentInstance.forecast.arrays.length).toBe(1);
+  });
+
+  it('loads serial ports and profiles into dropdowns on init', () => {
+    const fixture = TestBed.createComponent(SettingsPage);
+    fixture.detectChanges();
+    http.expectOne('/api/devices').flush({ devices: [] });
+    flushConfig();
+    flushDeviceLookups();
+    expect(fixture.componentInstance.serialPorts().length).toBe(1);
+    expect(fixture.componentInstance.serialPorts()[0].device).toBe('/dev/ttyUSB0');
+    expect(fixture.componentInstance.profiles()[0].name).toBe('sunsynk-8k-sg05lp1');
+  });
+
+  it('refreshPorts() re-fetches /api/serial-ports', () => {
+    const fixture = TestBed.createComponent(SettingsPage);
+    fixture.detectChanges();
+    http.expectOne('/api/devices').flush({ devices: [] });
+    flushConfig();
+    flushDeviceLookups();
+
+    fixture.componentInstance.refreshPorts();
+    http.expectOne('/api/serial-ports').flush({ ports: [] });
+    expect(fixture.componentInstance.serialPorts().length).toBe(0);
+  });
+
+  it('testConnection() POSTs the form to /api/devices/test and shows the result', () => {
+    const fixture = TestBed.createComponent(SettingsPage);
+    fixture.detectChanges();
+    http.expectOne('/api/devices').flush({ devices: [] });
+    flushConfig();
+    flushDeviceLookups();
+
+    fixture.componentInstance.form.transport = 'modbus_rtu';
+    fixture.componentInstance.form.profile = 'sunsynk-8k-sg05lp1';
+    fixture.componentInstance.form.port = '/dev/ttyUSB0';
+    fixture.componentInstance.testConnection();
+
+    const post = http.expectOne((r) => r.method === 'POST' && r.url === '/api/devices/test');
+    expect(post.request.body).toEqual({
+      transport: 'modbus_rtu',
+      profile: 'sunsynk-8k-sg05lp1',
+      params: { port: '/dev/ttyUSB0', slave_id: 1 },
+    });
+    post.flush({ ok: true, message: 'Connected — read 12 metric(s).', metric_count: 12 });
+    expect(fixture.componentInstance.testResult()?.ok).toBe(true);
+    expect(fixture.componentInstance.testing()).toBe(false);
   });
 
   it('saveForecast() PUTs site/arrays/battery to /api/forecast/config (T064)', () => {

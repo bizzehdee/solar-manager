@@ -74,6 +74,57 @@ def test_device_create_update_delete(midday):
         assert ids == ["dummy"]
 
 
+def test_serial_ports_endpoint_shape(midday, monkeypatch):
+    # Stub the host enumeration so the test is hardware-independent.
+    monkeypatch.setattr(
+        "app.main.list_serial_ports",
+        lambda: [{"device": "/dev/ttyUSB0", "description": "USB Serial", "hwid": "x"}],
+    )
+    with _client(midday) as client:
+        body = client.get("/api/serial-ports").json()
+        assert body["ports"][0]["device"] == "/dev/ttyUSB0"
+
+
+def test_profiles_endpoint_lists_concrete_profiles(midday):
+    with _client(midday) as client:
+        body = client.get("/api/profiles").json()
+        names = [p["name"] for p in body["profiles"]]
+        assert "sunsynk-8k-sg05lp1" in names
+        assert "deye-base" not in names  # abstract base is filtered out
+        sunsynk = next(p for p in body["profiles"] if p["name"] == "sunsynk-8k-sg05lp1")
+        assert sunsynk["model"] and sunsynk["label"]
+
+
+def test_test_device_dummy_always_ok(midday):
+    with _client(midday) as client:
+        r = client.post("/api/devices/test", json={"transport": "dummy"})
+        assert r.status_code == 200 and r.json()["ok"] is True
+
+
+def test_test_device_modbus_failed_probe_is_200_not_ok(midday):
+    # No real serial port -> connect/read fails; that's a bad connection, not a bad
+    # request, so it's a 200 with ok=false carrying the error message.
+    with _client(midday) as client:
+        r = client.post("/api/devices/test", json={
+            "transport": "modbus_rtu",
+            "profile": "sunsynk-8k-sg05lp1",
+            "params": {"port": "/dev/does-not-exist", "slave_id": 1},
+        })
+        assert r.status_code == 200
+        body = r.json()
+        assert body["ok"] is False and body["message"]
+
+
+def test_test_device_unknown_profile_is_422(midday):
+    with _client(midday) as client:
+        r = client.post("/api/devices/test", json={
+            "transport": "modbus_rtu",
+            "profile": "no-such-profile",
+            "params": {"port": "/dev/ttyUSB0"},
+        })
+        assert r.status_code == 422
+
+
 def test_stats_daily_endpoint_shape(midday):
     with _client(midday) as client:
         body = client.get("/api/stats/daily").json()

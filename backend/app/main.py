@@ -36,6 +36,8 @@ from .devices.factory import (
 )
 from .devices.firmware import verify_firmware
 from .devices.registry import DeviceRegistry
+from .devices.serial_ports import list_serial_ports
+from .devices.yaml_profile import available_profiles
 from .forecast.openmeteo import OpenMeteoClient
 from .forecast.service import ForecastService
 from .persistence import PersistenceService
@@ -601,6 +603,49 @@ def create_app(
                 name = f"solarvolt_{metric}"
                 lines.append(f'{name}{{device="{device_id}"}} {value}')
         return Response("\n".join(lines) + "\n", media_type="text/plain; version=0.0.4")
+
+    # ---- device-setup helpers (populate the Add-device form; read-only discovery) ----
+    @app.get("/api/serial-ports")
+    async def serial_ports() -> JSONResponse:
+        """Serial/tty devices present on the host, for the port dropdown."""
+        return JSONResponse({"ports": list_serial_ports()})
+
+    @app.get("/api/profiles")
+    async def profiles() -> JSONResponse:
+        """Selectable device profiles, for the profile dropdown."""
+        return JSONResponse({"profiles": available_profiles()})
+
+    @app.post("/api/devices/test")
+    async def test_device(body: dict = Body(...)) -> JSONResponse:
+        """Probe a prospective device's connection without persisting it: connect with
+        the supplied transport/profile/params and attempt one read. Returns
+        ``{ok, message}`` — a failed probe is a 200 with ``ok: false`` (the connection
+        is bad, the request is fine)."""
+        _validate_device_body(body, require_id=False)
+        transport = body.get("transport", "dummy")
+        if transport == "dummy":
+            return JSONResponse({"ok": True, "message": "Dummy device — no hardware to test."})
+        row = {**body, "id": body.get("id") or "__test__", "enabled": True}
+        try:
+            device = build_device_from_config(row, clock=app.state.clock)
+        except FileNotFoundError:
+            raise HTTPException(status_code=422, detail=f"unknown profile {body.get('profile')!r}")
+        if device is None:
+            raise HTTPException(status_code=422, detail="could not build a device to test")
+        try:
+            await device.connect()
+            reading = await device.read()
+        except TransportError as exc:
+            return JSONResponse({"ok": False, "message": str(exc)})
+        except Exception as exc:  # serial-open / decode errors surface as a failed probe
+            return JSONResponse({"ok": False, "message": f"{type(exc).__name__}: {exc}"})
+        finally:
+            try:
+                await device.close()
+            except Exception:
+                pass
+        n = sum(1 for v in reading.metrics.values() if v is not None)
+        return JSONResponse({"ok": True, "message": f"Connected — read {n} metric(s).", "metric_count": n})
 
     @app.get("/api/devices")
     async def list_devices() -> JSONResponse:

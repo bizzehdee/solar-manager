@@ -20,7 +20,9 @@ and watch your panels, battery and grid in real time.
 - **History & charts** — every reading is logged to a local SQLite database, rolled up
   (5-minute / hourly / daily) and charted, with metric, resolution and date-range pickers.
 - **Multiple devices** — add, edit and remove devices from **Settings › Devices**; mix
-  brands/models freely (each is just a profile).
+  brands/models freely (each is just a profile). Adding one is point-and-click: pick the
+  serial port from a list of detected adapters and the model from a profile dropdown, then
+  **Test connection** to confirm the inverter responds before saving.
 - **Statistics** — daily energy totals, self-consumption & self-sufficiency, battery
   round-trip efficiency, and **cost / savings / CO₂** from a configurable tariff: a fixed
   **standing charge**, **flat or time-of-use** import rates (multiple daily windows, e.g. a

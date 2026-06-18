@@ -220,6 +220,28 @@ export interface DeviceConfig {
   settings?: boolean; // read-only settings display available (Phase 5 / T072)
 }
 
+/** A serial/tty port discovered on the host, for the Add-device port dropdown. */
+export interface SerialPort {
+  device: string; // e.g. /dev/ttyUSB0
+  description: string;
+  hwid: string;
+}
+
+/** A selectable device profile, for the Add-device profile dropdown. */
+export interface DeviceProfileOption {
+  name: string; // bare profile name (no extension), e.g. sunsynk-8k-sg05lp1
+  vendor: string;
+  model: string;
+  label: string; // human label, e.g. "sunsynk SYNK-8K-SG05LP1"
+}
+
+/** Result of probing a prospective device's connection (POST /api/devices/test). */
+export interface DeviceTestResult {
+  ok: boolean;
+  message: string;
+  metric_count?: number;
+}
+
 // Read-only settings display (plan.md §12 / Phase 5). The SettingsSchema describes the
 // shape (sections + fields); /settings returns the decoded current values. Editing/write
 // arrives in Phase 6 — these shapes carry no register detail (the device seam stays intact).
