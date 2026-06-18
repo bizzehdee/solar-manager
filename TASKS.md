@@ -325,29 +325,24 @@ didn't verify ⇒ rollback signal). Validation ⇒ 422, control disabled ⇒ 403
 - [x] **T078 · Write audit log** · Deps: T075
   - Record every write (when / source client / old→new / result). No "who" (no accounts). *Refs: §12.*
 
-## Phase 7 — Alerts & integrations (off the hot path, brand-independent)
+## Phase 7 — Alerts & integrations ✅ complete (core; remaining integrations in Later)
 
-*Alerts core + Prometheus done; the bigger external publishers (MQTT/HA, PVOutput) and the
-brand-specific notification channels (email/Telegram/Pushover) remain.*
+*Alerts engine + inbox + Prometheus shipped. The standalone egress publishers (MQTT/HA,
+PVOutput, a readings webhook), the extra notification channels, and the rule-editor UI were
+deferred — tracked under "Later — Integrations & notifications" below.*
 
 - [x] **T080 · Alert rule engine** · Deps: T042
   - User conditions on any canonical metric/state (low SoC, device offline/stale, inverter fault,
     over-temp) with thresholds, hysteresis, debounce, quiet hours; sensible defaults shipped on.
     Pure engine (`app/alerts/engine.py`, 98% covered) + evaluation service off the hot path. *Refs: §15.*
-- [x] **T081 · Notification channels** *(partial)* · Deps: T080
+- [x] **T081 · Notification channels** · Deps: T080
   - Pluggable channel seam + **in-app inbox** + **generic webhook** (failure→warning, off the hot
-    path). email (SMTP) / Telegram / ntfy / Pushover/Gotify are webhook-shaped and slot in next. *Refs: §15.*
+    path). More channels (email/Telegram/ntfy/Pushover) → Later (L10). *Refs: §15.*
 - [x] **T082 · Alert API + inbox UI** · Deps: T080, T011
   - `/api/alerts` (+ack/snooze) and `/api/alert-rules` CRUD; inbox with active/history + ack/snooze;
-    header bell badge. *(Rule-editor UI deferred — rules seed with sensible defaults, editable via API.)* *Refs: §7, §15.*
-- [ ] **T083 · MQTT publisher + Home Assistant auto-discovery** · Deps: T016
-  - Publish each `Reading` + per-device status; emit HA discovery configs (zero manual YAML). *Refs: §14.*
-- [ ] **T084 · PVOutput.org upload** · Deps: T050
-  - Optional periodic upload (generation, consumption, SoC, temp); API key + system id in Settings. *Refs: §14.*
+    header bell badge. Rule-editor UI → Later (L11; rules seed with defaults, editable via API). *Refs: §7, §15.*
 - [x] **T085 · Prometheus `/metrics` endpoint** · Deps: T016
   - Exposes live numeric metrics (`solarvolt_<metric>{device=…}`) for Grafana users. *Refs: §7, §14.*
-- [ ] **T086 · Generic outbound webhook** *(alerts covered)* · Deps: T016
-  - Alert egress via the webhook channel (T081); a periodic readings/events webhook still to add. *Refs: §14.*
 
 ## Phase 8 — Polish & operational
 
@@ -441,3 +436,27 @@ versioned releases.*
     (`metric-card`, `soc-gauge`, `time-series-chart`, `stat-card`) via a small widget registry.
   - *Notes:* larger UX effort (edit mode + layout model + a drag/grid lib, self-hosted per §8 —
     no CDN). Keep presentational widgets dumb; the dashboard config is just data. *Refs: §8.*
+
+## Later — Integrations & notifications (deferred from Phase 7, on request)
+
+*The alerting core (engine + inbox + Prometheus) shipped in Phase 7; these are the remaining,
+self-contained egress/notification pieces — each additive, off the hot path, brand-independent.*
+
+- [-] **L07 · MQTT publisher + Home Assistant auto-discovery** *(was T083)* · Deps: T016
+  - Publish each normalized `Reading` + per-device status to a broker; emit HA MQTT discovery
+    configs so every metric appears as an HA sensor with zero manual YAML. *Refs: §14.*
+- [-] **L08 · PVOutput.org upload** *(was T084)* · Deps: T050
+  - Optional periodic upload (generation, consumption, SoC, temperature); API key + system id
+    in Settings. *Refs: §14.*
+- [-] **L09 · Generic outbound readings/events webhook** *(was T086)* · Deps: T016
+  - Periodic POST of readings/events to a user URL (Node-RED/IFTTT/custom). Alert egress is
+    already covered by the Phase-7 webhook channel; this adds the readings stream. *Refs: §14.*
+- [-] **L10 · More notification channels** *(remainder of T081)* · Deps: T081
+  - email (SMTP), Telegram, ntfy, Pushover/Gotify — all webhook-shaped, slotting in behind the
+    existing channel seam; selectable per rule. *Refs: §15.*
+- [-] **L11 · Alert rule-editor UI** *(remainder of T082)* · Deps: T082
+  - Create/edit/delete alert rules from the Alerts page (the API + engine already support it;
+    rules currently seed with sensible defaults and are editable via `/api/alert-rules`). *Refs: §15.*
+- [-] **L12 · Fault-event history log** *(deferred from T054)* · Deps: T042
+  - An events table logging inverter fault / run-state transitions so intermittent faults are
+    catchable after the fact (today faults are surfaced live only). *Refs: §16.*
