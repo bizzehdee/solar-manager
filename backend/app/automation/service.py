@@ -183,8 +183,10 @@ class AutomationService:
         return {
             "condition_kinds": list(CONDITION_KINDS),
             "ops": ["lt", "le", "gt", "ge", "eq", "ne"],
-            "metrics": sorted(ALL_METRICS),
+            "metrics": sorted(ALL_METRICS) + ["__stale_s__", "__fault_count__"],
             "match_modes": ["all", "any"],
+            "severities": ["info", "warning", "critical"],
+            "channels": list(self._channels.keys()),
             "targets": targets,
         }
 

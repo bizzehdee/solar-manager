@@ -24,15 +24,11 @@ from starlette.responses import Response
 from starlette.types import Scope
 
 from . import control
-from .alerts import AlertRule
 from .alerts.channels import SUPPORTED_CHANNELS, build_channels
-from .alerts.engine import METRIC_FAULT_COUNT, METRIC_STALE_S
-from .alerts.service import AlertService
 from .automation.service import AutomationService
 from .config import Settings
 from .grid_events import GridEventService
 from .integrations import ReadingsWebhookService
-from .metrics import ALL_METRICS
 from .devices.base import TransportError, system_clock
 from .devices.factory import (
     build_device_from_config,
@@ -128,10 +124,6 @@ async def lifespan(app: FastAPI):
     app.state.persistence = persistence
     await persistence.start()
 
-    alerts = AlertService(alert_repo, poller, app_config, interval_s=settings.alert_interval_s)
-    app.state.alerts = alerts
-    await alerts.start()
-
     grid_events = GridEventService(history_repo, poller, interval_s=settings.alert_interval_s, clock=clock)
     app.state.grid_events = grid_events
     await grid_events.start()
@@ -155,7 +147,6 @@ async def lifespan(app: FastAPI):
         await automation.stop()
         await readings_webhook.stop()
         await grid_events.stop()
-        await alerts.stop()
         await persistence.stop()
         await poller.stop()
         await registry.close_all()
@@ -556,25 +547,6 @@ def create_app(
             raise HTTPException(status_code=404, detail=f"alert {alert_id} not found")
         return JSONResponse({"ok": True, "snooze_until": until})
 
-    @app.get("/api/alert-rules")
-    async def list_alert_rules() -> JSONResponse:
-        repo: AlertRepository = app.state.alert_repo
-        return JSONResponse({"rules": await repo.list_rules()})
-
-    @app.get("/api/alert-rules/options")
-    async def alert_rule_options() -> JSONResponse:
-        """Field choices for the rule-editor UI (L11): selectable metrics (the canonical
-        vocabulary plus the two synthetic keys the engine resolves specially), comparison
-        operators, severities, and the configured notification channels."""
-        cfg = await app.state.app_config.get("alert_channels", {}) or {}
-        return JSONResponse({
-            "metrics": sorted(ALL_METRICS) + [METRIC_STALE_S, METRIC_FAULT_COUNT],
-            "ops": ["lt", "le", "gt", "ge", "eq", "ne"],
-            "severities": ["info", "warning", "critical"],
-            # Only offer channels that are actually configured (in-app inbox is always recorded).
-            "channels": list(build_channels(cfg).keys()),
-        })
-
     # ---- notification channels (Later / L10) ----------------------------------
     async def _alert_channels_view() -> dict:
         cfg = await app.state.app_config.get("alert_channels", {}) or {}
@@ -595,14 +567,13 @@ def create_app(
     async def put_alert_channels(body: dict = Body(...)) -> JSONResponse:
         cfg = {k: v for k, v in (body or {}).items() if k in SUPPORTED_CHANNELS and isinstance(v, dict)}
         await app.state.app_config.set("alert_channels", cfg)
-        await app.state.alerts.reload()       # rebuild for AlertService dispatch
-        await app.state.automation.reload_channels()  # rebuild for AutomationService dispatch
+        await app.state.automation.reload_channels()
         return JSONResponse(await _alert_channels_view())
 
     @app.post("/api/alert-channels/{name}/test")
     async def test_alert_channel(name: str) -> JSONResponse:
         """Send a synthetic alert through one configured channel so the user can verify it."""
-        channel = app.state.alerts._channels.get(name)
+        channel = app.state.automation._channels.get(name)
         if channel is None:
             raise HTTPException(status_code=400, detail=f"channel {name!r} is not configured")
         sample = {
@@ -615,26 +586,6 @@ def create_app(
         except Exception as exc:  # surface the failure to the manual caller
             raise HTTPException(status_code=502, detail=f"channel {name!r} failed: {exc}") from exc
         return JSONResponse({"ok": True})
-
-    @app.put("/api/alert-rules/{rule_id}")
-    async def put_alert_rule(rule_id: str, body: dict = Body(...)) -> JSONResponse:
-        repo: AlertRepository = app.state.alert_repo
-        body["id"] = rule_id
-        try:
-            rule = AlertRule.from_dict(body)  # validate by round-tripping the model
-        except (KeyError, ValueError, TypeError) as exc:
-            raise HTTPException(status_code=422, detail=f"invalid alert rule: {exc}") from exc
-        await repo.upsert_rule(rule.to_dict())
-        await app.state.alerts.reload()  # pick up the edit on the next tick
-        return JSONResponse(rule.to_dict())
-
-    @app.delete("/api/alert-rules/{rule_id}", status_code=204)
-    async def delete_alert_rule(rule_id: str):
-        repo: AlertRepository = app.state.alert_repo
-        await repo.delete_rule(rule_id)
-        app.state.alerts._engine.forget(rule_id)
-        await app.state.alerts.reload()
-        return JSONResponse(None, status_code=204)
 
     # ---- outbound readings webhook (Later / L09) ------------------------------
     def _readings_webhook_view(cfg: dict) -> dict:

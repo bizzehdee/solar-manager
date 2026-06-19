@@ -1,4 +1,7 @@
-"""Alert + alert-rule API and the Prometheus endpoint, on the dummy (plan.md §15/§14)."""
+"""Alert inbox API, notification-channel config, and Prometheus endpoint (plan.md §15/§14).
+
+Alert rule authoring moved to the automation system in L03e-5a–5c; the /api/alert-rules CRUD
+and options endpoints have been retired. Alert inbox (list/ack/snooze) stays here."""
 
 from __future__ import annotations
 
@@ -17,42 +20,6 @@ def _client() -> TestClient:
     return TestClient(create_app(settings=settings, clock=lambda: _BASE))
 
 
-def test_default_rules_seeded_and_listed():
-    with _client() as client:
-        rules = {r["id"] for r in client.get("/api/alert-rules").json()["rules"]}
-        assert {"low_soc", "device_stale", "inverter_fault"} <= rules
-
-
-def test_alert_rule_crud_and_validation():
-    with _client() as client:
-        # Create/update via PUT.
-        r = client.put("/api/alert-rules/hot", json={
-            "name": "Hot inverter", "metric": "inverter_temp_c", "op": "gt", "threshold": 60,
-            "hysteresis": 5, "severity": "critical",
-        })
-        assert r.status_code == 200 and r.json()["op"] == "gt"
-        assert any(rule["id"] == "hot" for rule in client.get("/api/alert-rules").json()["rules"])
-
-        # Invalid operator → 422.
-        assert client.put("/api/alert-rules/bad", json={"metric": "x", "op": "??"}).status_code == 422
-
-        # Delete.
-        assert client.delete("/api/alert-rules/hot").status_code == 204
-        assert not any(rule["id"] == "hot" for rule in client.get("/api/alert-rules").json()["rules"])
-
-
-def test_alert_rule_options_for_editor():
-    with _client() as client:
-        opts = client.get("/api/alert-rules/options").json()
-        # Canonical metrics + the two synthetic engine keys are all offered.
-        assert "battery_soc_pct" in opts["metrics"]
-        assert "__stale_s__" in opts["metrics"] and "__fault_count__" in opts["metrics"]
-        assert opts["ops"] == ["lt", "le", "gt", "ge", "eq", "ne"]
-        assert "critical" in opts["severities"]
-        # No channels configured by default ⇒ none offered.
-        assert opts["channels"] == []
-
-
 def test_alert_channels_config_round_trip_and_options_reflect_it():
     with _client() as client:
         base = client.get("/api/alert-channels").json()
@@ -68,9 +35,6 @@ def test_alert_channels_config_round_trip_and_options_reflect_it():
         assert saved["configured"] == ["telegram"]
         assert "bogus" not in saved["channels"]
 
-        # The rule editor now offers the configured channel.
-        assert client.get("/api/alert-rules/options").json()["channels"] == ["telegram"]
-
 
 def test_alert_channel_test_endpoint():
     with _client() as client:
@@ -84,7 +48,7 @@ def test_alert_channel_test_endpoint():
         async def post(url, payload=None, *, data=None, headers=None):
             sent.append((url, payload))
 
-        client.app.state.alerts._channels["webhook"]._post = post
+        client.app.state.automation._channels["webhook"]._post = post
         assert client.post("/api/alert-channels/webhook/test").json() == {"ok": True}
         assert sent and sent[0][0] == "http://hook"
 

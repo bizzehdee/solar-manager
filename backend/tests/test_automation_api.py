@@ -95,6 +95,26 @@ def test_options_lists_targets_with_safety_status():
         assert risky["section"] != "timer_slots" or risky["field"] not in {"target_soc_pct", "start_time"}
 
 
+def test_options_include_notify_alert_fields():
+    """Automation options now cover all action types: severities, channels, synthetic metrics."""
+    with _client() as client:
+        opts = client.get("/api/automation/options").json()
+        # Severities for alert/notify actions.
+        assert opts["severities"] == ["info", "warning", "critical"]
+        # Synthetic metric keys so conditions can target stale/fault states.
+        assert "__stale_s__" in opts["metrics"] and "__fault_count__" in opts["metrics"]
+        # No channels configured by default.
+        assert opts["channels"] == []
+
+
+def test_options_channels_reflect_configured():
+    """After configuring a channel, options exposes it for notify-action selection."""
+    with _client() as client:
+        client.put("/api/alert-channels", json={"telegram": {"bot_token": "T", "chat_id": "42"}})
+        opts = client.get("/api/automation/options").json()
+        assert "telegram" in opts["channels"]
+
+
 def test_preview_shows_armed_change_on_saturday():
     with _client() as client:
         client.put("/api/automation/rules/weekend", json=_weekend_rule(soc=80))
