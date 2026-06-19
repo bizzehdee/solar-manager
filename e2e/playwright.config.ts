@@ -23,11 +23,11 @@ export default defineConfig({
     url: `http://localhost:${PORT}/api/health`,
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,
-    // Control/write-back (Phase 6) and rule-based automation (L03e) are exercised E2E, so
-    // enable both; a fresh in-memory DB keeps each run's audit log + settings state clean.
+    // Control/write-back (Phase 6) is exercised E2E — that one flag also lets rule-based
+    // automation (L03e) apply. Automation itself needs no flag. A fresh in-memory DB keeps
+    // each run's audit log + settings state clean.
     env: {
       SOLARVOLT_ENABLE_CONTROL: 'true',
-      SOLARVOLT_ENABLE_AUTOMATION: 'true',
       SOLARVOLT_DB_PATH: ':memory:',
     },
   },

@@ -421,16 +421,15 @@ versioned releases.*
       paths covered: flat tariff, spread below threshold, solar-covers-load, already-optimal.
       `test_automation_planner.py` (13 tests) incl. midnight-wrap window + saving math; module
       **100%** coverage; full backend suite green (278 passed). *Refs: §18, §5, §6.*
-  - [ ] **L03b · Suggest-only API + automation flag** · Deps: L03a, T047, T060
-    - `SOLARVOLT_ENABLE_AUTOMATION` deploy flag (separate from `ENABLE_CONTROL`); `GET
-      /api/automation/plan` wires the engine to the live forecast/tariff/device and returns the
-      proposed plan + current→proposed diff. **Never writes.** Capability suppressed when the flag
-      is off. *Refs: §18, §12.*
+  - [ ] **L03b · Suggest-only plan API** · Deps: L03a, T047, T060
+    - `GET /api/automation/plan` wires the engine to the live forecast/tariff/device and returns the
+      proposed plan + current→proposed diff. **Never writes** — always available, no flag.
+      *Refs: §18, §12.*
   - [ ] **L03c · Automation UI (suggest-only)** · Deps: L03b
     - A page/panel showing the proposed daily plan, per-slot current→proposed diff, projected
       saving and rationale — "what it would do," read-only. *Refs: §18, §8.*
   - [ ] **L03d · Opt-in auto-apply (scheduler + write)** · Deps: L03c, T076
-    - Only when **both** `ENABLE_CONTROL` and `ENABLE_AUTOMATION` are on: a scheduler (+ manual
+    - Only when `ENABLE_CONTROL` is on (the single gate on register writes): a scheduler (+ manual
       "apply now") that applies the plan through the §12 path (`control.apply_settings`:
       validate→write→read-back→audit). Playwright E2E of the full round-trip on the dummy.
       *Refs: §18, §12.*
@@ -456,24 +455,47 @@ versioned releases.*
         wires the engine to the live clock/metrics/forecast/tariff + the profile-derived allow-list
         and returns the decision (what each rule would set now, armed or preview). **Never writes.**
         Profile gains an `automation_safe` marking on its settings allow-list. *Refs: §18, §12.*
-      - **Done:** new `SOLARVOLT_ENABLE_AUTOMATION` deploy flag (separate from control; advertised as
-        `automation_enabled` in `/api/health`). `AutomationService` (`app/automation/service.py`)
-        stores rules as a JSON list in `app_config`, builds the `EvalContext` from the clock + the
-        device's live snapshot metrics + the import tariff (`Tariff.schedules_for`), and derives the
-        `AllowList` from the device settings schema. `FieldSpec` gained `automation_safe`; the
-        deye-base + dummy work-mode-timer scheduling fields (start/power/target SoC/grid-charge) are
-        marked safe. Gated endpoints (403 when off): `GET/PUT/DELETE /api/automation/rules`,
-        `GET /api/automation/options` (condition kinds/ops/metrics + settable targets tagged
-        ok/at_risk), `GET /api/automation/preview` (the decision — armed changes + previews, **never
-        writes**). `test_automation_api.py` (gating, CRUD+validation, options safety status, preview
-        armed/preview/metric-condition). `rules.py` 100%, `service.py` 97%; full suite 326 passed (96%).
-        *(Rule-editor UI is L03e-4; forecast-derived metrics in the context are a later enrichment.)*
-    - [ ] **L03e-3 · Opt-in apply (scheduler + write)** · Deps: L03e-2, T076, L03d
-      - Only with `ENABLE_CONTROL`+`ENABLE_AUTOMATION`: a scheduler (+ "apply now") writes the armed
-        winning changes through `control.apply_settings` (validate→write→read-back→audit). *Refs: §18, §12.*
+      - **Done:** `AutomationService` (`app/automation/service.py`) stores rules as a JSON list in
+        `app_config`, builds the `EvalContext` from the clock + the device's live snapshot metrics +
+        the import tariff (`Tariff.schedules_for`), and derives the `AllowList` from the device
+        settings schema. `FieldSpec` gained `automation_safe`; the deye-base + dummy work-mode-timer
+        scheduling fields (start/power/target SoC/grid-charge) are marked safe. Endpoints (no flag —
+        always available): `GET/PUT/DELETE /api/automation/rules`, `GET /api/automation/options`
+        (condition kinds/ops/metrics + settable targets tagged ok/at_risk), `GET /api/automation/preview`
+        (the decision — armed changes + previews, **never writes**). `test_automation_api.py`
+        (CRUD+validation, options safety status, preview armed/preview/metric-condition). `rules.py`
+        100%, `service.py` 98%. *(Rule-editor UI is L03e-4; forecast-derived metrics in the context
+        are a later enrichment.)* **Gating revised in L03e-3** — the originally-planned
+        `SOLARVOLT_ENABLE_AUTOMATION` flag was dropped; automation is always available and only
+        register *writes* are gated, by `SOLARVOLT_ENABLE_CONTROL`.
+    - [x] **L03e-3 · Opt-in apply (scheduler + write)** · Deps: L03e-2, T076
+      - Gated by `ENABLE_CONTROL` only (the single gate on register writes — `ENABLE_AUTOMATION` was
+        dropped): a background scheduler + an "apply now" endpoint write the armed winning changes
+        through `control.apply_settings` (validate→write→read-back→audit). *Refs: §18, §12.*
+      - **Done:** `AutomationService.apply()` coalesces the decision's armed, non-blocked winners per
+        `(section, slot)` and pushes each through `control.apply_settings`; failures are recorded and
+        reported but never abort the rest. Every write is audited (`source="automation:manual"` /
+        `"automation:scheduler"`). `apply_all()` + a cancellable `start()/stop()` loop
+        (`automation_interval_s`, default 300s) run it on a schedule — started in `lifespan` **only
+        when `ENABLE_CONTROL`** is on. New `POST /api/automation/apply` (403 without control);
+        `/api/health` advertises `automation_can_write`. **Removed** `SOLARVOLT_ENABLE_AUTOMATION`
+        (config + all endpoints/UI/e2e). Frontend: "Apply now" button (shown under
+        `automation_can_write`) + a preview-only banner otherwise; `applyAutomation()` API.
+        `test_automation_service.py` (10: coalesce, read-back+audit, failure-continue, scheduler
+        tick/stop) + `test_automation_api.py` (control-gated apply, real write+audit, health flag);
+        `service.py` 98%. E2E extended: build armed rule → preview "would apply" → Apply now →
+        success banner (real dummy write). Backend 338 passed (96%), frontend 132, e2e 14.
     - [x] **L03e-4 · Rule-editor UI + live preview** · Deps: L03e-2
       - Build/edit/prioritise rules; per-rule and per-action enable; a live "what it would do now"
         panel; current→proposed diff with the safe/at-risk/blocked badge. *Refs: §18, §8.*
+    - [ ] **L03e-5 · Non-write automation actions (notify / webhook)** · Deps: L03e-1, L10, L09
+      - Add action *types* beyond "set inverter setting": **send a notification** (reuse the alert
+        channel seam — email/Telegram/ntfy/Gotify/Pushover) and **POST an outbound webhook**. These
+        touch no inverter register, so they are **not** gated by `ENABLE_CONTROL` — they run whenever
+        their rule/action is armed, even on a monitoring-only deploy. Requires generalising the
+        engine's `Action`/`ProposedChange` (currently setting-only) to a tagged action kind, splitting
+        the apply path (writes still gated; notify/webhook always allowed), and an editor action-type
+        picker. Keep it off the hot path (a failing notify degrades to a warning). *Refs: §18, §15, §9.*
 - [-] **L04 · More vendors / protocol families** — Growatt/Solis/Sungrow/… (new YAML each);
   generic SunSpec profile; text-command family (Voltronic/Must) + Victron family each carry a
   one-time transport+profile-contract cost, then siblings are cheap. *Refs: §20.*

@@ -9,6 +9,7 @@ import {
   AlertRuleOptions,
   AlertsResponse,
   AuditEntry,
+  AutomationApplyResult,
   AutomationOptions,
   AutomationPreview,
   AutomationRule,
@@ -219,7 +220,8 @@ export class ApiService {
     return this.http.post<{ ok: boolean }>(`/api/alert-channels/${name}/test`, {});
   }
 
-  // --- Rule-based automation (L03e; gated by SOLARVOLT_ENABLE_AUTOMATION) ---
+  // --- Rule-based automation (L03e). Building/previewing rules needs no flag; only applying
+  // them to the inverter is gated by SOLARVOLT_ENABLE_CONTROL. ---
 
   getAutomationRules(): Observable<{ rules: AutomationRule[] }> {
     return this.http.get<{ rules: AutomationRule[] }>('/api/automation/rules');
@@ -245,6 +247,13 @@ export class ApiService {
     let params = new HttpParams();
     if (deviceId !== undefined) params = params.set('device_id', deviceId);
     return this.http.get<AutomationPreview>('/api/automation/preview', { params });
+  }
+
+  /** Apply now: write the armed, non-blocked winners. Gated by SOLARVOLT_ENABLE_CONTROL (403 if off). */
+  applyAutomation(deviceId?: string): Observable<AutomationApplyResult> {
+    let params = new HttpParams();
+    if (deviceId !== undefined) params = params.set('device_id', deviceId);
+    return this.http.post<AutomationApplyResult>('/api/automation/apply', {}, { params });
   }
 
   // --- Outbound readings webhook (L09) ---

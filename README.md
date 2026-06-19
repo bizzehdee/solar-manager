@@ -54,8 +54,11 @@ and watch your panels, battery and grid in real time.
   target SoC) from conditions you combine: **day of week, time/date window, metric thresholds or
   tariff window**. Rules and individual actions carry **priorities** (the highest wins on a
   conflict) and are **disabled by default** — a live **"what it would do now"** panel shows each
-  proposed change with a safe / at-risk / blocked badge, so you preview everything before anything
-  is armed. Suggest-only today; opt-in automatic apply is on the roadmap.
+  proposed change with a safe / at-risk / blocked badge, so you preview everything before arming it.
+  Building and previewing rules needs no special setup; once you arm a rule, an **"Apply now"**
+  button and a background scheduler write the changes to the inverter — but only if you've enabled
+  control (the same `SOLARVOLT_ENABLE_CONTROL` switch that guards all write-back). Without it,
+  automation stays preview-only.
 - **Integrations** — a **Prometheus `/metrics`** endpoint exposes live readings for Grafana users,
   and an **outbound readings webhook** posts each snapshot as JSON to a URL of your choice
   (Node-RED / IFTTT / custom). (MQTT / Home-Assistant discovery and PVOutput are on the roadmap.)
@@ -104,10 +107,11 @@ battery-health surfacing** (Phase 3), the **solar/battery Forecast** (Phase 4), 
 **settings viewer** (Phase 5) and **opt-in settings control / write-back** (Phase 6, off by
 default, with validation → confirm → read-back-verify → audit) and the **alerts engine +
 inbox + Prometheus endpoint** (Phase 7) are all in. **Rule-based automation** (combine
-day/time/metric/tariff conditions to drive inverter settings) is in as a **suggest-only**
-preview with a rule editor and live "what it would do now" panel — opt-in automatic apply,
-the remaining integrations (MQTT/Home Assistant, PVOutput) and extra notification channels are
-on the roadmap (`TASKS.md`).
+day/time/metric/tariff conditions to drive inverter settings, with a rule editor and a live "what
+it would do now" panel) is in — preview always, and **opt-in apply** (an "Apply now" button plus a
+background scheduler) once control is enabled. Notification/webhook automation actions, the
+remaining integrations (MQTT/Home Assistant, PVOutput) and extra notification channels are on the
+roadmap (`TASKS.md`).
 
 The forecast fetches weather from Open-Meteo's free public API — the **only** outbound
 request the app makes, and only when the Forecast view/config is used. Everything else

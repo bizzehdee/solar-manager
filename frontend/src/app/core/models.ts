@@ -33,7 +33,7 @@ export interface Health {
   status: string;
   version: string;
   control_enabled: boolean;
-  automation_enabled?: boolean;
+  automation_can_write?: boolean;
   devices: DeviceHealth[];
   poll_interval_s: number;
 }
@@ -470,6 +470,14 @@ export interface AutomationPreview {
   now: string;
   decision: { changes: AutomationChange[]; overridden: AutomationChange[] };
   rule_count: number;
+}
+
+/** Outcome of an "apply now" / scheduler tick: the writes that landed and any that failed. */
+export interface AutomationApplyResult {
+  device_id: string | null;
+  now: string;
+  applied: { section: string; index: number | null; ok: boolean; changes: any; mismatches: string[]; etag: string }[];
+  failed: { section: string; index: number | null; error: string }[];
 }
 
 /** One audit-log entry: every settings write is recorded (when / source / old→new / result). */

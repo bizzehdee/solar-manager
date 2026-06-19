@@ -238,6 +238,11 @@ describe('ApiService', () => {
     api.getAutomationPreview().subscribe((p) => expect(p.rule_count).toBe(0));
     http.expectOne((r) => r.url === '/api/automation/preview')
       .flush({ device_id: 'dummy', now: 't', rule_count: 0, decision: { changes: [], overridden: [] } });
+
+    api.applyAutomation().subscribe((r) => expect(r.applied.length).toBe(0));
+    const apply = http.expectOne((r) => r.url === '/api/automation/apply');
+    expect(apply.request.method).toBe('POST');
+    apply.flush({ device_id: 'dummy', now: 't', applied: [], failed: [] });
   });
 
   it('getReadingsWebhook()/putReadingsWebhook()/testReadingsWebhook() hit the integration URLs', () => {

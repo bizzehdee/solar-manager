@@ -18,9 +18,9 @@ from app.main import create_app
 _SAT = datetime(2026, 6, 20, 14, 0, tzinfo=timezone.utc)
 
 
-def _client(*, automation=True) -> TestClient:
+def _client(*, control=False) -> TestClient:
     settings = Settings(poll_interval_s=60, db_path=":memory:", persist_interval_s=3600,
-                        enable_automation=automation)
+                        enable_control=control)
     return TestClient(create_app(settings=settings, clock=lambda: _SAT))
 
 
@@ -33,11 +33,36 @@ def _weekend_rule(soc=80, enabled=True, action_enabled=True, priority=0) -> dict
     }
 
 
-def test_automation_gated_off_returns_403():
-    with _client(automation=False) as client:
-        assert client.get("/api/automation/rules").status_code == 403
-        assert client.get("/api/automation/preview").status_code == 403
-        assert client.put("/api/automation/rules/x", json=_weekend_rule()).status_code == 403
+def test_automation_rules_and_preview_need_no_flag():
+    # Automation (rules/preview/options) is always available — no deploy flag gates it.
+    with _client() as client:
+        assert client.get("/api/automation/rules").status_code == 200
+        assert client.get("/api/automation/preview").status_code == 200
+        assert client.get("/api/automation/options").status_code == 200
+        assert client.put("/api/automation/rules/x", json=_weekend_rule()).status_code == 200
+
+
+def test_apply_is_gated_by_control():
+    # Writing to the inverter is the ONLY gated part — SOLARVOLT_ENABLE_CONTROL.
+    with _client(control=False) as client:
+        client.put("/api/automation/rules/weekend", json=_weekend_rule())
+        assert client.post("/api/automation/apply").status_code == 403
+
+    with _client(control=True) as client:
+        client.put("/api/automation/rules/weekend", json=_weekend_rule(soc=80))
+        body = client.post("/api/automation/apply").json()
+        assert len(body["applied"]) == 1 and body["applied"][0]["ok"] is True
+        assert body["failed"] == []
+        # The write is in the audit log, tagged as a manual automation apply.
+        audit = client.get("/api/audit").json()["entries"]
+        assert any(e["source"] == "automation:manual" for e in audit)
+
+
+def test_health_advertises_automation_write_gate():
+    with _client(control=False) as client:
+        assert client.get("/api/health").json()["automation_can_write"] is False
+    with _client(control=True) as client:
+        assert client.get("/api/health").json()["automation_can_write"] is True
 
 
 def test_rule_crud_and_validation():

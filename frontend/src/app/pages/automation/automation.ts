@@ -1,10 +1,11 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 
 import { ApiService } from '../../core/api.service';
 import {
   AutomationAction,
+  AutomationApplyResult,
   AutomationChange,
   AutomationCondition,
   AutomationOptions,
@@ -13,28 +14,43 @@ import {
   AutomationTargetOption,
 } from '../../core/models';
 
-// Automation (plan.md §18 / L03e-4): build/edit/prioritise rules and see a **live preview** of
-// what they would set right now. Gated by SOLARVOLT_ENABLE_AUTOMATION — when off, the API 403s
-// and this page shows how to turn it on. Rules suggest only here; opt-in apply is a later slice.
+// Automation (plan.md §18 / L03e): build/edit/prioritise rules and see a **live preview** of what
+// they would set right now. Always available — building rules needs no flag. Actually *applying*
+// them to the inverter ("Apply now" + the background scheduler) writes registers, so it's gated by
+// SOLARVOLT_ENABLE_CONTROL (`automation_can_write`); without it the page is preview/suggest-only.
 @Component({
   selector: 'app-automation',
   imports: [FormsModule, DatePipe],
   template: `
     <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
       <h4 class="mb-0"><i class="bi bi-robot"></i> Automation</h4>
-      @if (enabled()) {
+      <div class="d-flex gap-2">
+        @if (canWrite()) {
+          <button class="btn btn-sm btn-outline-success" (click)="applyNow()" [disabled]="applying()">
+            @if (applying()) { <span class="spinner-border spinner-border-sm"></span> }
+            <i class="bi bi-lightning-charge"></i> Apply now
+          </button>
+        }
         <button class="btn btn-sm btn-primary" (click)="newRule()" [disabled]="!!editing()">
           <i class="bi bi-plus-lg"></i> New rule
         </button>
-      }
+      </div>
     </div>
 
-    @if (disabled()) {
-      <div class="alert alert-secondary">
-        <i class="bi bi-lock"></i> Automation is disabled. Set <code>SOLARVOLT_ENABLE_AUTOMATION=true</code>
-        and restart to build rules. Rules only ever <em>suggest</em> until apply is enabled separately.
+    @if (!canWrite()) {
+      <div class="alert alert-secondary py-2 small">
+        <i class="bi bi-eye"></i> Preview-only: rules <em>suggest</em> what to set but won't write to the
+        inverter. Set <code>SOLARVOLT_ENABLE_CONTROL=true</code> and restart to let automation apply them.
       </div>
-    } @else if (loading()) {
+    }
+
+    @if (applyResult(); as r) {
+      <div class="alert py-2 small" [class.alert-success]="r.failed.length === 0" [class.alert-warning]="r.failed.length > 0">
+        <i class="bi bi-lightning-charge"></i> Applied {{ r.applied.length }} change(s){{ r.failed.length ? ', ' + r.failed.length + ' failed' : '' }}.
+      </div>
+    }
+
+    @if (loading()) {
       <div class="text-secondary"><span class="spinner-border spinner-border-sm"></span> Loading…</div>
     } @else {
       <div class="row g-3">
@@ -162,7 +178,8 @@ import {
                     <div class="row g-2 align-items-end">
                       <div class="col-12 col-md-5">
                         <label class="small text-secondary">Setting</label>
-                        <select class="form-select form-select-sm" [ngModel]="targetKey(a)" (ngModelChange)="setTarget(a, $event)" [name]="'at' + $index">
+                        <select class="form-select form-select-sm" [ngModel]="targetKey(a)" (ngModelChange)="setTarget(a, $event)"
+                                [name]="'at' + $index" [id]="'at' + $index">
                           @for (t of options().targets; track t.section + t.field) {
                             <option [value]="t.section + '|' + t.field">{{ t.section_label }} · {{ t.label }}</option>
                           }
@@ -171,23 +188,24 @@ import {
                       @if (isRepeating(a)) {
                         <div class="col-4 col-md-2">
                           <label class="small text-secondary">Slot</label>
-                          <input type="number" min="0" class="form-control form-control-sm" [(ngModel)]="a.target.index" [name]="'ai' + $index" />
+                          <input type="number" min="0" class="form-control form-control-sm" [(ngModel)]="a.target.index" [name]="'ai' + $index" [id]="'ai' + $index" />
                         </div>
                       }
                       <div class="col-4 col-md-3">
                         <label class="small text-secondary">Value</label>
                         @if (targetType(a) === 'bool') {
-                          <div class="form-check"><input class="form-check-input" type="checkbox" [(ngModel)]="a.value" [name]="'av' + $index" /></div>
+                          <div class="form-check"><input class="form-check-input" type="checkbox" [(ngModel)]="a.value" [name]="'av' + $index" [id]="'av' + $index" /></div>
                         } @else if (targetType(a) === 'number' || targetType(a) === 'int') {
-                          <input type="number" step="any" class="form-control form-control-sm" [(ngModel)]="a.value" [name]="'av' + $index" />
+                          <input type="number" step="any" class="form-control form-control-sm" [(ngModel)]="a.value" [name]="'av' + $index" [id]="'av' + $index" />
                         } @else {
-                          <input class="form-control form-control-sm" [(ngModel)]="a.value" [name]="'av' + $index" />
+                          <input class="form-control form-control-sm" [(ngModel)]="a.value" [name]="'av' + $index" [id]="'av' + $index" />
                         }
                       </div>
                       <div class="col-4 col-md-2">
                         <div class="form-check form-switch mt-3">
-                          <input class="form-check-input" type="checkbox" role="switch" [(ngModel)]="a.enabled" [name]="'ae' + $index" />
-                          <label class="form-check-label small">Armed</label>
+                          <input class="form-check-input" type="checkbox" role="switch" [(ngModel)]="a.enabled"
+                                 [name]="'ae' + $index" [id]="'ae' + $index" />
+                          <label class="form-check-label small" [attr.for]="'ae' + $index">Armed</label>
                         </div>
                       </div>
                     </div>
@@ -256,8 +274,9 @@ import {
 export class AutomationPage implements OnInit {
   private readonly api = inject(ApiService);
 
-  readonly enabled = signal<boolean | null>(null);
-  readonly disabled = computed(() => this.enabled() === false);
+  readonly canWrite = signal(false);
+  readonly applying = signal(false);
+  readonly applyResult = signal<AutomationApplyResult | null>(null);
   readonly loading = signal(true);
   readonly rules = signal<AutomationRule[]>([]);
   readonly options = signal<AutomationOptions>({ condition_kinds: [], ops: [], metrics: [], match_modes: ['all', 'any'], targets: [] });
@@ -272,13 +291,17 @@ export class AutomationPage implements OnInit {
   ];
 
   ngOnInit(): void {
-    this.api.getHealth().subscribe({
-      next: (h) => {
-        this.enabled.set(h.automation_enabled === true);
-        if (h.automation_enabled) this.load();
-        else this.loading.set(false);
-      },
-      error: () => { this.enabled.set(false); this.loading.set(false); },
+    // Automation is always available; health only tells us whether it may *write* (control on).
+    this.api.getHealth().subscribe({ next: (h) => this.canWrite.set(h.automation_can_write === true) });
+    this.load();
+  }
+
+  applyNow(): void {
+    this.applying.set(true);
+    this.applyResult.set(null);
+    this.api.applyAutomation().subscribe({
+      next: (r) => { this.applyResult.set(r); this.applying.set(false); this.refreshPreview(); },
+      error: () => { this.applying.set(false); },
     });
   }
 

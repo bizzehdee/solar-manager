@@ -5,8 +5,8 @@ import { provideHttpClientTesting, HttpTestingController } from '@angular/common
 import { AutomationPage } from './automation';
 import { AutomationOptions, AutomationPreview, AutomationRule } from '../../core/models';
 
-function health(automation_enabled: boolean) {
-  return { version: '9.9', devices: [], poll_interval_s: 3, status: 'ok', control_enabled: false, automation_enabled };
+function health(automation_can_write: boolean) {
+  return { version: '9.9', devices: [], poll_interval_s: 3, status: 'ok', control_enabled: automation_can_write, automation_can_write };
 }
 
 const OPTIONS: AutomationOptions = {
@@ -54,33 +54,46 @@ describe('AutomationPage', () => {
 
   afterEach(() => http.verify());
 
-  function boot(enabled = true) {
+  function boot(canWrite = false) {
     const fixture = TestBed.createComponent(AutomationPage);
     fixture.detectChanges();
-    http.expectOne('/api/health').flush(health(enabled));
-    if (enabled) {
-      http.expectOne('/api/automation/options').flush(OPTIONS);
-      http.expectOne('/api/automation/rules').flush({ rules: [rule()] });
-      http.expectOne((r) => r.url === '/api/automation/preview').flush(preview());
-    }
+    // Automation always loads — health only sets whether it may write.
+    http.expectOne('/api/health').flush(health(canWrite));
+    http.expectOne('/api/automation/options').flush(OPTIONS);
+    http.expectOne('/api/automation/rules').flush({ rules: [rule()] });
+    http.expectOne((r) => r.url === '/api/automation/preview').flush(preview());
     fixture.detectChanges();
     return fixture;
   }
 
-  it('shows the disabled notice when automation is off (no further calls)', () => {
-    const fixture = TestBed.createComponent(AutomationPage);
-    fixture.detectChanges();
-    http.expectOne('/api/health').flush(health(false));
-    fixture.detectChanges();
-    expect((fixture.nativeElement as HTMLElement).textContent).toContain('Automation is disabled');
+  it('shows the preview-only banner (no Apply now) when control is off', () => {
+    const fixture = boot(false);
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.textContent).toContain('Preview-only');
+    expect(el.textContent).not.toContain('Apply now');
   });
 
-  it('lists rules and renders the live preview when enabled', () => {
+  it('lists rules and renders the live preview', () => {
     const fixture = boot();
     const el = fixture.nativeElement as HTMLElement;
     expect(el.textContent).toContain('Weekend top-up');
     expect(el.textContent).toContain('timer_slots[1].target_soc_pct');
     expect(el.textContent).toContain('would apply');
+  });
+
+  it('shows Apply now and POSTs to apply when control is enabled', () => {
+    const fixture = boot(true);
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.textContent).toContain('Apply now');
+    expect(el.textContent).not.toContain('Preview-only');
+
+    fixture.componentInstance.applyNow();
+    const post = http.expectOne((r) => r.method === 'POST' && r.url === '/api/automation/apply');
+    post.flush({ device_id: 'dummy', now: '2026-06-20T14:00:00+00:00',
+      applied: [{ section: 'timer_slots', index: 1, ok: true, changes: {}, mismatches: [], etag: 'e' }], failed: [] });
+    http.expectOne((r) => r.url === '/api/automation/preview').flush(preview());
+    fixture.detectChanges();
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain('Applied 1 change(s)');
   });
 
   it('toggles a rule armed flag via PUT then reloads', () => {

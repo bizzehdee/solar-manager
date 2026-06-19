@@ -6,7 +6,7 @@ test.describe('Now dashboard (live, on the dummy)', () => {
   test('shell renders with brand and full sidebar nav', async ({ page }) => {
     await page.goto('/');
     await expect(page.locator('.navbar-brand')).toContainText('SolarVolt');
-    await expect(page.locator('.app-sidebar .nav-link')).toHaveCount(7);
+    await expect(page.locator('.app-sidebar .nav-link')).toHaveCount(8);
   });
 
   test('battery gauge updates from a live WebSocket reading', async ({ page }) => {

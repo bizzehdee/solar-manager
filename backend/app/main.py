@@ -140,10 +140,19 @@ async def lifespan(app: FastAPI):
     app.state.readings_webhook = readings_webhook
     await readings_webhook.start()
 
-    app.state.automation = AutomationService(app_config, poller, registry, clock=clock)
+    automation = AutomationService(
+        app_config, poller, registry, clock=clock,
+        audit_repo=audit_repo, interval_s=settings.automation_interval_s,
+    )
+    app.state.automation = automation
+    # Automation is always available (rules/preview need no flag). The scheduler *writes* inverter
+    # registers, so it only runs under SOLARVOLT_ENABLE_CONTROL — the single gate on register writes.
+    if settings.enable_control:
+        await automation.start()
     try:
         yield
     finally:
+        await automation.stop()
         await readings_webhook.stop()
         await grid_events.stop()
         await alerts.stop()
@@ -175,7 +184,8 @@ def create_app(
                 "status": "ok",
                 "version": __version__,
                 "control_enabled": app.state.settings.enable_control,
-                "automation_enabled": app.state.settings.enable_automation,
+                # Automation is always on; it can only *write* inverter registers under control (L03e-3).
+                "automation_can_write": app.state.settings.enable_control,
                 **poller.health(),
             }
         )
@@ -663,20 +673,20 @@ def create_app(
             raise HTTPException(status_code=502, detail=f"webhook POST failed: {exc}") from exc
         return JSONResponse({"ok": True, "sent": sent})
 
-    # ---- rule-based automation (Later / L03e; suggest-only, gated) -------------
-    def _require_automation() -> AutomationService:
-        if not app.state.settings.enable_automation:
-            raise HTTPException(status_code=403, detail="automation is disabled (SOLARVOLT_ENABLE_AUTOMATION is off)")
+    # ---- rule-based automation (Later / L03e) ---------------------------------
+    # Always available (rules/preview/options need no flag). Only *applying* to the inverter
+    # is gated, by SOLARVOLT_ENABLE_CONTROL — the single gate on register writes.
+    def _automation_service() -> AutomationService:
         return app.state.automation
 
     @app.get("/api/automation/rules")
     async def list_automation_rules() -> JSONResponse:
-        svc = _require_automation()
+        svc = _automation_service()
         return JSONResponse({"rules": await svc.list_rules()})
 
     @app.put("/api/automation/rules/{rule_id}")
     async def put_automation_rule(rule_id: str, body: dict = Body(...)) -> JSONResponse:
-        svc = _require_automation()
+        svc = _automation_service()
         body["id"] = rule_id
         try:
             rule = await svc.upsert_rule(body)
@@ -686,21 +696,30 @@ def create_app(
 
     @app.delete("/api/automation/rules/{rule_id}", status_code=204)
     async def delete_automation_rule(rule_id: str):
-        svc = _require_automation()
+        svc = _automation_service()
         if not await svc.delete_rule(rule_id):
             raise HTTPException(status_code=404, detail=f"automation rule {rule_id} not found")
         return JSONResponse(None, status_code=204)
 
     @app.get("/api/automation/options")
     async def automation_options(device_id: str | None = None) -> JSONResponse:
-        svc = _require_automation()
+        svc = _automation_service()
         return JSONResponse(svc.options(device_id))
 
     @app.get("/api/automation/preview")
     async def automation_preview(device_id: str | None = None) -> JSONResponse:
         """What the rules would set right now (armed changes + previews). Never writes."""
-        svc = _require_automation()
+        svc = _automation_service()
         return JSONResponse(await svc.preview(device_id))
+
+    @app.post("/api/automation/apply")
+    async def automation_apply(device_id: str | None = None) -> JSONResponse:
+        """Apply now: write the armed, non-blocked winners through the §12 control flow. Gated by
+        SOLARVOLT_ENABLE_CONTROL — like every path that touches inverter registers."""
+        svc = _automation_service()
+        if not app.state.settings.enable_control:
+            raise HTTPException(status_code=403, detail="control is disabled (SOLARVOLT_ENABLE_CONTROL is off)")
+        return JSONResponse(await svc.apply(device_id, source="automation:manual"))
 
     # ---- inverter clock sync (Phase 8 / T097) ---------------------------------
     @app.get("/api/devices/{device_id}/clock")
