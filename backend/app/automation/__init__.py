@@ -17,6 +17,19 @@ from .planner import (
     peak_window,
     plan_timer,
 )
+from .rules import (
+    Action,
+    AllowList,
+    AutomationDecision,
+    AutomationRule,
+    Condition,
+    EvalContext,
+    ProposedChange,
+    Target,
+    evaluate_condition,
+    evaluate_rules,
+    rule_matches,
+)
 
 __all__ = [
     "AutomationPlan",
@@ -26,4 +39,15 @@ __all__ = [
     "overnight_target_soc_pct",
     "peak_window",
     "plan_timer",
+    "Action",
+    "AllowList",
+    "AutomationDecision",
+    "AutomationRule",
+    "Condition",
+    "EvalContext",
+    "ProposedChange",
+    "Target",
+    "evaluate_condition",
+    "evaluate_rules",
+    "rule_matches",
 ]

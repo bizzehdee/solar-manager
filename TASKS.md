@@ -434,6 +434,34 @@ versioned releases.*
       "apply now") that applies the plan through the §12 path (`control.apply_settings`:
       validate→write→read-back→audit). Playwright E2E of the full round-trip on the dummy.
       *Refs: §18, §12.*
+  - **L03e · User-authored rule-based automation** — condition→action rules that set inverter
+    settings (e.g. "on weekends set work-mode slot 1 target SoC to 80%"); rules are **combinable**
+    (every matching rule contributes) and **prioritised** (highest priority wins a conflicting
+    write). Extends the `automation` package alongside the cost-arbitrage planner. Safety: an
+    action applies only when **both** its rule and the action are affirmatively `enabled` (both
+    default off); a disabled rule/action is shown as a **preview** ("would set X now, if running").
+    Writable targets come from the **inverter profile** allow-list (safe subset → `ok`, writable
+    but riskier → `at_risk`, not writable → `blocked`/never applied). Sliced:
+    - [x] **L03e-1 · Pure rules engine** · Deps: L03a
+      - **Done:** `app/automation/rules.py` — `AutomationRule`/`Condition`/`Action`/`Target` model
+        (JSON round-trip), conditions `day_of_week`/`time_window`/`date_range`(season)/`metric`
+        (reuses `alerts.engine.compare`)/`tariff_window` (reuses `tariff.RateSchedule`), per-rule
+        all/any match, `evaluate_rules()` that combines matching rules and resolves same-target
+        conflicts by priority (losers kept in `overridden` for transparency), enable/preview
+        semantics (`active`/`will_apply`) and `AllowList` status. Pure (no DB/IO/writes).
+        `test_automation_rules.py` (22 tests) incl. midnight/year wraps, priority + ties, allow-list
+        block, serialisation; module **100%**; full backend suite green (319 passed). *Refs: §18.*
+    - [ ] **L03e-2 · Persist rules + suggest-only API** · Deps: L03e-1, T071
+      - Store rules in the DB; `GET/PUT/DELETE /api/automation/rules`; `GET /api/automation/preview`
+        wires the engine to the live clock/metrics/forecast/tariff + the profile-derived allow-list
+        and returns the decision (what each rule would set now, armed or preview). **Never writes.**
+        Profile gains an `automation_safe` marking on its settings allow-list. *Refs: §18, §12.*
+    - [ ] **L03e-3 · Opt-in apply (scheduler + write)** · Deps: L03e-2, T076, L03d
+      - Only with `ENABLE_CONTROL`+`ENABLE_AUTOMATION`: a scheduler (+ "apply now") writes the armed
+        winning changes through `control.apply_settings` (validate→write→read-back→audit). *Refs: §18, §12.*
+    - [ ] **L03e-4 · Rule-editor UI + live preview** · Deps: L03e-2
+      - Build/edit/prioritise rules; per-rule and per-action enable; a live "what it would do now"
+        panel; current→proposed diff with the safe/at-risk/blocked badge. *Refs: §18, §8.*
 - [-] **L04 · More vendors / protocol families** — Growatt/Solis/Sungrow/… (new YAML each);
   generic SunSpec profile; text-command family (Voltronic/Must) + Victron family each carry a
   one-time transport+profile-contract cost, then siblings are cheap. *Refs: §20.*
