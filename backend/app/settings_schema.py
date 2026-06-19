@@ -51,6 +51,10 @@ class FieldSpec:
     # rejected by validation, and shown without edit controls (some inverter values — e.g.
     # grid type / grid frequency — are observable but not settable over Modbus).
     writable: bool = True
+    # Whether this field is in the profile's **automation-safe** subset (L03e): rule actions may
+    # target it without an at-your-own-risk override. A conservative, profile-curated allow-list —
+    # writable-but-not-safe fields are still settable by automation, but flagged `at_risk`.
+    automation_safe: bool = False
 
     def as_dict(self) -> dict:
         d = {"key": self.key, "label": self.label, "type": self.type}
@@ -64,6 +68,8 @@ class FieldSpec:
             d["max"] = self.max
         if not self.writable:
             d["writable"] = False
+        if self.automation_safe:
+            d["automation_safe"] = True
         return d
 
 

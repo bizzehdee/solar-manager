@@ -22,6 +22,10 @@ class Settings:
     # Master switch for write-back / control (plan.md §12). OFF by default — the app
     # is monitoring-only out of the box. A *deployment* decision, not a UI toggle.
     enable_control: bool = False
+    # Master switch for rule-based automation (plan.md §18; L03e). Separate from control: when
+    # off the automation API 403s and the UI capability is suppressed. Even when on, automation
+    # only *writes* if `enable_control` is also on — preview/suggest works either way. OFF by default.
+    enable_automation: bool = False
     # How often the poller reads every device, in seconds (plan.md §10).
     poll_interval_s: float = 3.0
     # SQLite file location (plan.md §5).
@@ -48,6 +52,7 @@ class Settings:
         port = os.environ.get("SOLARVOLT_MODBUS_PORT") or None
         return cls(
             enable_control=_env_bool("SOLARVOLT_ENABLE_CONTROL", False),
+            enable_automation=_env_bool("SOLARVOLT_ENABLE_AUTOMATION", False),
             poll_interval_s=float(os.environ.get("SOLARVOLT_POLL_INTERVAL_S", "3.0")),
             db_path=os.environ.get("SOLARVOLT_DB_PATH", "solarvolt.db"),
             persist_interval_s=float(os.environ.get("SOLARVOLT_PERSIST_INTERVAL_S", "30.0")),

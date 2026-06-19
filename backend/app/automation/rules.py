@@ -61,6 +61,25 @@ class AllowList:
         return "blocked"
 
 
+def allow_list_from_schema(schema: Mapping[str, Any] | None) -> AllowList:
+    """Derive the automation allow-list from a settings schema dict (the form spec exposed at
+    `…/settings/schema`). `writable` = every writable field; `safe` = the profile's
+    automation-safe subset. A device with no settings schema yields an empty (all-`blocked`)
+    list, so automation can never write to a monitoring-only device."""
+    if not schema:
+        return AllowList()
+    safe: set[tuple[str, str]] = set()
+    writable: set[tuple[str, str]] = set()
+    for section in schema.get("sections", []):
+        skey = section["key"]
+        for fld in section.get("fields", []):
+            if fld.get("writable", True):
+                writable.add((skey, fld["key"]))
+                if fld.get("automation_safe"):
+                    safe.add((skey, fld["key"]))
+    return AllowList(safe=frozenset(safe), writable=frozenset(writable))
+
+
 # --- model ---------------------------------------------------------------------
 @dataclass(frozen=True, slots=True)
 class Condition:

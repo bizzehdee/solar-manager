@@ -213,13 +213,14 @@ class DummyProfile:
                 FieldSpec("gen_max_run_time_h", "Generator max run time", "number", unit="h", min=0, max=24),
                 FieldSpec("gen_down_time_h", "Generator down time", "number", unit="h", min=0, max=24),
             ]),
-            # Work-mode timer: 6 repeating slots.
+            # Work-mode timer: 6 repeating slots. The scheduling fields are the automation-safe
+            # subset (L03e) — rule actions may target them without an at-your-own-risk override.
             Section("timer_slots", "Work-mode timer", [
-                FieldSpec("start_time", "Start time", "time"),
-                FieldSpec("power_w", "Power", "number", unit="W", min=0, max=8000),
-                FieldSpec("target_soc_pct", "Target SoC", "number", unit="%", min=0, max=100),
+                FieldSpec("start_time", "Start time", "time", automation_safe=True),
+                FieldSpec("power_w", "Power", "number", unit="W", min=0, max=8000, automation_safe=True),
+                FieldSpec("target_soc_pct", "Target SoC", "number", unit="%", min=0, max=100, automation_safe=True),
                 FieldSpec("voltage_v", "Target voltage", "number", unit="V", min=44.0, max=60.0),
-                FieldSpec("charge_from_grid", "Charge from grid", "bool"),
+                FieldSpec("charge_from_grid", "Charge from grid", "bool", automation_safe=True),
                 FieldSpec("charge_from_gen", "Charge from generator", "bool"),
             ], repeating=True, count=6),
         ])

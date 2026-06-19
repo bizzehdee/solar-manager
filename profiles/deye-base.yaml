@@ -201,14 +201,17 @@ settings:
   #   00:05  8kW    65%  on   off       slot1 [250]=5  [256]=8000 [268]=65 [274]=5 (bit0 grid on)
   #   05:55  8kW    10%  off  off       slot2 [251]=555 ...                  [275]=4 (grid off)
   #   09:00 / 13:00 / 17:00 / 21:00 — all 8kW / 10% / grid off / gen off.
+  # automation_safe marks the conservative subset rule-based automation (L03e) may target
+  # without an at-your-own-risk override: the work-mode timer scheduling fields. Other writable
+  # settings stay settable by automation but are flagged `at_risk`.
   timer_slots:
     count: 6
     fields:
-      start_time:        { base_addr: 250, type: time_hhmm }    # 250..255  (raw 5 -> 00:05, 555 -> 05:55)
-      power_w:           { base_addr: 256, type: u16, min: 0, max: 16000 }  # 256..261
-      target_soc_pct:    { base_addr: 268, type: u16 }          # 268..273
+      start_time:        { base_addr: 250, type: time_hhmm, automation_safe: true }    # 250..255  (raw 5 -> 00:05, 555 -> 05:55)
+      power_w:           { base_addr: 256, type: u16, min: 0, max: 16000, automation_safe: true }  # 256..261
+      target_soc_pct:    { base_addr: 268, type: u16, automation_safe: true }          # 268..273
       voltage_v:         { base_addr: 262, type: u16, scale: 0.01, min: 44.0, max: 60.0 }  # 262..267 (unused in SoC mode)
-      charge_from_grid:  { base_addr: 274, type: bool, mask: 0x01 }  # 274..279 bit0 (confirmed)
+      charge_from_grid:  { base_addr: 274, type: bool, mask: 0x01, automation_safe: true }  # 274..279 bit0 (confirmed)
       charge_from_gen:   { base_addr: 274, type: bool, mask: 0x02 }  #          bit1
       mode:              { base_addr: 274, type: bits, mask: 0x1C, min: 0, max: 7 }  #  bits 2-4
 

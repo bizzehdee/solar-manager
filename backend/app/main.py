@@ -28,6 +28,7 @@ from .alerts import AlertRule
 from .alerts.channels import SUPPORTED_CHANNELS, build_channels
 from .alerts.engine import METRIC_FAULT_COUNT, METRIC_STALE_S
 from .alerts.service import AlertService
+from .automation.service import AutomationService
 from .config import Settings
 from .grid_events import GridEventService
 from .integrations import ReadingsWebhookService
@@ -138,6 +139,8 @@ async def lifespan(app: FastAPI):
     readings_webhook = ReadingsWebhookService(poller, app_config)
     app.state.readings_webhook = readings_webhook
     await readings_webhook.start()
+
+    app.state.automation = AutomationService(app_config, poller, registry, clock=clock)
     try:
         yield
     finally:
@@ -172,6 +175,7 @@ def create_app(
                 "status": "ok",
                 "version": __version__,
                 "control_enabled": app.state.settings.enable_control,
+                "automation_enabled": app.state.settings.enable_automation,
                 **poller.health(),
             }
         )
@@ -658,6 +662,45 @@ def create_app(
         except Exception as exc:  # surface the failure to the manual caller
             raise HTTPException(status_code=502, detail=f"webhook POST failed: {exc}") from exc
         return JSONResponse({"ok": True, "sent": sent})
+
+    # ---- rule-based automation (Later / L03e; suggest-only, gated) -------------
+    def _require_automation() -> AutomationService:
+        if not app.state.settings.enable_automation:
+            raise HTTPException(status_code=403, detail="automation is disabled (SOLARVOLT_ENABLE_AUTOMATION is off)")
+        return app.state.automation
+
+    @app.get("/api/automation/rules")
+    async def list_automation_rules() -> JSONResponse:
+        svc = _require_automation()
+        return JSONResponse({"rules": await svc.list_rules()})
+
+    @app.put("/api/automation/rules/{rule_id}")
+    async def put_automation_rule(rule_id: str, body: dict = Body(...)) -> JSONResponse:
+        svc = _require_automation()
+        body["id"] = rule_id
+        try:
+            rule = await svc.upsert_rule(body)
+        except (KeyError, ValueError, TypeError) as exc:
+            raise HTTPException(status_code=422, detail=f"invalid automation rule: {exc}") from exc
+        return JSONResponse(rule)
+
+    @app.delete("/api/automation/rules/{rule_id}", status_code=204)
+    async def delete_automation_rule(rule_id: str):
+        svc = _require_automation()
+        if not await svc.delete_rule(rule_id):
+            raise HTTPException(status_code=404, detail=f"automation rule {rule_id} not found")
+        return JSONResponse(None, status_code=204)
+
+    @app.get("/api/automation/options")
+    async def automation_options(device_id: str | None = None) -> JSONResponse:
+        svc = _require_automation()
+        return JSONResponse(svc.options(device_id))
+
+    @app.get("/api/automation/preview")
+    async def automation_preview(device_id: str | None = None) -> JSONResponse:
+        """What the rules would set right now (armed changes + previews). Never writes."""
+        svc = _require_automation()
+        return JSONResponse(await svc.preview(device_id))
 
     # ---- inverter clock sync (Phase 8 / T097) ---------------------------------
     @app.get("/api/devices/{device_id}/clock")

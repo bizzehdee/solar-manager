@@ -168,16 +168,17 @@ class ModbusYamlProfile:
     def _field_spec(key: str, spec: dict[str, Any]) -> FieldSpec:
         t = spec.get("type", "u16")
         w = bool(spec.get("writable", True))   # `writable: false` ⇒ display-only (no write)
+        a = bool(spec.get("automation_safe", False))  # in the profile's automation-safe subset (L03e)
         if t == "bool":
-            return FieldSpec(key, humanize(key), "bool", writable=w)
+            return FieldSpec(key, humanize(key), "bool", writable=w, automation_safe=a)
         if t == "enum":
-            return FieldSpec(key, humanize(key), "enum", options=enum_options(spec.get("values", {})), writable=w)
+            return FieldSpec(key, humanize(key), "enum", options=enum_options(spec.get("values", {})), writable=w, automation_safe=a)
         if t == "time_hhmm":
-            return FieldSpec(key, humanize(key), "time", writable=w)
+            return FieldSpec(key, humanize(key), "time", writable=w, automation_safe=a)
         lo, hi = ModbusYamlProfile._field_bounds(key, spec)
         if t == "bits":
-            return FieldSpec(key, humanize(key), "int", min=lo, max=hi, writable=w)
-        return FieldSpec(key, humanize(key), "number", unit=unit_for(key), min=lo, max=hi, writable=w)
+            return FieldSpec(key, humanize(key), "int", min=lo, max=hi, writable=w, automation_safe=a)
+        return FieldSpec(key, humanize(key), "number", unit=unit_for(key), min=lo, max=hi, writable=w, automation_safe=a)
 
     @staticmethod
     def _field_bounds(key: str, spec: dict[str, Any]) -> tuple[float | None, float | None]:

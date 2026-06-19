@@ -451,11 +451,23 @@ versioned releases.*
         semantics (`active`/`will_apply`) and `AllowList` status. Pure (no DB/IO/writes).
         `test_automation_rules.py` (22 tests) incl. midnight/year wraps, priority + ties, allow-list
         block, serialisation; module **100%**; full backend suite green (319 passed). *Refs: §18.*
-    - [ ] **L03e-2 · Persist rules + suggest-only API** · Deps: L03e-1, T071
+    - [x] **L03e-2 · Persist rules + suggest-only API** · Deps: L03e-1, T071
       - Store rules in the DB; `GET/PUT/DELETE /api/automation/rules`; `GET /api/automation/preview`
         wires the engine to the live clock/metrics/forecast/tariff + the profile-derived allow-list
         and returns the decision (what each rule would set now, armed or preview). **Never writes.**
         Profile gains an `automation_safe` marking on its settings allow-list. *Refs: §18, §12.*
+      - **Done:** new `SOLARVOLT_ENABLE_AUTOMATION` deploy flag (separate from control; advertised as
+        `automation_enabled` in `/api/health`). `AutomationService` (`app/automation/service.py`)
+        stores rules as a JSON list in `app_config`, builds the `EvalContext` from the clock + the
+        device's live snapshot metrics + the import tariff (`Tariff.schedules_for`), and derives the
+        `AllowList` from the device settings schema. `FieldSpec` gained `automation_safe`; the
+        deye-base + dummy work-mode-timer scheduling fields (start/power/target SoC/grid-charge) are
+        marked safe. Gated endpoints (403 when off): `GET/PUT/DELETE /api/automation/rules`,
+        `GET /api/automation/options` (condition kinds/ops/metrics + settable targets tagged
+        ok/at_risk), `GET /api/automation/preview` (the decision — armed changes + previews, **never
+        writes**). `test_automation_api.py` (gating, CRUD+validation, options safety status, preview
+        armed/preview/metric-condition). `rules.py` 100%, `service.py` 97%; full suite 326 passed (96%).
+        *(Rule-editor UI is L03e-4; forecast-derived metrics in the context are a later enrichment.)*
     - [ ] **L03e-3 · Opt-in apply (scheduler + write)** · Deps: L03e-2, T076, L03d
       - Only with `ENABLE_CONTROL`+`ENABLE_AUTOMATION`: a scheduler (+ "apply now") writes the armed
         winning changes through `control.apply_settings` (validate→write→read-back→audit). *Refs: §18, §12.*
