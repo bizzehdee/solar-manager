@@ -47,6 +47,26 @@ def _local_now() -> datetime:
     return datetime.now().astimezone()
 
 
+class _SafeMetrics(dict):
+    """format_map helper: unknown metric keys are left as ``{key}`` rather than raising KeyError."""
+    def __missing__(self, key: str) -> str:
+        return "{" + key + "}"
+
+
+def _render_message(template: str, metrics: dict) -> str:
+    """Substitute ``{metric_key}`` / ``{metric_key:.2f}`` placeholders with current metric values.
+
+    Unknown keys are left as ``{key}`` in the output (safe — the user sees what didn't resolve).
+    Malformed format specs (e.g. ``{soc:.1fX}``) fall back to the raw template rather than erroring.
+    """
+    if not template or "{" not in template:
+        return template
+    try:
+        return template.format_map(_SafeMetrics(metrics))
+    except ValueError:
+        return template  # bad format spec — send the raw template rather than crashing
+
+
 class AutomationService:
     def __init__(
         self,
@@ -201,7 +221,7 @@ class AutomationService:
         return (rule_id, action_type, message, channels)
 
     async def _dispatch_notifications(
-        self, device_id: str | None, decision: AutomationDecision, now: float
+        self, device_id: str | None, decision: AutomationDecision, now: float, metrics: dict
     ) -> None:
         for notif in decision.notify_actions():
             key = self._debounce_key("notify", notif.rule_id, notif.message, tuple(sorted(notif.channels)))
@@ -210,7 +230,7 @@ class AutomationService:
             self._debounce[key] = now
             payload = {
                 "rule_id": notif.rule_id, "name": notif.rule_name,
-                "message": notif.message or notif.rule_name,
+                "message": _render_message(notif.message or notif.rule_name, metrics),
                 "severity": notif.severity, "device_id": device_id,
             }
             try:
@@ -219,7 +239,7 @@ class AutomationService:
                 log.warning("Automation notify dispatch failed for rule %r: %s", notif.rule_id, exc)
 
     async def _create_alerts(
-        self, device_id: str | None, decision: AutomationDecision, now: float
+        self, device_id: str | None, decision: AutomationDecision, now: float, metrics: dict
     ) -> None:
         if self._alert_repo is None:
             return
@@ -235,7 +255,7 @@ class AutomationService:
                     severity=alert_action.severity,
                     metric=None,
                     value=None,
-                    message=alert_action.message or alert_action.rule_name,
+                    message=_render_message(alert_action.message or alert_action.rule_name, metrics),
                     fired_at=now,
                 )
             except Exception as exc:
@@ -257,8 +277,9 @@ class AutomationService:
         result: dict = {"device_id": device_id_str, "now": ctx.now.isoformat(), "applied": [], "failed": []}
 
         # Notify/alert dispatch is ungated (runs even without ENABLE_CONTROL).
-        await self._dispatch_notifications(device_id_str, decision, now)
-        await self._create_alerts(device_id_str, decision, now)
+        metrics = dict(ctx.metrics)
+        await self._dispatch_notifications(device_id_str, decision, now, metrics)
+        await self._create_alerts(device_id_str, decision, now, metrics)
 
         if not write or device is None:
             return result

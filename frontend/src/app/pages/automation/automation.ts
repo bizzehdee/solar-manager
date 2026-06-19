@@ -235,7 +235,7 @@ import {
                       <div class="row g-2">
                         <div class="col-12 col-md-6">
                           <label class="small text-secondary">Message (leave blank to use rule name)</label>
-                          <input class="form-control form-control-sm" [(ngModel)]="a.message" [name]="'amsg' + $index" placeholder="Optional message" />
+                          <input class="form-control form-control-sm" [(ngModel)]="a.message" [name]="'amsg' + $index" placeholder="e.g. Battery SoC is {battery_soc_pct:.1f}%" />
                         </div>
                         <div class="col-6 col-md-3">
                           <label class="small text-secondary">Severity</label>
@@ -247,15 +247,19 @@ import {
                           <label class="small text-secondary">Debounce (s)</label>
                           <input type="number" min="0" class="form-control form-control-sm" [(ngModel)]="a.debounce_s" [name]="'adeb' + $index" />
                         </div>
-                        @if (a.action_type === 'notify' && options().channels.length > 0) {
+                        @if (a.action_type === 'notify') {
                           <div class="col-12">
                             <label class="small text-secondary d-block">Channels</label>
-                            @for (ch of options().channels; track ch) {
-                              <div class="form-check form-check-inline">
-                                <input class="form-check-input" type="checkbox" [id]="'ach-' + $index + '-' + ch"
-                                       [checked]="hasChannel(a, ch)" (change)="toggleChannel(a, ch)" />
-                                <label class="form-check-label small" [for]="'ach-' + $index + '-' + ch">{{ ch }}</label>
-                              </div>
+                            @if (options().channels.length > 0) {
+                              @for (ch of options().channels; track ch) {
+                                <div class="form-check form-check-inline">
+                                  <input class="form-check-input" type="checkbox" [id]="'ach-' + $index + '-' + ch"
+                                         [checked]="hasChannel(a, ch)" (change)="toggleChannel(a, ch)" />
+                                  <label class="form-check-label small" [for]="'ach-' + $index + '-' + ch">{{ ch }}</label>
+                                </div>
+                              }
+                            } @else {
+                              <span class="small text-secondary">No channels configured — set them up in <strong>Settings → Notification Channels</strong>.</span>
                             }
                           </div>
                         }

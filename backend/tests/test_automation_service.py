@@ -414,3 +414,66 @@ async def test_fault_count_metric_injected():
         await svc.apply("dummy", write=False)
     assert captured_ctx[0].metrics["__fault_count__"] == 2.0
     assert captured_ctx[0].metrics["__stale_s__"] == 5.0
+
+
+# --- message template rendering -----------------------------------------------
+@pytest.mark.asyncio
+async def test_notify_message_template_rendered_with_metrics():
+    """``{metric_key}`` placeholders in the notify message are replaced with live values."""
+    dispatched: list[dict] = []
+
+    async def fake_post(url, payload=None, **kw):
+        dispatched.append(payload)
+
+    cfg = _Config({
+        "automation_rules": [_notify_rule(channels=("webhook",),
+                                          message="Battery SoC is {battery_soc_pct:.1f}%")],
+        "alert_channels": {"webhook": {"url": "http://hook.example/test"}},
+    })
+    device = Device("dummy", NullTransport(), DummyProfile())
+    # DummyProfile reports battery_soc_pct; inject a known value via a snapshot stub.
+    poller = _Poller(snapshot={
+        "devices": {"dummy": {"metrics": {"battery_soc_pct": 42.5}}},
+    })
+    svc = AutomationService(cfg, poller, _Registry([device]), clock=lambda: _SAT, post=fake_post)
+    await svc.reload_channels()
+    await svc.apply("dummy", write=False)
+    assert len(dispatched) == 1
+    assert dispatched[0]["message"] == "Battery SoC is 42.5%"
+
+
+@pytest.mark.asyncio
+async def test_alert_message_template_rendered_with_metrics():
+    """``{metric_key}`` placeholders in the alert message are replaced with live values."""
+    alert_repo = _AlertRepo()
+    poller = _Poller(snapshot={
+        "devices": {"dummy": {"metrics": {"battery_soc_pct": 17.3}}},
+    })
+    svc = _service(
+        [_alert_rule(message="SoC low: {battery_soc_pct:.0f}%")],
+        alert_repo=alert_repo,
+    )
+    svc._poller = poller
+    await svc.apply("dummy", write=False)
+    assert len(alert_repo.inserts) == 1
+    assert alert_repo.inserts[0]["message"] == "SoC low: 17%"
+
+
+def test_render_message_unknown_key_left_in_place():
+    """Unknown metric keys are preserved as ``{key}`` rather than raising."""
+    from app.automation.service import _render_message
+    result = _render_message("SoC={battery_soc_pct} fault={no_such_metric}", {"battery_soc_pct": 55.0})
+    assert result == "SoC=55.0 fault={no_such_metric}"
+
+
+def test_render_message_bad_format_spec_falls_back():
+    """A malformed format spec returns the raw template rather than raising."""
+    from app.automation.service import _render_message
+    result = _render_message("{battery_soc_pct:.1fXXX}", {"battery_soc_pct": 42.0})
+    assert result == "{battery_soc_pct:.1fXXX}"
+
+
+def test_render_message_no_placeholders_unchanged():
+    """Messages with no ``{`` are returned as-is (fast path, no format_map call)."""
+    from app.automation.service import _render_message
+    assert _render_message("all clear", {"battery_soc_pct": 99.0}) == "all clear"
