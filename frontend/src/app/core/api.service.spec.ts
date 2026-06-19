@@ -176,27 +176,7 @@ describe('ApiService', () => {
     req.flush(sampleForecastConfig());
   });
 
-  // --- Alert rules (L11) + readings webhook (L09) ---
-  it('getAlertRuleOptions() GETs /api/alert-rules/options', () => {
-    api.getAlertRuleOptions().subscribe((o) => expect(o.metrics).toContain('battery_soc_pct'));
-    const req = http.expectOne('/api/alert-rules/options');
-    expect(req.request.method).toBe('GET');
-    req.flush({ metrics: ['battery_soc_pct'], ops: ['lt'], severities: ['warning'], channels: ['webhook'] });
-  });
-
-  it('putAlertRule() PUTs to the id URL and deleteAlertRule() DELETEs it', () => {
-    api.putAlertRule('hot', { name: 'Hot', metric: 'inverter_temp_c', op: 'gt', threshold: 60 }).subscribe();
-    const put = http.expectOne('/api/alert-rules/hot');
-    expect(put.request.method).toBe('PUT');
-    expect(put.request.body.metric).toBe('inverter_temp_c');
-    put.flush({});
-
-    api.deleteAlertRule('hot').subscribe();
-    const del = http.expectOne('/api/alert-rules/hot');
-    expect(del.request.method).toBe('DELETE');
-    del.flush(null);
-  });
-
+  // --- Notification channels (L10) + readings webhook (L09) ---
   it('getAlertChannels()/putAlertChannels()/testAlertChannel() hit the channel URLs', () => {
     api.getAlertChannels().subscribe((r) => expect(r.configured).toEqual(['webhook']));
     http.expectOne('/api/alert-channels').flush({ channels: { webhook: { url: 'http://h' } }, configured: ['webhook'], supported: ['webhook'] });

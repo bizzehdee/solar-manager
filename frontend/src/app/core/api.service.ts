@@ -5,8 +5,6 @@ import { Observable } from 'rxjs';
 import {
   Alert,
   AlertChannelsResponse,
-  AlertRule,
-  AlertRuleOptions,
   AlertsResponse,
   AuditEntry,
   AutomationApplyResult,
@@ -182,27 +180,6 @@ export class ApiService {
 
   snoozeAlert(id: number, minutes = 60): Observable<unknown> {
     return this.http.post(`/api/alerts/${id}/snooze`, { minutes });
-  }
-
-  // --- Alert rules (L11 editor) ---
-
-  /** All configured alert rules (defaults seeded on first run). */
-  getAlertRules(): Observable<{ rules: AlertRule[] }> {
-    return this.http.get<{ rules: AlertRule[] }>('/api/alert-rules');
-  }
-
-  /** Field choices for the rule editor (metrics/ops/severities/channels). */
-  getAlertRuleOptions(): Observable<AlertRuleOptions> {
-    return this.http.get<AlertRuleOptions>('/api/alert-rules/options');
-  }
-
-  /** Create or update a rule (PUT upserts by id). Returns the saved rule. */
-  putAlertRule(id: string, body: Partial<AlertRule>): Observable<AlertRule> {
-    return this.http.put<AlertRule>(`/api/alert-rules/${id}`, body);
-  }
-
-  deleteAlertRule(id: string): Observable<void> {
-    return this.http.delete<void>(`/api/alert-rules/${id}`);
   }
 
   // --- Notification channels (L10) ---

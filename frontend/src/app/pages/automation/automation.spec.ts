@@ -12,8 +12,10 @@ function health(automation_can_write: boolean) {
 const OPTIONS: AutomationOptions = {
   condition_kinds: ['day_of_week', 'metric', 'tariff_window'],
   ops: ['lt', 'gt'],
-  metrics: ['battery_soc_pct'],
+  metrics: ['battery_soc_pct', '__stale_s__', '__fault_count__'],
   match_modes: ['all', 'any'],
+  severities: ['info', 'warning', 'critical'],
+  channels: ['webhook', 'telegram'],
   targets: [
     { section: 'timer_slots', section_label: 'Work-mode timer', field: 'target_soc_pct', label: 'Target SoC', type: 'number', repeating: true, count: 6, status: 'ok' },
     { section: 'battery_type', section_label: 'Battery', field: 'battery_capacity_ah', label: 'Capacity', type: 'number', repeating: false, count: null, status: 'at_risk' },
@@ -24,7 +26,7 @@ function rule(over: Partial<AutomationRule> = {}): AutomationRule {
   return {
     id: 'weekend', name: 'Weekend top-up', match: 'all', priority: 1, enabled: false,
     conditions: [{ kind: 'day_of_week', params: { days: [5, 6] } }],
-    actions: [{ target: { section: 'timer_slots', field: 'target_soc_pct', index: 1 }, value: 80, enabled: true }],
+    actions: [{ action_type: 'set_setting', target: { section: 'timer_slots', field: 'target_soc_pct', index: 1 }, value: 80, enabled: true }],
     ...over,
   };
 }
@@ -37,6 +39,8 @@ function preview(): AutomationPreview {
         target: { section: 'timer_slots', field: 'target_soc_pct', index: 1 }, value: 80,
         active: true, status: 'ok', will_apply: true }],
       overridden: [],
+      notifications: [],
+      in_app_alerts: [],
     },
   };
 }
@@ -57,7 +61,6 @@ describe('AutomationPage', () => {
   function boot(canWrite = false) {
     const fixture = TestBed.createComponent(AutomationPage);
     fixture.detectChanges();
-    // Automation always loads — health only sets whether it may write.
     http.expectOne('/api/health').flush(health(canWrite));
     http.expectOne('/api/automation/options').flush(OPTIONS);
     http.expectOne('/api/automation/rules').flush({ rules: [rule()] });
@@ -69,7 +72,7 @@ describe('AutomationPage', () => {
   it('shows the preview-only banner (no Apply now) when control is off', () => {
     const fixture = boot(false);
     const el = fixture.nativeElement as HTMLElement;
-    expect(el.textContent).toContain('Preview-only');
+    expect(el.textContent).toContain('preview-only');
     expect(el.textContent).not.toContain('Apply now');
   });
 
@@ -85,7 +88,7 @@ describe('AutomationPage', () => {
     const fixture = boot(true);
     const el = fixture.nativeElement as HTMLElement;
     expect(el.textContent).toContain('Apply now');
-    expect(el.textContent).not.toContain('Preview-only');
+    expect(el.textContent).not.toContain('preview-only');
 
     fixture.componentInstance.applyNow();
     const post = http.expectOne((r) => r.method === 'POST' && r.url === '/api/automation/apply');
@@ -113,7 +116,7 @@ describe('AutomationPage', () => {
     e.name = 'Cheap charge';
     fixture.componentInstance.addCondition();
     fixture.componentInstance.addAction();
-    // Set a valid target before saving (empty target now fails validation)
+    // Set a valid target before saving (empty set_setting target fails validation)
     const action = fixture.componentInstance.editing()!.actions[0];
     fixture.componentInstance.setTarget(action, 'timer_slots|target_soc_pct');
     action.value = 80;
@@ -135,6 +138,51 @@ describe('AutomationPage', () => {
     expect(fixture.componentInstance.formError()).toContain('Name is required');
   });
 
+  it('rejects a set_setting action with no target selected', () => {
+    const fixture = boot();
+    fixture.componentInstance.newRule();
+    const e = fixture.componentInstance.editing()!;
+    e.name = 'Bad rule';
+    fixture.componentInstance.addAction(); // action_type defaults to set_setting with no target
+    fixture.componentInstance.saveRule();
+    expect(fixture.componentInstance.formError()).toContain('Set setting');
+  });
+
+  it('allows saving a notify action without a target', () => {
+    const fixture = boot();
+    fixture.componentInstance.newRule();
+    const e = fixture.componentInstance.editing()!;
+    e.name = 'Notify rule';
+    fixture.componentInstance.addAction();
+    const action = fixture.componentInstance.editing()!.actions[0];
+    action.action_type = 'notify';
+    action.message = 'Battery low!';
+    fixture.componentInstance.saveRule();
+
+    const put = http.expectOne((r) => r.method === 'PUT' && r.url === '/api/automation/rules/notify_rule');
+    expect(put.request.body.actions[0].action_type).toBe('notify');
+    put.flush(rule({ id: 'notify_rule' }));
+    http.expectOne('/api/automation/rules').flush({ rules: [] });
+    http.expectOne((r) => r.url === '/api/automation/preview').flush(preview());
+  });
+
+  it('allows saving an alert action without a target', () => {
+    const fixture = boot();
+    fixture.componentInstance.newRule();
+    const e = fixture.componentInstance.editing()!;
+    e.name = 'Alert rule';
+    fixture.componentInstance.addAction();
+    const action = fixture.componentInstance.editing()!.actions[0];
+    action.action_type = 'alert';
+    fixture.componentInstance.saveRule();
+
+    const put = http.expectOne((r) => r.method === 'PUT' && r.url === '/api/automation/rules/alert_rule');
+    expect(put.request.body.actions[0].action_type).toBe('alert');
+    put.flush(rule({ id: 'alert_rule' }));
+    http.expectOne('/api/automation/rules').flush({ rules: [] });
+    http.expectOne((r) => r.url === '/api/automation/preview').flush(preview());
+  });
+
   it('setKind resets condition params to the kind defaults', () => {
     const fixture = boot();
     fixture.componentInstance.newRule();
@@ -145,5 +193,25 @@ describe('AutomationPage', () => {
     expect(cond.kind).toBe('metric');
     expect(cond.params['op']).toBe('lt');
     expect(cond.params['metric']).toBe('battery_soc_pct');
+  });
+
+  it('preview shows notifications and in-app alerts when present', () => {
+    const fixture = boot();
+    const p = preview();
+    p.decision.notifications = [
+      { action_type: 'notify', rule_id: 'r1', rule_name: 'Low SoC notify', active: true,
+        will_apply: true, message: 'Battery low', severity: 'warning', channels: ['webhook'], debounce_s: 0 }
+    ];
+    p.decision.in_app_alerts = [
+      { action_type: 'alert', rule_id: 'r2', rule_name: 'Low SoC alert', active: true,
+        will_apply: true, message: 'Battery low alert', severity: 'critical', channels: [], debounce_s: 0 }
+    ];
+    fixture.componentInstance.preview.set(p);
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.textContent).toContain('Battery low');
+    expect(el.textContent).toContain('would dispatch');
+    expect(el.textContent).toContain('Battery low alert');
+    expect(el.textContent).toContain('would create');
   });
 });

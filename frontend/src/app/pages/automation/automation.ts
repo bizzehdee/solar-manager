@@ -5,6 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/api.service';
 import {
   AutomationAction,
+  AutomationActionPreview,
   AutomationApplyResult,
   AutomationChange,
   AutomationCondition,
@@ -18,6 +19,7 @@ import {
 // they would set right now. Always available — building rules needs no flag. Actually *applying*
 // them to the inverter ("Apply now" + the background scheduler) writes registers, so it's gated by
 // SOLARVOLT_ENABLE_CONTROL (`automation_can_write`); without it the page is preview/suggest-only.
+// Notify and alert actions fire unconditionally (no control flag needed).
 @Component({
   selector: 'app-automation',
   imports: [FormsModule, DatePipe],
@@ -39,8 +41,8 @@ import {
 
     @if (!canWrite()) {
       <div class="alert alert-secondary py-2 small">
-        <i class="bi bi-eye"></i> Preview-only: rules <em>suggest</em> what to set but won't write to the
-        inverter. Set <code>SOLARVOLT_ENABLE_CONTROL=true</code> and restart to let automation apply them.
+        <i class="bi bi-eye"></i> Inverter writes are preview-only: set <code>SOLARVOLT_ENABLE_CONTROL=true</code>
+        and restart to let automation apply settings. Notifications and inbox alerts fire regardless.
       </div>
     }
 
@@ -147,7 +149,7 @@ import {
                         <div class="row g-2">
                           <div class="col-6"><label class="small text-secondary">Metric</label>
                             <select class="form-select form-select-sm" [(ngModel)]="c.params['metric']" [name]="'cm' + $index">
-                              @for (m of options().metrics; track m) { <option [value]="m">{{ m }}</option> }
+                              @for (m of options().metrics; track m) { <option [value]="m">{{ metricLabel(m) }}</option> }
                             </select></div>
                           <div class="col-3"><label class="small text-secondary">Op</label>
                             <select class="form-select form-select-sm" [(ngModel)]="c.params['op']" [name]="'cmo' + $index">
@@ -175,45 +177,98 @@ import {
                 <h6 class="text-secondary">Actions</h6>
                 @for (a of e.actions; track $index) {
                   <div class="border rounded p-2 mb-2">
-                    <div class="row g-2 align-items-end">
-                      <div class="col-12 col-md-5">
-                        <label class="small text-secondary">Setting</label>
-                        <select class="form-select form-select-sm" [ngModel]="targetKey(a)" (ngModelChange)="setTarget(a, $event)"
-                                [name]="'at' + $index" [id]="'at' + $index">
-                          <option value="|">— choose a setting —</option>
-                          @for (t of options().targets; track t.section + t.field) {
-                            <option [value]="t.section + '|' + t.field">{{ t.section_label }} · {{ t.label }}</option>
-                          }
-                        </select>
-                      </div>
-                      @if (isRepeating(a)) {
-                        <div class="col-4 col-md-2">
-                          <label class="small text-secondary">Slot</label>
-                          <input type="number" min="0" class="form-control form-control-sm" [(ngModel)]="a.target.index" [name]="'ai' + $index" [id]="'ai' + $index" />
+                    <!-- Action type picker -->
+                    <div class="mb-2">
+                      <select class="form-select form-select-sm" [(ngModel)]="a.action_type" [name]="'atype' + $index"
+                              (ngModelChange)="onActionTypeChange(a)">
+                        <option value="set_setting">Set inverter setting</option>
+                        <option value="notify">Send notification</option>
+                        <option value="alert">Create in-app alert</option>
+                      </select>
+                    </div>
+
+                    <!-- set_setting fields -->
+                    @if (!a.action_type || a.action_type === 'set_setting') {
+                      <div class="row g-2 align-items-end">
+                        <div class="col-12 col-md-5">
+                          <label class="small text-secondary">Setting</label>
+                          <select class="form-select form-select-sm" [ngModel]="targetKey(a)" (ngModelChange)="setTarget(a, $event)"
+                                  [name]="'at' + $index" [id]="'at' + $index">
+                            <option value="|">— choose a setting —</option>
+                            @for (t of options().targets; track t.section + t.field) {
+                              <option [value]="t.section + '|' + t.field">{{ t.section_label }} · {{ t.label }}</option>
+                            }
+                          </select>
                         </div>
-                      }
-                      <div class="col-4 col-md-3">
-                        <label class="small text-secondary">Value</label>
-                        @if (targetType(a) === 'bool') {
-                          <div class="form-check"><input class="form-check-input" type="checkbox" [(ngModel)]="a.value" [name]="'av' + $index" [id]="'av' + $index" /></div>
-                        } @else if (targetType(a) === 'number' || targetType(a) === 'int') {
-                          <input type="number" step="any" class="form-control form-control-sm" [(ngModel)]="a.value" [name]="'av' + $index" [id]="'av' + $index" />
-                        } @else {
-                          <input class="form-control form-control-sm" [(ngModel)]="a.value" [name]="'av' + $index" [id]="'av' + $index" />
+                        @if (isRepeating(a)) {
+                          <div class="col-4 col-md-2">
+                            <label class="small text-secondary">Slot</label>
+                            <input type="number" min="0" class="form-control form-control-sm" [(ngModel)]="a.target.index" [name]="'ai' + $index" [id]="'ai' + $index" />
+                          </div>
                         }
-                      </div>
-                      <div class="col-4 col-md-2">
-                        <div class="form-check form-switch mt-3">
-                          <input class="form-check-input" type="checkbox" role="switch" [(ngModel)]="a.enabled"
-                                 [name]="'ae' + $index" [id]="'ae' + $index" />
-                          <label class="form-check-label small" [attr.for]="'ae' + $index">Armed</label>
+                        <div class="col-4 col-md-3">
+                          <label class="small text-secondary">Value</label>
+                          @if (targetType(a) === 'bool') {
+                            <div class="form-check"><input class="form-check-input" type="checkbox" [(ngModel)]="a.value" [name]="'av' + $index" [id]="'av' + $index" /></div>
+                          } @else if (targetType(a) === 'number' || targetType(a) === 'int') {
+                            <input type="number" step="any" class="form-control form-control-sm" [(ngModel)]="a.value" [name]="'av' + $index" [id]="'av' + $index" />
+                          } @else {
+                            <input class="form-control form-control-sm" [(ngModel)]="a.value" [name]="'av' + $index" [id]="'av' + $index" />
+                          }
+                        </div>
+                        <div class="col-4 col-md-2">
+                          <div class="form-check form-switch mt-3">
+                            <input class="form-check-input" type="checkbox" role="switch" [(ngModel)]="a.enabled"
+                                   [name]="'ae' + $index" [id]="'ae' + $index" />
+                            <label class="form-check-label small" [attr.for]="'ae' + $index">Armed</label>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                    <div class="d-flex align-items-center mt-1">
-                      <span class="badge text-bg-{{ statusClass(targetStatus(a)) }}">{{ targetStatus(a) }}</span>
-                      <button type="button" class="btn btn-sm btn-outline-danger ms-auto" (click)="removeAction($index)"><i class="bi bi-x"></i></button>
-                    </div>
+                      <div class="d-flex align-items-center mt-1">
+                        <span class="badge text-bg-{{ statusClass(targetStatus(a)) }}">{{ targetStatus(a) }}</span>
+                        <button type="button" class="btn btn-sm btn-outline-danger ms-auto" (click)="removeAction($index)"><i class="bi bi-x"></i></button>
+                      </div>
+                    }
+
+                    <!-- notify / alert fields -->
+                    @if (a.action_type === 'notify' || a.action_type === 'alert') {
+                      <div class="row g-2">
+                        <div class="col-12 col-md-6">
+                          <label class="small text-secondary">Message (leave blank to use rule name)</label>
+                          <input class="form-control form-control-sm" [(ngModel)]="a.message" [name]="'amsg' + $index" placeholder="Optional message" />
+                        </div>
+                        <div class="col-6 col-md-3">
+                          <label class="small text-secondary">Severity</label>
+                          <select class="form-select form-select-sm" [(ngModel)]="a.severity" [name]="'asev' + $index">
+                            @for (s of options().severities; track s) { <option [value]="s">{{ s }}</option> }
+                          </select>
+                        </div>
+                        <div class="col-6 col-md-3">
+                          <label class="small text-secondary">Debounce (s)</label>
+                          <input type="number" min="0" class="form-control form-control-sm" [(ngModel)]="a.debounce_s" [name]="'adeb' + $index" />
+                        </div>
+                        @if (a.action_type === 'notify' && options().channels.length > 0) {
+                          <div class="col-12">
+                            <label class="small text-secondary d-block">Channels</label>
+                            @for (ch of options().channels; track ch) {
+                              <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="checkbox" [id]="'ach-' + $index + '-' + ch"
+                                       [checked]="hasChannel(a, ch)" (change)="toggleChannel(a, ch)" />
+                                <label class="form-check-label small" [for]="'ach-' + $index + '-' + ch">{{ ch }}</label>
+                              </div>
+                            }
+                          </div>
+                        }
+                        <div class="col-12 d-flex align-items-center">
+                          <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" role="switch" [(ngModel)]="a.enabled"
+                                   [name]="'ae' + $index" [id]="'ae' + $index" />
+                            <label class="form-check-label small" [attr.for]="'ae' + $index">Armed</label>
+                          </div>
+                          <button type="button" class="btn btn-sm btn-outline-danger ms-auto" (click)="removeAction($index)"><i class="bi bi-x"></i></button>
+                        </div>
+                      </div>
+                    }
                   </div>
                 }
                 <button type="button" class="btn btn-sm btn-outline-secondary mb-3" (click)="addAction()">
@@ -240,9 +295,13 @@ import {
             <div class="card-body">
               @if (preview(); as p) {
                 <div class="small text-secondary mb-2">As of {{ p.now | date: 'EEE HH:mm' }} · {{ p.rule_count }} rule(s)</div>
-                @if (p.decision.changes.length === 0) {
-                  <div class="text-secondary">No rules match right now — nothing to set.</div>
-                } @else {
+
+                @if (p.decision.changes.length === 0 && (p.decision.notifications?.length ?? 0) === 0 && (p.decision.in_app_alerts?.length ?? 0) === 0) {
+                  <div class="text-secondary">No rules match right now — nothing to do.</div>
+                }
+
+                @if (p.decision.changes.length > 0) {
+                  <div class="small fw-semibold text-secondary mb-1">Settings</div>
                   @for (c of p.decision.changes; track $index) {
                     <div class="d-flex align-items-start gap-2 py-1 border-bottom">
                       <span class="badge text-bg-{{ statusClass(c.status) }}">{{ c.status }}</span>
@@ -257,11 +316,46 @@ import {
                     </div>
                   }
                   @if (p.decision.overridden.length) {
-                    <div class="small text-secondary mt-2">
+                    <div class="small text-secondary mt-1">
                       {{ p.decision.overridden.length }} change(s) overridden by higher-priority rules.
                     </div>
                   }
                 }
+
+                @if ((p.decision.notifications?.length ?? 0) > 0) {
+                  <div class="small fw-semibold text-secondary mb-1 mt-2">Notifications</div>
+                  @for (n of p.decision.notifications; track $index) {
+                    <div class="d-flex align-items-start gap-2 py-1 border-bottom">
+                      <span class="badge text-bg-{{ sevClass(n.severity) }}">{{ n.severity }}</span>
+                      <div class="flex-grow-1 small">
+                        <div>{{ n.message || n.rule_name }}</div>
+                        <div class="text-secondary">
+                          {{ n.rule_name }} ·
+                          @if (n.will_apply) { <span class="text-success">would dispatch</span> }
+                          @else { <span class="text-warning">preview only</span> }
+                        </div>
+                      </div>
+                    </div>
+                  }
+                }
+
+                @if ((p.decision.in_app_alerts?.length ?? 0) > 0) {
+                  <div class="small fw-semibold text-secondary mb-1 mt-2">In-app alerts</div>
+                  @for (a of p.decision.in_app_alerts; track $index) {
+                    <div class="d-flex align-items-start gap-2 py-1 border-bottom">
+                      <span class="badge text-bg-{{ sevClass(a.severity) }}">{{ a.severity }}</span>
+                      <div class="flex-grow-1 small">
+                        <div>{{ a.message || a.rule_name }}</div>
+                        <div class="text-secondary">
+                          {{ a.rule_name }} ·
+                          @if (a.will_apply) { <span class="text-success">would create</span> }
+                          @else { <span class="text-warning">preview only</span> }
+                        </div>
+                      </div>
+                    </div>
+                  }
+                }
+
               } @else {
                 <div class="text-secondary">No preview.</div>
               }
@@ -280,7 +374,10 @@ export class AutomationPage implements OnInit {
   readonly applyResult = signal<AutomationApplyResult | null>(null);
   readonly loading = signal(true);
   readonly rules = signal<AutomationRule[]>([]);
-  readonly options = signal<AutomationOptions>({ condition_kinds: [], ops: [], metrics: [], match_modes: ['all', 'any'], targets: [] });
+  readonly options = signal<AutomationOptions>({
+    condition_kinds: [], ops: [], metrics: [], match_modes: ['all', 'any'],
+    severities: ['info', 'warning', 'critical'], channels: [], targets: [],
+  });
   readonly preview = signal<AutomationPreview | null>(null);
   readonly editing = signal<AutomationRule | null>(null);
   readonly creating = signal(false);
@@ -292,7 +389,6 @@ export class AutomationPage implements OnInit {
   ];
 
   ngOnInit(): void {
-    // Automation is always available; health only tells us whether it may *write* (control on).
     this.api.getHealth().subscribe({ next: (h) => this.canWrite.set(h.automation_can_write === true) });
     this.load();
   }
@@ -387,8 +483,10 @@ export class AutomationPage implements OnInit {
     const e = this.editing();
     if (e) {
       e.actions = [...e.actions, {
+        action_type: 'set_setting',
         target: { section: '', field: '', index: null },
         value: null, enabled: false,
+        channels: [], message: '', severity: 'info', debounce_s: 0,
       }];
     }
   }
@@ -396,6 +494,18 @@ export class AutomationPage implements OnInit {
   removeAction(i: number): void {
     const e = this.editing();
     if (e) e.actions = e.actions.filter((_, idx) => idx !== i);
+  }
+
+  onActionTypeChange(a: AutomationAction): void {
+    // Reset type-specific fields when switching action type to avoid stale data.
+    if (a.action_type === 'set_setting') {
+      a.target = a.target ?? { section: '', field: '', index: null };
+    } else {
+      a.message = a.message ?? '';
+      a.severity = a.severity ?? 'info';
+      a.debounce_s = a.debounce_s ?? 0;
+      if (a.action_type === 'notify') a.channels = a.channels ?? [];
+    }
   }
 
   targetKey = (a: AutomationAction): string => `${a.target.section}|${a.target.field}`;
@@ -406,6 +516,13 @@ export class AutomationPage implements OnInit {
     a.target.section = section;
     a.target.field = field;
     a.target.index = opt?.repeating ? (a.target.index ?? 0) : null;
+  }
+
+  hasChannel = (a: AutomationAction, ch: string): boolean => (a.channels ?? []).includes(ch);
+
+  toggleChannel(a: AutomationAction, ch: string): void {
+    const chs = a.channels ?? [];
+    a.channels = chs.includes(ch) ? chs.filter((x) => x !== ch) : [...chs, ch];
   }
 
   private optFor(a: AutomationAction): AutomationTargetOption | undefined {
@@ -420,8 +537,8 @@ export class AutomationPage implements OnInit {
     if (!e) return;
     const name = (e.name || '').trim();
     if (!name) { this.formError.set('Name is required.'); return; }
-    if (e.actions.some(a => !a.target.section || !a.target.field)) {
-      this.formError.set('Every action must have a setting selected.'); return;
+    if (e.actions.some(a => isSetSetting(a) && (!a.target.section || !a.target.field))) {
+      this.formError.set('Every "Set setting" action must have a setting selected.'); return;
     }
     const id = this.creating() ? this.slug(name) || `rule-${Date.now()}` : e.id;
     this.api.putAutomationRule(id, { ...e, id, name }).subscribe({
@@ -442,9 +559,19 @@ export class AutomationPage implements OnInit {
     ({ day_of_week: 'Day of week', time_window: 'Time of day', date_range: 'Date range',
        metric: 'Metric threshold', tariff_window: 'Tariff window' }[k] ?? k);
 
+  metricLabel = (m: string): string =>
+    m === '__stale_s__' ? 'Data age (stale seconds)' : m === '__fault_count__' ? 'Active fault count' : m;
+
   statusClass = (s: string): string =>
     s === 'blocked' ? 'danger' : s === 'at_risk' ? 'warning' : 'success';
 
+  sevClass = (s: string): string =>
+    s === 'critical' ? 'danger' : s === 'warning' ? 'warning' : 'secondary';
+
   changeLabel = (c: AutomationChange): string =>
     c.target.index !== null ? `${c.target.section}[${c.target.index}].${c.target.field}` : `${c.target.section}.${c.target.field}`;
+}
+
+function isSetSetting(a: AutomationAction): boolean {
+  return !a.action_type || a.action_type === 'set_setting';
 }
