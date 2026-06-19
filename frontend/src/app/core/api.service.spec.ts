@@ -214,6 +214,32 @@ describe('ApiService', () => {
     test.flush({ ok: true });
   });
 
+  it('automation rule CRUD + options/preview hit the automation URLs', () => {
+    api.getAutomationRules().subscribe((r) => expect(r.rules).toEqual([]));
+    http.expectOne('/api/automation/rules').flush({ rules: [] });
+
+    const body = { name: 'Weekend', match: 'all', conditions: [], actions: [] };
+    api.putAutomationRule('weekend', body).subscribe();
+    const put = http.expectOne('/api/automation/rules/weekend');
+    expect(put.request.method).toBe('PUT');
+    expect(put.request.body).toEqual(body);
+    put.flush({ ...body, id: 'weekend', priority: 0, enabled: false });
+
+    api.deleteAutomationRule('weekend').subscribe();
+    const del = http.expectOne('/api/automation/rules/weekend');
+    expect(del.request.method).toBe('DELETE');
+    del.flush(null);
+
+    api.getAutomationOptions('dev1').subscribe();
+    const opts = http.expectOne((r) => r.url === '/api/automation/options');
+    expect(opts.request.params.get('device_id')).toBe('dev1');
+    opts.flush({ condition_kinds: [], ops: [], metrics: [], match_modes: [], targets: [] });
+
+    api.getAutomationPreview().subscribe((p) => expect(p.rule_count).toBe(0));
+    http.expectOne((r) => r.url === '/api/automation/preview')
+      .flush({ device_id: 'dummy', now: 't', rule_count: 0, decision: { changes: [], overridden: [] } });
+  });
+
   it('getReadingsWebhook()/putReadingsWebhook()/testReadingsWebhook() hit the integration URLs', () => {
     api.getReadingsWebhook().subscribe((c) => expect(c.enabled).toBe(false));
     http.expectOne('/api/integrations/readings-webhook').flush({ url: null, interval_s: 60, enabled: false });

@@ -7,6 +7,7 @@ export const routes: Routes = [
   { path: 'history', loadComponent: () => import('./pages/history/history').then((m) => m.HistoryPage), title: 'History' },
   { path: 'forecast', loadComponent: () => import('./pages/forecast/forecast').then((m) => m.ForecastPage), title: 'Forecast' },
   { path: 'control', loadComponent: () => import('./pages/control/control').then((m) => m.ControlPage), title: 'Control' },
+  { path: 'automation', loadComponent: () => import('./pages/automation/automation').then((m) => m.AutomationPage), title: 'Automation' },
   { path: 'alerts', loadComponent: () => import('./pages/alerts/alerts').then((m) => m.AlertsPage), title: 'Alerts' },
   { path: 'settings', loadComponent: () => import('./pages/settings/settings').then((m) => m.SettingsPage), title: 'Settings' },
   { path: 'diagnostics', loadComponent: () => import('./pages/diagnostics/diagnostics').then((m) => m.DiagnosticsPage), title: 'Diagnostics' },

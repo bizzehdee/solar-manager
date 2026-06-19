@@ -81,6 +81,7 @@ export class App implements OnInit {
     { path: 'history', label: 'History', icon: 'bi-graph-up' },
     { path: 'forecast', label: 'Forecast', icon: 'bi-cloud-sun' },
     { path: 'control', label: 'Control', icon: 'bi-sliders' },
+    { path: 'automation', label: 'Automation', icon: 'bi-robot' },
     { path: 'alerts', label: 'Alerts', icon: 'bi-bell' },
     { path: 'settings', label: 'Settings', icon: 'bi-gear' },
     { path: 'diagnostics', label: 'Diagnostics', icon: 'bi-clipboard-pulse' },

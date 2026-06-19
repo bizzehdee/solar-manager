@@ -471,7 +471,7 @@ versioned releases.*
     - [ ] **L03e-3 · Opt-in apply (scheduler + write)** · Deps: L03e-2, T076, L03d
       - Only with `ENABLE_CONTROL`+`ENABLE_AUTOMATION`: a scheduler (+ "apply now") writes the armed
         winning changes through `control.apply_settings` (validate→write→read-back→audit). *Refs: §18, §12.*
-    - [ ] **L03e-4 · Rule-editor UI + live preview** · Deps: L03e-2
+    - [x] **L03e-4 · Rule-editor UI + live preview** · Deps: L03e-2
       - Build/edit/prioritise rules; per-rule and per-action enable; a live "what it would do now"
         panel; current→proposed diff with the safe/at-risk/blocked badge. *Refs: §18, §8.*
 - [-] **L04 · More vendors / protocol families** — Growatt/Solis/Sungrow/… (new YAML each);

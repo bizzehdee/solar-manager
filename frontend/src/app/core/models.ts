@@ -33,6 +33,7 @@ export interface Health {
   status: string;
   version: string;
   control_enabled: boolean;
+  automation_enabled?: boolean;
   devices: DeviceHealth[];
   poll_interval_s: number;
 }
@@ -401,6 +402,74 @@ export interface AlertChannelsResponse {
   channels: Record<string, Record<string, unknown>>;
   configured: string[]; // channels that are fully configured (offered per rule + testable)
   supported: string[];
+}
+
+// Rule-based automation (L03e). A rule = combinable conditions → prioritised actions that set
+// inverter settings; an action applies only when both its rule and itself are enabled.
+export interface AutomationCondition {
+  kind: string; // day_of_week | time_window | date_range | metric | tariff_window
+  params: Record<string, any>;
+}
+
+export interface AutomationTarget {
+  section: string;
+  field: string;
+  index: number | null; // slot index for repeating sections (e.g. timer slots)
+}
+
+export interface AutomationAction {
+  target: AutomationTarget;
+  value: any;
+  enabled: boolean;
+}
+
+export interface AutomationRule {
+  id: string;
+  name: string;
+  match: string; // all | any
+  priority: number;
+  enabled: boolean;
+  conditions: AutomationCondition[];
+  actions: AutomationAction[];
+}
+
+/** A settable target offered by the editor, tagged with its allow-list safety. */
+export interface AutomationTargetOption {
+  section: string;
+  section_label: string;
+  field: string;
+  label: string;
+  type: string;
+  repeating: boolean;
+  count: number | null;
+  status: string; // ok | at_risk
+}
+
+export interface AutomationOptions {
+  condition_kinds: string[];
+  ops: string[];
+  metrics: string[];
+  match_modes: string[];
+  targets: AutomationTargetOption[];
+}
+
+/** One proposed change in a preview: what a matching rule would set, and whether it's armed. */
+export interface AutomationChange {
+  rule_id: string;
+  rule_name: string;
+  priority: number;
+  target: AutomationTarget;
+  value: any;
+  active: boolean; // rule + action both enabled
+  status: string; // ok | at_risk | blocked
+  will_apply: boolean; // active AND not blocked
+}
+
+export interface AutomationPreview {
+  device_id: string | null;
+  now: string;
+  decision: { changes: AutomationChange[]; overridden: AutomationChange[] };
+  rule_count: number;
 }
 
 /** One audit-log entry: every settings write is recorded (when / source / old→new / result). */

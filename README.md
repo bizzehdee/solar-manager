@@ -50,6 +50,12 @@ and watch your panels, battery and grid in real time.
   snooze and a header **bell badge**. Push delivery via **webhook, email (SMTP), Telegram, ntfy,
   Gotify or Pushover** — configure any, then pick channels per rule (with a one-click test). All off
   the hot path — a failing notifier never disrupts monitoring.
+- **Automation** — build your own **rules** that set inverter settings (e.g. work-mode slot 1
+  target SoC) from conditions you combine: **day of week, time/date window, metric thresholds or
+  tariff window**. Rules and individual actions carry **priorities** (the highest wins on a
+  conflict) and are **disabled by default** — a live **"what it would do now"** panel shows each
+  proposed change with a safe / at-risk / blocked badge, so you preview everything before anything
+  is armed. Suggest-only today; opt-in automatic apply is on the roadmap.
 - **Integrations** — a **Prometheus `/metrics`** endpoint exposes live readings for Grafana users,
   and an **outbound readings webhook** posts each snapshot as JSON to a URL of your choice
   (Node-RED / IFTTT / custom). (MQTT / Home-Assistant discovery and PVOutput are on the roadmap.)
@@ -97,8 +103,11 @@ History** (Phase 2), **Statistics — energy, self-consumption, cost/savings/CO�
 battery-health surfacing** (Phase 3), the **solar/battery Forecast** (Phase 4), the read-only
 **settings viewer** (Phase 5) and **opt-in settings control / write-back** (Phase 6, off by
 default, with validation → confirm → read-back-verify → audit) and the **alerts engine +
-inbox + Prometheus endpoint** (Phase 7) are all in. The remaining integrations (MQTT/Home
-Assistant, PVOutput) and extra notification channels are on the roadmap (`TASKS.md`).
+inbox + Prometheus endpoint** (Phase 7) are all in. **Rule-based automation** (combine
+day/time/metric/tariff conditions to drive inverter settings) is in as a **suggest-only**
+preview with a rule editor and live "what it would do now" panel — opt-in automatic apply,
+the remaining integrations (MQTT/Home Assistant, PVOutput) and extra notification channels are
+on the roadmap (`TASKS.md`).
 
 The forecast fetches weather from Open-Meteo's free public API — the **only** outbound
 request the app makes, and only when the Forecast view/config is used. Everything else

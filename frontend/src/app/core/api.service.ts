@@ -9,6 +9,9 @@ import {
   AlertRuleOptions,
   AlertsResponse,
   AuditEntry,
+  AutomationOptions,
+  AutomationPreview,
+  AutomationRule,
   DailyStats,
   DeviceClock,
   Diagnostics,
@@ -214,6 +217,34 @@ export class ApiService {
   /** Send a synthetic alert through one configured channel to verify it. */
   testAlertChannel(name: string): Observable<{ ok: boolean }> {
     return this.http.post<{ ok: boolean }>(`/api/alert-channels/${name}/test`, {});
+  }
+
+  // --- Rule-based automation (L03e; gated by SOLARVOLT_ENABLE_AUTOMATION) ---
+
+  getAutomationRules(): Observable<{ rules: AutomationRule[] }> {
+    return this.http.get<{ rules: AutomationRule[] }>('/api/automation/rules');
+  }
+
+  putAutomationRule(id: string, body: Partial<AutomationRule>): Observable<AutomationRule> {
+    return this.http.put<AutomationRule>(`/api/automation/rules/${id}`, body);
+  }
+
+  deleteAutomationRule(id: string): Observable<void> {
+    return this.http.delete<void>(`/api/automation/rules/${id}`);
+  }
+
+  /** Editor field choices: condition kinds/ops/metrics + settable targets with safety status. */
+  getAutomationOptions(deviceId?: string): Observable<AutomationOptions> {
+    let params = new HttpParams();
+    if (deviceId !== undefined) params = params.set('device_id', deviceId);
+    return this.http.get<AutomationOptions>('/api/automation/options', { params });
+  }
+
+  /** What the rules would set right now (armed changes + previews). Never writes. */
+  getAutomationPreview(deviceId?: string): Observable<AutomationPreview> {
+    let params = new HttpParams();
+    if (deviceId !== undefined) params = params.set('device_id', deviceId);
+    return this.http.get<AutomationPreview>('/api/automation/preview', { params });
   }
 
   // --- Outbound readings webhook (L09) ---

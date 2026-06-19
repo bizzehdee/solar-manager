@@ -23,9 +23,13 @@ export default defineConfig({
     url: `http://localhost:${PORT}/api/health`,
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,
-    // Control/write-back is exercised E2E (Phase 6), so enable it; a fresh in-memory DB
-    // keeps each run's audit log + settings state clean and isolated.
-    env: { SOLARVOLT_ENABLE_CONTROL: 'true', SOLARVOLT_DB_PATH: ':memory:' },
+    // Control/write-back (Phase 6) and rule-based automation (L03e) are exercised E2E, so
+    // enable both; a fresh in-memory DB keeps each run's audit log + settings state clean.
+    env: {
+      SOLARVOLT_ENABLE_CONTROL: 'true',
+      SOLARVOLT_ENABLE_AUTOMATION: 'true',
+      SOLARVOLT_DB_PATH: ':memory:',
+    },
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
 });
