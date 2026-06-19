@@ -33,11 +33,15 @@ class _Registry:
 
 
 class _Poller:
-    def __init__(self, snapshot: dict | None = None) -> None:
+    def __init__(self, snapshot: dict | None = None, health: dict | None = None) -> None:
         self._snap = snapshot or {"devices": {}}
+        self._health = health or {"devices": []}
 
     def snapshot(self) -> dict:
         return self._snap
+
+    def health(self) -> dict:
+        return self._health
 
 
 class _Config:
@@ -60,20 +64,55 @@ class _Audit:
                              "source": source, "changes": changes})
 
 
+class _AlertRepo:
+    def __init__(self) -> None:
+        self.inserts: list[dict] = []
+
+    async def insert_alert(self, *, rule_id, device_id, severity, metric, value, message, fired_at):
+        self.inserts.append({"rule_id": rule_id, "severity": severity,
+                              "message": message, "device_id": device_id})
+        return len(self.inserts)
+
+
 def _weekend_rule(*, fields: dict, enabled=True, action_enabled=True, slot=1) -> dict:
     return {
         "id": "weekend", "name": "Weekend top-up", "match": "all", "enabled": enabled,
         "conditions": [{"kind": "day_of_week", "params": {"days": [5, 6]}}],
-        "actions": [{"target": {"section": "timer_slots", "field": f, "index": slot},
+        "actions": [{"action_type": "set_setting",
+                     "target": {"section": "timer_slots", "field": f, "index": slot},
                      "value": v, "enabled": action_enabled} for f, v in fields.items()],
     }
 
 
-def _service(rules: list[dict], *, devices=None, audit=None, apply_fn=None) -> AutomationService:
+def _notify_rule(*, channels=("webhook",), message="Low SoC", debounce_s=0.0, enabled=True,
+                 action_enabled=True) -> dict:
+    return {
+        "id": "notify_rule", "name": "Notify rule", "match": "all", "enabled": enabled,
+        "conditions": [{"kind": "day_of_week", "params": {"days": [5, 6]}}],
+        "actions": [{"action_type": "notify", "channels": list(channels), "message": message,
+                     "severity": "warning", "debounce_s": debounce_s, "enabled": action_enabled,
+                     "target": None, "value": None}],
+    }
+
+
+def _alert_rule(*, message="Device offline", severity="critical", debounce_s=0.0,
+                enabled=True, action_enabled=True) -> dict:
+    return {
+        "id": "alert_rule", "name": "Alert rule", "match": "all", "enabled": enabled,
+        "conditions": [{"kind": "day_of_week", "params": {"days": [5, 6]}}],
+        "actions": [{"action_type": "alert", "message": message, "severity": severity,
+                     "debounce_s": debounce_s, "enabled": action_enabled,
+                     "channels": [], "target": None, "value": None}],
+    }
+
+
+def _service(rules: list[dict], *, devices=None, audit=None, alert_repo=None,
+             apply_fn=None, post=None) -> AutomationService:
     device = devices if devices is not None else [Device("dummy", NullTransport(), DummyProfile())]
     return AutomationService(
         _Config({"automation_rules": rules}), _Poller(), _Registry(device),
-        clock=lambda: _SAT, audit_repo=audit or _Audit(), interval_s=300.0, apply_fn=apply_fn,
+        clock=lambda: _SAT, audit_repo=audit or _Audit(), alert_repo=alert_repo,
+        interval_s=300.0, apply_fn=apply_fn, post=post,
     )
 
 
@@ -178,8 +217,8 @@ async def test_scheduler_ticks_then_stops_cleanly():
         return await real(**kw)
 
     svc.apply_all = spy
-    await svc.start()
-    await svc.start()  # idempotent — a second start doesn't spawn a second task
+    await svc.start(write_enabled=True)
+    await svc.start(write_enabled=True)  # idempotent — a second start doesn't spawn a second task
     await asyncio.wait_for(ran.wait(), timeout=1.0)
     await svc.stop()
     await svc.stop()  # idempotent
@@ -203,3 +242,175 @@ async def test_scheduler_swallows_a_failing_tick():
         await asyncio.sleep(0.005)
     await svc.stop()
     assert calls  # the loop kept running despite the raised error
+
+
+# --- notify dispatch -----------------------------------------------------------
+@pytest.mark.asyncio
+async def test_notify_action_dispatches_to_channel():
+    dispatched: list[dict] = []
+
+    async def fake_post(url, payload=None, **kw):
+        dispatched.append({"url": url, "payload": payload})
+
+    cfg = _Config({"automation_rules": [_notify_rule(channels=("webhook",), message="Low SoC")],
+                   "alert_channels": {"webhook": {"url": "http://hook.example/test"}}})
+    device = Device("dummy", NullTransport(), DummyProfile())
+    svc = AutomationService(cfg, _Poller(), _Registry([device]),
+                            clock=lambda: _SAT, post=fake_post)
+    await svc.reload_channels()
+    out = await svc.apply("dummy", write=False)
+    assert out["applied"] == []  # no set_setting actions
+    assert len(dispatched) == 1
+    assert dispatched[0]["payload"]["message"] == "Low SoC"
+    assert dispatched[0]["payload"]["severity"] == "warning"
+
+
+@pytest.mark.asyncio
+async def test_notify_debounce_prevents_double_fire():
+    dispatched: list[dict] = []
+
+    async def fake_post(url, payload=None, **kw):
+        dispatched.append(payload)
+
+    cfg = _Config({"automation_rules": [_notify_rule(channels=("webhook",), debounce_s=600.0)],
+                   "alert_channels": {"webhook": {"url": "http://hook.example/test"}}})
+    device = Device("dummy", NullTransport(), DummyProfile())
+    svc = AutomationService(cfg, _Poller(), _Registry([device]),
+                            clock=lambda: _SAT, post=fake_post)
+    await svc.reload_channels()
+    await svc.apply("dummy", write=False)
+    await svc.apply("dummy", write=False)  # second call within debounce window
+    assert len(dispatched) == 1  # fired only once
+
+
+@pytest.mark.asyncio
+async def test_notify_channel_failure_does_not_break_apply():
+    async def boom(url, payload=None, **kw):
+        raise RuntimeError("network error")
+
+    cfg = _Config({"automation_rules": [_notify_rule(channels=("webhook",))],
+                   "alert_channels": {"webhook": {"url": "http://hook.example/test"}}})
+    device = Device("dummy", NullTransport(), DummyProfile())
+    svc = AutomationService(cfg, _Poller(), _Registry([device]),
+                            clock=lambda: _SAT, post=boom)
+    await svc.reload_channels()
+    out = await svc.apply("dummy", write=False)  # must not raise
+    assert out["device_id"] == "dummy"
+
+
+@pytest.mark.asyncio
+async def test_disabled_notify_action_does_not_dispatch():
+    dispatched: list[dict] = []
+
+    async def fake_post(url, payload=None, **kw):
+        dispatched.append(payload)
+
+    cfg = _Config({"automation_rules": [_notify_rule(channels=("webhook",), action_enabled=False)],
+                   "alert_channels": {"webhook": {"url": "http://hook.example/test"}}})
+    device = Device("dummy", NullTransport(), DummyProfile())
+    svc = AutomationService(cfg, _Poller(), _Registry([device]),
+                            clock=lambda: _SAT, post=fake_post)
+    await svc.reload_channels()
+    await svc.apply("dummy", write=False)
+    assert dispatched == []
+
+
+# --- alert inbox creation ------------------------------------------------------
+@pytest.mark.asyncio
+async def test_alert_action_creates_inbox_entry():
+    alert_repo = _AlertRepo()
+    svc = _service([_alert_rule(message="Device offline", severity="critical")],
+                   alert_repo=alert_repo)
+    await svc.apply("dummy", write=False)
+    assert len(alert_repo.inserts) == 1
+    rec = alert_repo.inserts[0]
+    assert rec["rule_id"] == "alert_rule"
+    assert rec["severity"] == "critical"
+    assert rec["message"] == "Device offline"
+    assert rec["device_id"] == "dummy"
+
+
+@pytest.mark.asyncio
+async def test_alert_debounce_prevents_double_insert():
+    alert_repo = _AlertRepo()
+    svc = _service([_alert_rule(message="offline", debounce_s=600.0)], alert_repo=alert_repo)
+    await svc.apply("dummy", write=False)
+    await svc.apply("dummy", write=False)
+    assert len(alert_repo.inserts) == 1
+
+
+@pytest.mark.asyncio
+async def test_alert_repo_failure_does_not_break_apply():
+    class _BadRepo:
+        async def insert_alert(self, **kw):
+            raise RuntimeError("db error")
+
+    svc = _service([_alert_rule()], alert_repo=_BadRepo())
+    out = await svc.apply("dummy", write=False)  # must not raise
+    assert out["device_id"] == "dummy"
+
+
+@pytest.mark.asyncio
+async def test_alert_action_without_repo_is_a_noop():
+    svc = _service([_alert_rule()], alert_repo=None)
+    out = await svc.apply("dummy", write=False)
+    assert out["device_id"] == "dummy"  # no error
+
+
+# --- write=False skips set_setting writes -------------------------------------
+@pytest.mark.asyncio
+async def test_apply_write_false_skips_inverter_write():
+    audit = _Audit()
+    svc = _service([_weekend_rule(fields={"target_soc_pct": 80})], audit=audit)
+    out = await svc.apply("dummy", write=False)
+    assert out["applied"] == [] and out["failed"] == [] and audit.records == []
+
+
+# --- synthetic metrics ---------------------------------------------------------
+@pytest.mark.asyncio
+async def test_stale_metric_injected_when_device_offline():
+    """__stale_s__ should be the offline sentinel when health reports offline."""
+    captured_ctx: list = []
+
+    def fake_evaluate(rules, ctx, *, allow_list=None):
+        captured_ctx.append(ctx)
+        from app.automation.rules import AutomationDecision
+        return AutomationDecision()
+
+    from unittest.mock import patch
+    from app.automation import service as svc_mod
+    device = Device("dummy", NullTransport(), DummyProfile())
+    poller = _Poller(
+        snapshot={"devices": {"dummy": {"metrics": {}}}},
+        health={"devices": [{"device_id": "dummy", "online": False, "last_sample_age_s": None}]},
+    )
+    cfg = _Config({"automation_rules": []})
+    svc = AutomationService(cfg, poller, _Registry([device]), clock=lambda: _SAT)
+    with patch.object(svc_mod, "evaluate_rules", fake_evaluate):
+        await svc.apply("dummy", write=False)
+    assert captured_ctx[0].metrics["__stale_s__"] == 1e9
+
+
+@pytest.mark.asyncio
+async def test_fault_count_metric_injected():
+    """__fault_count__ should count active fault codes from the snapshot."""
+    captured_ctx: list = []
+
+    def fake_evaluate(rules, ctx, *, allow_list=None):
+        captured_ctx.append(ctx)
+        from app.automation.rules import AutomationDecision
+        return AutomationDecision()
+
+    from unittest.mock import patch
+    from app.automation import service as svc_mod
+    device = Device("dummy", NullTransport(), DummyProfile())
+    poller = _Poller(
+        snapshot={"devices": {"dummy": {"metrics": {"inverter_fault_codes": ["F01", "F02"]}}}},
+        health={"devices": [{"device_id": "dummy", "online": True, "last_sample_age_s": 5.0}]},
+    )
+    cfg = _Config({"automation_rules": []})
+    svc = AutomationService(cfg, poller, _Registry([device]), clock=lambda: _SAT)
+    with patch.object(svc_mod, "evaluate_rules", fake_evaluate):
+        await svc.apply("dummy", write=False)
+    assert captured_ctx[0].metrics["__fault_count__"] == 2.0
+    assert captured_ctx[0].metrics["__stale_s__"] == 5.0

@@ -1,15 +1,20 @@
-"""Automation service (plan.md §18; tasks L03e-2, L03e-3) — wires the pure rules engine to
-live data and (opt-in) applies its winners.
+"""Automation service (plan.md §18; tasks L03e-2, L03e-3, L03e-5b) — wires the pure rules engine
+to live data, dispatches non-write actions (notify/alert), and (opt-in) applies set_setting winners.
 
-Orchestration only: it loads the user's rules (stored as a JSON list in `app_config`), builds
-an `EvalContext` from the clock, the device's live snapshot metrics and the import tariff,
-derives the writable allow-list from the device's settings schema, and asks the pure `rules`
-engine for a decision. **Preview never writes** (suggest-only). The opt-in `apply` path
-(L03e-3) takes only the armed, non-blocked winners and pushes each through the §12 control
-write flow (validate → write → read-back → audit); a background scheduler does the same on an
-interval. Both apply paths only run when the caller has confirmed control + automation are
-enabled (the API gates the endpoint; the scheduler is only started under both flags).
-All the decision logic lives in the pure `rules` module; this layer just gathers inputs.
+Orchestration only: loads user rules from `app_config`, builds an `EvalContext` from the clock,
+live snapshot metrics (including synthetic ``__stale_s__`` / ``__fault_count__`` keys) and the
+import tariff, derives the writable allow-list from the device's settings schema, and asks the
+pure `rules` engine for a decision.
+
+Action dispatch:
+  - ``notify`` actions (push channels) and ``alert`` actions (in-app inbox) fire **whenever their
+    rule/action is armed**, regardless of ``ENABLE_CONTROL``. Per-action ``debounce_s`` prevents
+    re-firing within the window.
+  - ``set_setting`` writes go through the §12 control flow (validate→write→read-back→audit) and
+    are guarded by ``write=True`` — set only when ``ENABLE_CONTROL`` is on.
+
+The background scheduler always starts (so notify/alert dispatch works on monitoring-only deploys);
+it only does set_setting writes when started with ``write_enabled=True``.
 """
 
 from __future__ import annotations
@@ -19,6 +24,7 @@ import logging
 from datetime import datetime
 
 from .. import control
+from ..alerts.channels import Post, SendEmail, build_channels, dispatch
 from ..devices.base import TransportError
 from ..metrics import ALL_METRICS
 from ..tariff import Tariff
@@ -33,6 +39,7 @@ from .rules import (
 )
 
 _RULES_KEY = "automation_rules"
+_OFFLINE_STALE_S = 1e9  # sentinel for "no reading at all" — matches alerts.service convention
 log = logging.getLogger("solarvolt")
 
 
@@ -49,16 +56,25 @@ class AutomationService:
         *,
         clock=_local_now,
         audit_repo=None,
+        alert_repo=None,
         interval_s: float = 300.0,
         apply_fn=None,
+        post: Post | None = None,
+        send_email: SendEmail | None = None,
     ) -> None:
         self._cfg = app_config
         self._poller = poller
         self._registry = registry
         self._clock = clock
         self._audit = audit_repo
+        self._alert_repo = alert_repo
         self._interval = interval_s
         self._apply_fn = apply_fn or control.apply_settings
+        self._post = post
+        self._send_email = send_email
+        self._channels: dict = {}
+        self._debounce: dict[tuple, float] = {}  # (rule_id, action_type, *key) → last-fire epoch
+        self._write_enabled: bool = False
         self._task: asyncio.Task | None = None
 
     # --- rule storage (JSON list in app_config) --------------------------------
@@ -95,12 +111,25 @@ class AutomationService:
 
     def _metrics(self, device_id: str | None) -> dict[str, float]:
         snap = self._poller.snapshot().get("devices", {})
-        dev = snap.get(device_id) if device_id else None
-        if dev is None and snap:
-            dev = next(iter(snap.values()))
-        metrics = (dev or {}).get("metrics", {})
-        return {k: float(v) for k, v in metrics.items()
-                if isinstance(v, (int, float)) and not isinstance(v, bool)}
+        dev_snap = snap.get(device_id) if device_id else None
+        actual_id = device_id
+        if dev_snap is None and snap:
+            actual_id = next(iter(snap))
+            dev_snap = snap[actual_id]
+        raw = (dev_snap or {}).get("metrics", {})
+        metrics: dict[str, float] = {k: float(v) for k, v in raw.items()
+                                      if isinstance(v, (int, float)) and not isinstance(v, bool)}
+        # Synthetic keys so metric conditions can target system state (mirrors alerts.service).
+        health_list = self._poller.health().get("devices", []) if hasattr(self._poller, "health") else []
+        h = next((d for d in health_list if d["device_id"] == actual_id), None) if actual_id else None
+        if h is None or not h.get("online"):
+            metrics["__stale_s__"] = _OFFLINE_STALE_S
+        else:
+            age = h.get("last_sample_age_s")
+            metrics["__stale_s__"] = float(age) if age is not None else _OFFLINE_STALE_S
+        codes = raw.get("inverter_fault_codes")
+        metrics["__fault_count__"] = float(len(codes)) if isinstance(codes, list) else 0.0
+        return metrics
 
     async def _context(self, device_id: str | None) -> EvalContext:
         now = self._clock()
@@ -159,20 +188,77 @@ class AutomationService:
             "targets": targets,
         }
 
-    # --- opt-in apply (L03e-3; only reached when control + automation are both on) ----
-    async def apply(self, device_id: str | None = None, *, source: str = "automation") -> dict:
-        """Evaluate the rules and write the armed, non-blocked winners to the device via the §12
-        control flow (validate → write → read-back → audit). Actions to the same section/slot are
-        coalesced into one write. Returns a per-target summary; a single failed write is recorded
-        and reported but never aborts the others. With no rules armed, nothing is written."""
+    # --- channel management ----------------------------------------------------
+    async def reload_channels(self) -> None:
+        """Rebuild the notification channel map from the current alert_channels config."""
+        cfg = await self._cfg.get("alert_channels", {}) or {}
+        self._channels = build_channels(cfg, post=self._post, send_email=self._send_email)
+
+    # --- notify / alert dispatch (ungated by ENABLE_CONTROL) -------------------
+    def _debounce_key(self, action_type: str, rule_id: str, message: str, channels: tuple) -> tuple:
+        return (rule_id, action_type, message, channels)
+
+    async def _dispatch_notifications(
+        self, device_id: str | None, decision: AutomationDecision, now: float
+    ) -> None:
+        for notif in decision.notify_actions():
+            key = self._debounce_key("notify", notif.rule_id, notif.message, tuple(sorted(notif.channels)))
+            if now - self._debounce.get(key, 0.0) < notif.debounce_s:
+                continue
+            self._debounce[key] = now
+            payload = {
+                "rule_id": notif.rule_id, "name": notif.rule_name,
+                "message": notif.message or notif.rule_name,
+                "severity": notif.severity, "device_id": device_id,
+            }
+            try:
+                await dispatch(self._channels, notif.channels, payload)
+            except Exception as exc:  # off the hot path — a dead channel must not disrupt the loop
+                log.warning("Automation notify dispatch failed for rule %r: %s", notif.rule_id, exc)
+
+    async def _create_alerts(
+        self, device_id: str | None, decision: AutomationDecision, now: float
+    ) -> None:
+        if self._alert_repo is None:
+            return
+        for alert_action in decision.alert_actions():
+            key = self._debounce_key("alert", alert_action.rule_id, alert_action.message, ())
+            if now - self._debounce.get(key, 0.0) < alert_action.debounce_s:
+                continue
+            self._debounce[key] = now
+            try:
+                await self._alert_repo.insert_alert(
+                    rule_id=alert_action.rule_id,
+                    device_id=device_id,
+                    severity=alert_action.severity,
+                    metric=None,
+                    value=None,
+                    message=alert_action.message or alert_action.rule_name,
+                    fired_at=now,
+                )
+            except Exception as exc:
+                log.warning("Automation alert create failed for rule %r: %s", alert_action.rule_id, exc)
+
+    # --- opt-in apply (L03e-3; write path gated by ENABLE_CONTROL) ------------
+    async def apply(self, device_id: str | None = None, *, source: str = "automation",
+                    write: bool = True) -> dict:
+        """Evaluate rules, dispatch notify/alert actions (always), and optionally write
+        armed set_setting winners via the §12 flow (validate→write→read-back→audit).
+
+        ``write=False`` skips the register-write path entirely (used by the scheduler when
+        ``ENABLE_CONTROL`` is off so notify/alert still dispatch on monitoring-only deploys).
+        Coalesces same-section/slot fields into one write. A failed write is recorded and
+        reported but never aborts the others."""
         device, ctx, decision, _ = await self._decide(device_id)
-        result: dict = {
-            "device_id": device.device_id if device is not None else device_id,
-            "now": ctx.now.isoformat(),
-            "applied": [],
-            "failed": [],
-        }
-        if device is None:
+        now = ctx.now.timestamp()
+        device_id_str = device.device_id if device is not None else device_id
+        result: dict = {"device_id": device_id_str, "now": ctx.now.isoformat(), "applied": [], "failed": []}
+
+        # Notify/alert dispatch is ungated (runs even without ENABLE_CONTROL).
+        await self._dispatch_notifications(device_id_str, decision, now)
+        await self._create_alerts(device_id_str, decision, now)
+
+        if not write or device is None:
             return result
 
         # Coalesce the winners per (section, slot) so a slot's fields write together (§12 atomicity).
@@ -198,9 +284,9 @@ class AutomationService:
             })
         return result
 
-    async def apply_all(self, *, source: str = "automation:scheduler") -> list[dict]:
-        """Run `apply` for every configured device (the scheduler's per-tick action)."""
-        return [await self.apply(d.device_id, source=source) for d in self._registry.devices]
+    async def apply_all(self, *, source: str = "automation:scheduler", write: bool = True) -> list[dict]:
+        """Run ``apply`` for every configured device."""
+        return [await self.apply(d.device_id, source=source, write=write) for d in self._registry.devices]
 
     async def _record(self, device_id, section, index, changes, status, source) -> None:
         if self._audit is None:
@@ -212,7 +298,14 @@ class AutomationService:
             log.warning("Automation audit record failed: %s", exc)
 
     # --- background scheduler --------------------------------------------------
-    async def start(self) -> None:
+    async def start(self, *, write_enabled: bool = False) -> None:
+        """Start the background scheduler.
+
+        Always starts so notify/alert dispatch works on monitoring-only deploys.
+        ``write_enabled=True`` enables set_setting writes each tick (requires ENABLE_CONTROL).
+        """
+        self._write_enabled = write_enabled
+        await self.reload_channels()
         if self._task is None:
             self._task = asyncio.create_task(self._run())
 
@@ -228,7 +321,7 @@ class AutomationService:
     async def _run(self) -> None:
         while True:
             try:
-                await self.apply_all()
-            except Exception as exc:  # a bad rule/tick must not kill the scheduler
+                await self.apply_all(source="automation:scheduler", write=self._write_enabled)
+            except Exception as exc:  # a bad tick must not kill the scheduler
                 log.warning("Automation scheduler tick failed: %s", exc)
             await asyncio.sleep(self._interval)

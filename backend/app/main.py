@@ -142,13 +142,13 @@ async def lifespan(app: FastAPI):
 
     automation = AutomationService(
         app_config, poller, registry, clock=clock,
-        audit_repo=audit_repo, interval_s=settings.automation_interval_s,
+        audit_repo=audit_repo, alert_repo=alert_repo,
+        interval_s=settings.automation_interval_s,
     )
     app.state.automation = automation
-    # Automation is always available (rules/preview need no flag). The scheduler *writes* inverter
-    # registers, so it only runs under SOLARVOLT_ENABLE_CONTROL — the single gate on register writes.
-    if settings.enable_control:
-        await automation.start()
+    # Scheduler always starts so notify/alert dispatch works on monitoring-only deploys.
+    # write_enabled=True unlocks set_setting writes (gated by ENABLE_CONTROL).
+    await automation.start(write_enabled=settings.enable_control)
     try:
         yield
     finally:
@@ -595,7 +595,8 @@ def create_app(
     async def put_alert_channels(body: dict = Body(...)) -> JSONResponse:
         cfg = {k: v for k, v in (body or {}).items() if k in SUPPORTED_CHANNELS and isinstance(v, dict)}
         await app.state.app_config.set("alert_channels", cfg)
-        await app.state.alerts.reload()  # rebuild channels for the next dispatch
+        await app.state.alerts.reload()       # rebuild for AlertService dispatch
+        await app.state.automation.reload_channels()  # rebuild for AutomationService dispatch
         return JSONResponse(await _alert_channels_view())
 
     @app.post("/api/alert-channels/{name}/test")
