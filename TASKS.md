@@ -527,9 +527,22 @@ self-contained egress/notification pieces — each additive, off the hot path, b
     and `POST …/test` (send one now, surface failures). Settings › *Outbound readings webhook* card
     (URL/interval/enabled + Save + Send test). `test_readings_webhook.py` (service + API, 92% module;
     only the real-httpx glue uncovered); full backend suite green (287 passed, 95% cov).
-- [-] **L10 · More notification channels** *(remainder of T081)* · Deps: T081
+- [x] **L10 · More notification channels** *(remainder of T081)* · Deps: T081
   - email (SMTP), Telegram, ntfy, Pushover/Gotify — all webhook-shaped, slotting in behind the
     existing channel seam; selectable per rule. *Refs: §15.*
+  - **Done:** `app/alerts/channels.py` gains `Telegram`/`Ntfy`/`Gotify`/`Pushover`/`Email` channels
+    behind the one `Channel` seam (HTTP ones share the injectable `post`; SMTP uses stdlib `smtplib`
+    via `asyncio.to_thread` + an injectable `send_email` — **no new dep**). Shared `format_alert()`
+    builds title/body; per-severity priority mapped to each provider's scale. `build_channels` only
+    enables a channel when its required fields are present. `GET/PUT /api/alert-channels` (config +
+    which are fully `configured`) reloads the engine on save; `POST /api/alert-channels/{name}/test`
+    sends a synthetic alert. The rule-editor channel list (`/api/alert-rules/options`) now reflects
+    the **configured** channels, so they're selectable per rule. Settings › *Notification channels*
+    card (per-provider fields + per-channel Test). Off the hot path — a dead channel is logged and
+    swallowed. Tests: `test_alert_channels.py` (each channel's request shape + SMTP message build +
+    dispatch swallow) and channel-config/test API in `test_alert_api.py`; channels module 97%, full
+    backend suite green (296 passed, 95% cov); frontend 124 passed. *No `https://` literal ships in
+    the bundle (no-CDN gate green) — provider defaults live server-side.*
 - [x] **L11 · Alert rule-editor UI** *(remainder of T082)* · Deps: T082
   - Create/edit/delete alert rules from the Alerts page (the API + engine already support it;
     rules currently seed with sensible defaults and are editable via `/api/alert-rules`). *Refs: §15.*

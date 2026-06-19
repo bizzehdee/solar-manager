@@ -396,6 +396,13 @@ export interface ReadingsWebhookConfig {
   enabled: boolean;
 }
 
+/** Notification-channel config (L10). `channels` is keyed by channel name (webhook/email/…). */
+export interface AlertChannelsResponse {
+  channels: Record<string, Record<string, unknown>>;
+  configured: string[]; // channels that are fully configured (offered per rule + testable)
+  supported: string[];
+}
+
 /** One audit-log entry: every settings write is recorded (when / source / old→new / result). */
 export interface AuditEntry {
   ts: number;

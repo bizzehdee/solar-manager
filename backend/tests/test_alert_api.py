@@ -49,7 +49,44 @@ def test_alert_rule_options_for_editor():
         assert "__stale_s__" in opts["metrics"] and "__fault_count__" in opts["metrics"]
         assert opts["ops"] == ["lt", "le", "gt", "ge", "eq", "ne"]
         assert "critical" in opts["severities"]
-        assert "webhook" in opts["channels"]
+        # No channels configured by default ⇒ none offered.
+        assert opts["channels"] == []
+
+
+def test_alert_channels_config_round_trip_and_options_reflect_it():
+    with _client() as client:
+        base = client.get("/api/alert-channels").json()
+        assert base["channels"] == {} and base["configured"] == []
+        assert set(base["supported"]) >= {"webhook", "email", "telegram", "ntfy", "gotify", "pushover"}
+
+        # Configure two channels; one incomplete (dropped from `configured`).
+        saved = client.put("/api/alert-channels", json={
+            "telegram": {"bot_token": "T", "chat_id": "42"},
+            "ntfy": {},  # incomplete
+            "bogus": {"x": 1},  # not a supported channel → stripped
+        }).json()
+        assert saved["configured"] == ["telegram"]
+        assert "bogus" not in saved["channels"]
+
+        # The rule editor now offers the configured channel.
+        assert client.get("/api/alert-rules/options").json()["channels"] == ["telegram"]
+
+
+def test_alert_channel_test_endpoint():
+    with _client() as client:
+        # Not configured → 400.
+        assert client.post("/api/alert-channels/webhook/test").status_code == 400
+
+        # Configure webhook, inject a recorder, then a manual test delivers the sample alert.
+        client.put("/api/alert-channels", json={"webhook": {"url": "http://hook"}})
+        sent: list = []
+
+        async def post(url, payload=None, *, data=None, headers=None):
+            sent.append((url, payload))
+
+        client.app.state.alerts._channels["webhook"]._post = post
+        assert client.post("/api/alert-channels/webhook/test").json() == {"ok": True}
+        assert sent and sent[0][0] == "http://hook"
 
 
 def test_alerts_list_ack_snooze_and_404():

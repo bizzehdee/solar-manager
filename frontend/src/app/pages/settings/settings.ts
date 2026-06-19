@@ -294,6 +294,76 @@ import {
       </div>
     </div>
 
+    <!-- Notification channels (L10): how fired alerts are pushed (in addition to the in-app inbox).
+         Each channel is selectable per rule once configured. Off the hot path — a dead channel never
+         blocks monitoring. Secrets are stored in the local DB (single-house, no-auth deployment). -->
+    <div class="card mt-3">
+      <div class="card-header"><i class="bi bi-send"></i> Notification channels</div>
+      <div class="card-body">
+        @if (channelsMsg(); as msg) { <div class="alert alert-{{ msg.cls }} py-2">{{ msg.text }}</div> }
+        <p class="small text-secondary">
+          The in-app inbox always records alerts. Configure any of these to also push them, then pick
+          channels per rule on the Alerts page. Save before sending a test.
+        </p>
+
+        <h6 class="text-secondary d-flex align-items-center gap-2">Webhook @if (isConfigured('webhook')) { <span class="badge text-bg-success">configured</span> }</h6>
+        <div class="row g-2 mb-2 align-items-end">
+          <div class="col-12 col-md-8">
+            <input class="form-control" [(ngModel)]="channels.webhook.url" name="chWhUrl" placeholder="POST URL" aria-label="Webhook URL" />
+          </div>
+          <div class="col-12 col-md-4">
+            <button type="button" class="btn btn-outline-secondary btn-sm" (click)="testChannel('webhook')" [disabled]="!isConfigured('webhook')">Test</button>
+          </div>
+        </div>
+
+        <h6 class="text-secondary d-flex align-items-center gap-2 mt-3">Telegram @if (isConfigured('telegram')) { <span class="badge text-bg-success">configured</span> }</h6>
+        <div class="row g-2 mb-2 align-items-end">
+          <div class="col-6 col-md-5"><input class="form-control" [(ngModel)]="channels.telegram.bot_token" name="chTgTok" placeholder="Bot token" aria-label="Telegram bot token" /></div>
+          <div class="col-6 col-md-4"><input class="form-control" [(ngModel)]="channels.telegram.chat_id" name="chTgChat" placeholder="Chat ID" aria-label="Telegram chat ID" /></div>
+          <div class="col-12 col-md-3"><button type="button" class="btn btn-outline-secondary btn-sm" (click)="testChannel('telegram')" [disabled]="!isConfigured('telegram')">Test</button></div>
+        </div>
+
+        <h6 class="text-secondary d-flex align-items-center gap-2 mt-3">ntfy @if (isConfigured('ntfy')) { <span class="badge text-bg-success">configured</span> }</h6>
+        <div class="row g-2 mb-2 align-items-end">
+          <div class="col-6 col-md-5"><input class="form-control" [(ngModel)]="channels.ntfy.topic" name="chNtTopic" placeholder="Topic" aria-label="ntfy topic" /></div>
+          <div class="col-6 col-md-4"><input class="form-control" [(ngModel)]="channels.ntfy.server" name="chNtServer" placeholder="ntfy.sh or your server URL" aria-label="ntfy server" /></div>
+          <div class="col-12 col-md-3"><button type="button" class="btn btn-outline-secondary btn-sm" (click)="testChannel('ntfy')" [disabled]="!isConfigured('ntfy')">Test</button></div>
+        </div>
+
+        <h6 class="text-secondary d-flex align-items-center gap-2 mt-3">Gotify @if (isConfigured('gotify')) { <span class="badge text-bg-success">configured</span> }</h6>
+        <div class="row g-2 mb-2 align-items-end">
+          <div class="col-6 col-md-5"><input class="form-control" [(ngModel)]="channels.gotify.url" name="chGoUrl" placeholder="Server URL" aria-label="Gotify URL" /></div>
+          <div class="col-6 col-md-4"><input class="form-control" [(ngModel)]="channels.gotify.token" name="chGoTok" placeholder="App token" aria-label="Gotify token" /></div>
+          <div class="col-12 col-md-3"><button type="button" class="btn btn-outline-secondary btn-sm" (click)="testChannel('gotify')" [disabled]="!isConfigured('gotify')">Test</button></div>
+        </div>
+
+        <h6 class="text-secondary d-flex align-items-center gap-2 mt-3">Pushover @if (isConfigured('pushover')) { <span class="badge text-bg-success">configured</span> }</h6>
+        <div class="row g-2 mb-2 align-items-end">
+          <div class="col-6 col-md-5"><input class="form-control" [(ngModel)]="channels.pushover.token" name="chPoTok" placeholder="API token" aria-label="Pushover token" /></div>
+          <div class="col-6 col-md-4"><input class="form-control" [(ngModel)]="channels.pushover.user" name="chPoUser" placeholder="User key" aria-label="Pushover user key" /></div>
+          <div class="col-12 col-md-3"><button type="button" class="btn btn-outline-secondary btn-sm" (click)="testChannel('pushover')" [disabled]="!isConfigured('pushover')">Test</button></div>
+        </div>
+
+        <h6 class="text-secondary d-flex align-items-center gap-2 mt-3">Email (SMTP) @if (isConfigured('email')) { <span class="badge text-bg-success">configured</span> }</h6>
+        <div class="row g-2 mb-2 align-items-end">
+          <div class="col-6 col-md-4"><label class="form-label small text-secondary mb-0">Host</label><input class="form-control" [(ngModel)]="channels.email.host" name="chEmHost" aria-label="SMTP host" /></div>
+          <div class="col-6 col-md-2"><label class="form-label small text-secondary mb-0">Port</label><input type="number" class="form-control" [(ngModel)]="channels.email.port" name="chEmPort" aria-label="SMTP port" /></div>
+          <div class="col-6 col-md-3"><label class="form-label small text-secondary mb-0">Username</label><input class="form-control" [(ngModel)]="channels.email.username" name="chEmUser" aria-label="SMTP username" /></div>
+          <div class="col-6 col-md-3"><label class="form-label small text-secondary mb-0">Password</label><input type="password" class="form-control" [(ngModel)]="channels.email.password" name="chEmPass" aria-label="SMTP password" /></div>
+          <div class="col-6 col-md-4"><label class="form-label small text-secondary mb-0">From</label><input class="form-control" [(ngModel)]="channels.email.from" name="chEmFrom" aria-label="From address" /></div>
+          <div class="col-6 col-md-4"><label class="form-label small text-secondary mb-0">To</label><input class="form-control" [(ngModel)]="channels.email.to" name="chEmTo" aria-label="To address" /></div>
+          <div class="col-6 col-md-2">
+            <div class="form-check mt-4"><input class="form-check-input" type="checkbox" id="ch-em-tls" [(ngModel)]="channels.email.use_tls" name="chEmTls" /><label class="form-check-label small" for="ch-em-tls">STARTTLS</label></div>
+          </div>
+          <div class="col-6 col-md-2"><button type="button" class="btn btn-outline-secondary btn-sm mt-4" (click)="testChannel('email')" [disabled]="!isConfigured('email')">Test</button></div>
+        </div>
+
+        <div class="mt-3">
+          <button type="button" class="btn btn-primary" (click)="saveChannels()"><i class="bi bi-save"></i> Save channels</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Integrations › outbound readings webhook (L09): periodically POST the latest snapshot to a
          user URL (Node-RED / IFTTT / custom). Off the hot path — a dead endpoint never blocks monitoring. -->
     <div class="card mt-3">
@@ -497,6 +567,19 @@ export class SettingsPage implements OnInit {
   readonly webhookMsg = signal<{ cls: string; text: string } | null>(null);
   webhook: ReadingsWebhookConfig = { url: '', interval_s: 60, enabled: false };
 
+  // Notification channels (L10). One form-model per provider; `configured` reflects which are
+  // fully set up server-side (drives the Test buttons + the per-rule channel list on Alerts).
+  readonly channelsMsg = signal<{ cls: string; text: string } | null>(null);
+  readonly configured = signal<string[]>([]);
+  channels = {
+    webhook: { url: '' },
+    telegram: { bot_token: '', chat_id: '' },
+    ntfy: { topic: '', server: '' },
+    gotify: { url: '', token: '' },
+    pushover: { token: '', user: '' },
+    email: { host: '', port: 587, username: '', password: '', from: '', to: '', use_tls: true },
+  };
+
   // Locale (T093).
   readonly prefs = inject(PreferencesService);
   localeChoice = this.prefs.locale();
@@ -518,6 +601,46 @@ export class SettingsPage implements OnInit {
     this.loadTariff();
     this.loadForecast();
     this.loadWebhook();
+    this.loadChannels();
+  }
+
+  // --- Notification channels (L10) ---
+  isConfigured = (name: string): boolean => this.configured().includes(name);
+
+  private loadChannels(): void {
+    this.api.getAlertChannels().subscribe({
+      next: (r) => {
+        // Merge saved config over the form defaults so untouched providers keep their defaults.
+        const forms = this.channels as unknown as Record<string, Record<string, unknown>>;
+        for (const key of Object.keys(forms)) {
+          const saved = r.channels[key];
+          if (saved) forms[key] = { ...forms[key], ...saved };
+        }
+        this.configured.set(r.configured);
+      },
+    });
+  }
+
+  saveChannels(): void {
+    this.api.putAlertChannels(this.channels as unknown as Record<string, Record<string, unknown>>).subscribe({
+      next: (r) => {
+        this.configured.set(r.configured);
+        this.flashChannels('success', 'Saved.');
+      },
+      error: () => this.flashChannels('danger', 'Could not save the channels.'),
+    });
+  }
+
+  testChannel(name: string): void {
+    this.api.testAlertChannel(name).subscribe({
+      next: () => this.flashChannels('success', `Test sent via ${name}.`),
+      error: (err) => this.flashChannels('danger', err?.error?.detail || `Test via ${name} failed.`),
+    });
+  }
+
+  private flashChannels(cls: string, text: string): void {
+    this.channelsMsg.set({ cls, text });
+    setTimeout(() => this.channelsMsg.set(null), 4000);
   }
 
   private loadWebhook(): void {

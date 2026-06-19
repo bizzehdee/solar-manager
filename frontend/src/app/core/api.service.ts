@@ -4,6 +4,7 @@ import { Observable } from 'rxjs';
 
 import {
   Alert,
+  AlertChannelsResponse,
   AlertRule,
   AlertRuleOptions,
   AlertsResponse,
@@ -198,6 +199,21 @@ export class ApiService {
 
   deleteAlertRule(id: string): Observable<void> {
     return this.http.delete<void>(`/api/alert-rules/${id}`);
+  }
+
+  // --- Notification channels (L10) ---
+
+  getAlertChannels(): Observable<AlertChannelsResponse> {
+    return this.http.get<AlertChannelsResponse>('/api/alert-channels');
+  }
+
+  putAlertChannels(channels: Record<string, Record<string, unknown>>): Observable<AlertChannelsResponse> {
+    return this.http.put<AlertChannelsResponse>('/api/alert-channels', channels);
+  }
+
+  /** Send a synthetic alert through one configured channel to verify it. */
+  testAlertChannel(name: string): Observable<{ ok: boolean }> {
+    return this.http.post<{ ok: boolean }>(`/api/alert-channels/${name}/test`, {});
   }
 
   // --- Outbound readings webhook (L09) ---

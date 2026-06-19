@@ -197,6 +197,23 @@ describe('ApiService', () => {
     del.flush(null);
   });
 
+  it('getAlertChannels()/putAlertChannels()/testAlertChannel() hit the channel URLs', () => {
+    api.getAlertChannels().subscribe((r) => expect(r.configured).toEqual(['webhook']));
+    http.expectOne('/api/alert-channels').flush({ channels: { webhook: { url: 'http://h' } }, configured: ['webhook'], supported: ['webhook'] });
+
+    const body = { telegram: { bot_token: 'T', chat_id: '1' } };
+    api.putAlertChannels(body).subscribe();
+    const put = http.expectOne('/api/alert-channels');
+    expect(put.request.method).toBe('PUT');
+    expect(put.request.body).toEqual(body);
+    put.flush({ channels: body, configured: ['telegram'], supported: ['telegram'] });
+
+    api.testAlertChannel('telegram').subscribe((r) => expect(r.ok).toBe(true));
+    const test = http.expectOne('/api/alert-channels/telegram/test');
+    expect(test.request.method).toBe('POST');
+    test.flush({ ok: true });
+  });
+
   it('getReadingsWebhook()/putReadingsWebhook()/testReadingsWebhook() hit the integration URLs', () => {
     api.getReadingsWebhook().subscribe((c) => expect(c.enabled).toBe(false));
     http.expectOne('/api/integrations/readings-webhook').flush({ url: null, interval_s: 60, enabled: false });

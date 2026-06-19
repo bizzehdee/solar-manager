@@ -13,7 +13,7 @@ import logging
 from datetime import datetime
 
 from ..storage.repository import AlertRepository
-from .channels import Post, build_channels, dispatch
+from .channels import Post, SendEmail, build_channels, dispatch
 from .engine import (
     METRIC_FAULT_COUNT,
     METRIC_STALE_S,
@@ -42,6 +42,7 @@ class AlertService:
         interval_s: float = 30.0,
         clock=_local_now,
         post: Post | None = None,
+        send_email: SendEmail | None = None,
     ) -> None:
         self._repo = repo
         self._poller = poller
@@ -49,6 +50,7 @@ class AlertService:
         self._interval = interval_s
         self._clock = clock
         self._post = post
+        self._send_email = send_email
         self._engine = AlertEngine()
         self._rules: list[AlertRule] = []
         self._channels: dict = {}
@@ -79,7 +81,7 @@ class AlertService:
                 log.warning("Skipping invalid alert rule %r: %s", d.get("id"), exc)
         self._rules = rules
         cfg = await self._app_config.get("alert_channels", {}) or {}
-        self._channels = build_channels(cfg, post=self._post)
+        self._channels = build_channels(cfg, post=self._post, send_email=self._send_email)
 
     async def _run(self) -> None:
         while True:

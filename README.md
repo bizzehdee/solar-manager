@@ -47,7 +47,8 @@ and watch your panels, battery and grid in real time.
 - **Alerts** — a rule engine (low battery SoC, device offline/stale, inverter fault, over-temp…)
   with thresholds, hysteresis, debounce and quiet hours; sensible rules shipped on, and a
   **rule editor** to add/edit/enable/delete your own. Active/history **inbox** with acknowledge &
-  snooze and a header **bell badge**. Optional **webhook** delivery (more channels coming). All off
+  snooze and a header **bell badge**. Push delivery via **webhook, email (SMTP), Telegram, ntfy,
+  Gotify or Pushover** — configure any, then pick channels per rule (with a one-click test). All off
   the hot path — a failing notifier never disrupts monitoring.
 - **Integrations** — a **Prometheus `/metrics`** endpoint exposes live readings for Grafana users,
   and an **outbound readings webhook** posts each snapshot as JSON to a URL of your choice
@@ -57,7 +58,7 @@ and watch your panels, battery and grid in real time.
   **inverter clock drift** with one-click sync; a **performance-ratio calibration** that tunes the
   forecast from measured history; selectable **locale** for date/number formatting; and an
   **installable PWA** (add to home screen, rides out brief network blips) — all self-hosted.
-- *Coming:* more notification channels (email/Telegram/…), MQTT + Home Assistant, PVOutput. See `TASKS.md`.
+- *Coming:* MQTT + Home Assistant discovery, PVOutput. See `TASKS.md`.
 
 ## Try it (no hardware needed)
 
