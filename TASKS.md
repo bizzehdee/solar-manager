@@ -406,9 +406,34 @@ versioned releases.*
   exact same profiles (SolarmanV5 wraps the identical Modbus payload). *Refs: §4, §20.*
 - [-] **L02 · Sol-Ark & Deye profiles** — thin `extends: deye-base` profiles, near-free once
   the base map is validated in Phase 1. *Refs: §4, §20.*
-- [-] **L03 · Smart automation & scheduling** — tariff+forecast-driven auto-scheduling of the
+- **L03 · Smart automation & scheduling** — tariff+forecast-driven auto-scheduling of the
   work-mode timer; opt-in, separate automation flag, **dry-run/suggest-only first**; built
-  entirely on the §12 safeguards. *Refs: §18.*
+  entirely on the §12 safeguards. *Refs: §18.* Split into deliverables, risk-increasing
+  (suggest-only before any write), each shippable on its own:
+  - [x] **L03a · Automation planning engine (pure, suggest-only core)** · Deps: T051, T060
+    - **Deliverable:** `backend/app/automation/planner.py` — a pure function that, given the
+      import `RateSchedule` (§5 tariff), `BatterySpec`, current SoC, current timer slots, and
+      tomorrow's expected PV/load Wh (§6 forecast), proposes timer-slot changes (cost-arbitrage:
+      force grid-charge in the cheapest window to a forecast-aware target SoC; reserve the battery
+      for the peak) with a per-change rationale and a first-order estimated daily saving.
+    - **Done:** pure (no DB/I/O/writes). `plan_timer()` + `cheapest_window`/`peak_window`/
+      `overnight_target_soc_pct` (reuses `tariff.RateSchedule` + `forecast.BatterySpec`). No-action
+      paths covered: flat tariff, spread below threshold, solar-covers-load, already-optimal.
+      `test_automation_planner.py` (13 tests) incl. midnight-wrap window + saving math; module
+      **100%** coverage; full backend suite green (278 passed). *Refs: §18, §5, §6.*
+  - [ ] **L03b · Suggest-only API + automation flag** · Deps: L03a, T047, T060
+    - `SOLARVOLT_ENABLE_AUTOMATION` deploy flag (separate from `ENABLE_CONTROL`); `GET
+      /api/automation/plan` wires the engine to the live forecast/tariff/device and returns the
+      proposed plan + current→proposed diff. **Never writes.** Capability suppressed when the flag
+      is off. *Refs: §18, §12.*
+  - [ ] **L03c · Automation UI (suggest-only)** · Deps: L03b
+    - A page/panel showing the proposed daily plan, per-slot current→proposed diff, projected
+      saving and rationale — "what it would do," read-only. *Refs: §18, §8.*
+  - [ ] **L03d · Opt-in auto-apply (scheduler + write)** · Deps: L03c, T076
+    - Only when **both** `ENABLE_CONTROL` and `ENABLE_AUTOMATION` are on: a scheduler (+ manual
+      "apply now") that applies the plan through the §12 path (`control.apply_settings`:
+      validate→write→read-back→audit). Playwright E2E of the full round-trip on the dummy.
+      *Refs: §18, §12.*
 - [-] **L04 · More vendors / protocol families** — Growatt/Solis/Sungrow/… (new YAML each);
   generic SunSpec profile; text-command family (Voltronic/Must) + Victron family each carry a
   one-time transport+profile-contract cost, then siblings are cheap. *Refs: §20.*
@@ -435,9 +460,34 @@ versioned releases.*
   - **Done when:** a real SA backup imports into a fresh DB and History/Stats show the
     back-filled data; import is **idempotent** (re-running doesn't double-count) and reports
     rows imported / skipped / unmapped.
-  - *First step:* unpack a real backup, confirm the InfluxDB version + measurement/field names,
-    and pin the **SA-measurement → canonical-metric** mapping against a sample — don't assume.
-    Reuse the energy-counter handling (§5) for cumulative series. *Refs: §5, §19.*
+  - **Confirmed against a real backup** (`horrocks-2026-06-18`, ~4 weeks 22 May–18 Jun 2026):
+    it's an **InfluxDB 1.x portable backup** — sets of `*.meta` + `*.manifest` + `*.sNN.tar.gz`,
+    each tar holding `solar_assistant/autogen/<shard>/*.tsm` (DB `solar_assistant`, RP `autogen`,
+    6 weekly shards). TSM blocks are compressed → not greppable; needs Influx tooling to read.
+    `influx_inspect`/`influxd` aren't installed, but **docker + go are** → path 2 (restore into
+    `influxdb:1.8` then `influx_inspect export` to line protocol) is the pragmatic route; it costs
+    a ~250 MB image pull at migration time.
+  - **Mapping pinned** (SA measurement, field `combined` → canonical): `PV power`→`pv_power_w`,
+    `Battery power`→`battery_power_w`, `Battery state of charge`→`battery_soc_pct`,
+    `Battery voltage/current/temperature`→`battery_voltage_v`/`_current_a`/`_temp_c`,
+    `Grid power`→`grid_power_w`, `Grid voltage/frequency`→`grid_voltage_v`/`grid_frequency_hz`,
+    `Load power`→`load_power_w`, inverter/AC temp+voltage where present. **Skip** `PV power
+    predicted` (a forecast, not measured) and the `* hourly` CQ energy series (we derive energy
+    from integrated power in the stats/energy layer — keep it internally consistent).
+  - **Three gotchas to handle:** (1) **Sign conventions** — verify SA vs canonical polarity
+    (`battery_power_w` +charge/−discharge, `grid_power_w` +import/−export) against a known
+    midday window before committing; flip per-metric as needed (same risk class as profile decode,
+    cf. T002). (2) **Raw retention prunes after 14 days but rollups are kept forever (T043)** — so
+    backfill must **write the 5m/1h/1d rollups directly** for the whole window (reuse the pure
+    `aggregator.bucket_rows()` over each `INTERVALS` width and upsert; bypass the watermark-based
+    `aggregate()` which isn't built for bulk weeks-old backfill), and write raw `samples` only for
+    the last 14 days; then set the rollup watermark to "now". (3) **Volume** — SA logs ~every 5 s
+    (~5 M+ rows over 4 weeks) → **downsample to 1-minute** on import.
+  - *Build note:* `tools/import_solar_assistant.py` — offline, idempotent (upsert), with
+    `--db/--device-id/--resolution/--since/--until/--dry-run`; attach to the real device id
+    (e.g. `sunsynk`), not `dummy`. Tests use a small hand-written **line-protocol fixture** (no
+    docker/hardware) covering mapping, sign-flips, downsampling and rollup backfill. Reuse the
+    energy-counter handling (§5) for any cumulative series. *Refs: §5, §19.*
 
 - [-] **L13 · First-run setup wizard** *(was T090)* · Deps: T047, T064, T051
   - Guided onboarding: device (dummy preselected), location, array segments, battery, tariffs —
