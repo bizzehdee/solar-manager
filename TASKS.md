@@ -516,15 +516,31 @@ self-contained egress/notification pieces — each additive, off the hot path, b
 - [-] **L08 · PVOutput.org upload** *(was T084)* · Deps: T050
   - Optional periodic upload (generation, consumption, SoC, temperature); API key + system id
     in Settings. *Refs: §14.*
-- [-] **L09 · Generic outbound readings/events webhook** *(was T086)* · Deps: T016
+- [x] **L09 · Generic outbound readings/events webhook** *(was T086)* · Deps: T016
   - Periodic POST of readings/events to a user URL (Node-RED/IFTTT/custom). Alert egress is
     already covered by the Phase-7 webhook channel; this adds the readings stream. *Refs: §14.*
+  - **Done:** `app/integrations/readings_webhook.py` `ReadingsWebhookService` — own background
+    cadence like persistence/alerts, re-reads its config each tick (URL/interval/enabled live),
+    POSTs `{"type":"readings", …snapshot}`, **off the hot path** (a dead endpoint is logged and
+    swallowed, never blocks polling). Config in the `readings_webhook` app-config blob; injectable
+    `post` ⇒ network-free tests. `GET/PUT /api/integrations/readings-webhook` (+ interval clamp ≥5s)
+    and `POST …/test` (send one now, surface failures). Settings › *Outbound readings webhook* card
+    (URL/interval/enabled + Save + Send test). `test_readings_webhook.py` (service + API, 92% module;
+    only the real-httpx glue uncovered); full backend suite green (287 passed, 95% cov).
 - [-] **L10 · More notification channels** *(remainder of T081)* · Deps: T081
   - email (SMTP), Telegram, ntfy, Pushover/Gotify — all webhook-shaped, slotting in behind the
     existing channel seam; selectable per rule. *Refs: §15.*
-- [-] **L11 · Alert rule-editor UI** *(remainder of T082)* · Deps: T082
+- [x] **L11 · Alert rule-editor UI** *(remainder of T082)* · Deps: T082
   - Create/edit/delete alert rules from the Alerts page (the API + engine already support it;
     rules currently seed with sensible defaults and are editable via `/api/alert-rules`). *Refs: §15.*
+  - **Done:** Alerts page gains an **Inbox | Rules** tab switch; the Rules tab lists every rule
+    (enable/disable switch, severity badge, metric/op/threshold summary) with an inline add/edit
+    form (metric/op/severity/device dropdowns, threshold/hysteresis/debounce, quiet-hours, message,
+    channels). Saving PUTs to `/api/alert-rules/{id}` (engine reloads next tick); delete via DELETE.
+    New backend `GET /api/alert-rules/options` feeds the dropdowns (canonical vocabulary + the two
+    synthetic engine keys + ops/severities/channels). **Ungated** (rule editing isn't behind the
+    control flag). Frontend unit tests (list/create/validate/toggle/delete) + Playwright E2E
+    (create→list→delete on the dummy); frontend suite 123 green, e2e green.
 - [-] **L12 · Fault-event history log** *(deferred from T054)* · Deps: T042
   - An events table logging inverter fault / run-state transitions so intermittent faults are
     catchable after the fact (today faults are surfaced live only). *Refs: §16.*

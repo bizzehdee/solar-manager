@@ -45,11 +45,13 @@ and watch your panels, battery and grid in real time.
 - **Real inverter support** — read live instant data from a Sunsynk SG05LP1 over a
   USB-RS485 adapter.
 - **Alerts** — a rule engine (low battery SoC, device offline/stale, inverter fault, over-temp…)
-  with thresholds, hysteresis, debounce and quiet hours; sensible rules shipped on. Active/history
-  **inbox** with acknowledge & snooze and a header **bell badge**. Optional **webhook** delivery
-  (more channels coming). All off the hot path — a failing notifier never disrupts monitoring.
-- **Integrations** — a **Prometheus `/metrics`** endpoint exposes live readings for Grafana users.
-  (MQTT / Home-Assistant discovery and PVOutput are on the roadmap.)
+  with thresholds, hysteresis, debounce and quiet hours; sensible rules shipped on, and a
+  **rule editor** to add/edit/enable/delete your own. Active/history **inbox** with acknowledge &
+  snooze and a header **bell badge**. Optional **webhook** delivery (more channels coming). All off
+  the hot path — a failing notifier never disrupts monitoring.
+- **Integrations** — a **Prometheus `/metrics`** endpoint exposes live readings for Grafana users,
+  and an **outbound readings webhook** posts each snapshot as JSON to a URL of your choice
+  (Node-RED / IFTTT / custom). (MQTT / Home-Assistant discovery and PVOutput are on the roadmap.)
 - **Operational niceties** — **backup / restore** the database and **export any metric to CSV**;
   a **Diagnostics** page (DB size, rollup lag, per-device Modbus comms health, grid-outage log);
   **inverter clock drift** with one-click sync; a **performance-ratio calibration** that tunes the

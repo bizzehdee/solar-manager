@@ -175,6 +175,44 @@ describe('ApiService', () => {
     expect(req.request.body).toEqual(body);
     req.flush(sampleForecastConfig());
   });
+
+  // --- Alert rules (L11) + readings webhook (L09) ---
+  it('getAlertRuleOptions() GETs /api/alert-rules/options', () => {
+    api.getAlertRuleOptions().subscribe((o) => expect(o.metrics).toContain('battery_soc_pct'));
+    const req = http.expectOne('/api/alert-rules/options');
+    expect(req.request.method).toBe('GET');
+    req.flush({ metrics: ['battery_soc_pct'], ops: ['lt'], severities: ['warning'], channels: ['webhook'] });
+  });
+
+  it('putAlertRule() PUTs to the id URL and deleteAlertRule() DELETEs it', () => {
+    api.putAlertRule('hot', { name: 'Hot', metric: 'inverter_temp_c', op: 'gt', threshold: 60 }).subscribe();
+    const put = http.expectOne('/api/alert-rules/hot');
+    expect(put.request.method).toBe('PUT');
+    expect(put.request.body.metric).toBe('inverter_temp_c');
+    put.flush({});
+
+    api.deleteAlertRule('hot').subscribe();
+    const del = http.expectOne('/api/alert-rules/hot');
+    expect(del.request.method).toBe('DELETE');
+    del.flush(null);
+  });
+
+  it('getReadingsWebhook()/putReadingsWebhook()/testReadingsWebhook() hit the integration URLs', () => {
+    api.getReadingsWebhook().subscribe((c) => expect(c.enabled).toBe(false));
+    http.expectOne('/api/integrations/readings-webhook').flush({ url: null, interval_s: 60, enabled: false });
+
+    const cfg = { url: 'http://hook', interval_s: 30, enabled: true };
+    api.putReadingsWebhook(cfg).subscribe();
+    const put = http.expectOne('/api/integrations/readings-webhook');
+    expect(put.request.method).toBe('PUT');
+    expect(put.request.body).toEqual(cfg);
+    put.flush(cfg);
+
+    api.testReadingsWebhook().subscribe((r) => expect(r.sent).toBe(true));
+    const test = http.expectOne('/api/integrations/readings-webhook/test');
+    expect(test.request.method).toBe('POST');
+    test.flush({ ok: true, sent: true });
+  });
 });
 
 function sampleForecast(): ForecastResponse {

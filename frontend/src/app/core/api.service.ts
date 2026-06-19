@@ -4,6 +4,8 @@ import { Observable } from 'rxjs';
 
 import {
   Alert,
+  AlertRule,
+  AlertRuleOptions,
   AlertsResponse,
   AuditEntry,
   DailyStats,
@@ -22,6 +24,7 @@ import {
   HistoryMetrics,
   HistoryResponse,
   Preferences,
+  ReadingsWebhookConfig,
   SettingsSchemaResponse,
   Snapshot,
   StatsConfig,
@@ -174,6 +177,42 @@ export class ApiService {
 
   snoozeAlert(id: number, minutes = 60): Observable<unknown> {
     return this.http.post(`/api/alerts/${id}/snooze`, { minutes });
+  }
+
+  // --- Alert rules (L11 editor) ---
+
+  /** All configured alert rules (defaults seeded on first run). */
+  getAlertRules(): Observable<{ rules: AlertRule[] }> {
+    return this.http.get<{ rules: AlertRule[] }>('/api/alert-rules');
+  }
+
+  /** Field choices for the rule editor (metrics/ops/severities/channels). */
+  getAlertRuleOptions(): Observable<AlertRuleOptions> {
+    return this.http.get<AlertRuleOptions>('/api/alert-rules/options');
+  }
+
+  /** Create or update a rule (PUT upserts by id). Returns the saved rule. */
+  putAlertRule(id: string, body: Partial<AlertRule>): Observable<AlertRule> {
+    return this.http.put<AlertRule>(`/api/alert-rules/${id}`, body);
+  }
+
+  deleteAlertRule(id: string): Observable<void> {
+    return this.http.delete<void>(`/api/alert-rules/${id}`);
+  }
+
+  // --- Outbound readings webhook (L09) ---
+
+  getReadingsWebhook(): Observable<ReadingsWebhookConfig> {
+    return this.http.get<ReadingsWebhookConfig>('/api/integrations/readings-webhook');
+  }
+
+  putReadingsWebhook(body: ReadingsWebhookConfig): Observable<ReadingsWebhookConfig> {
+    return this.http.put<ReadingsWebhookConfig>('/api/integrations/readings-webhook', body);
+  }
+
+  /** Send one snapshot POST now to verify the configured URL. */
+  testReadingsWebhook(): Observable<{ ok: boolean; sent: boolean }> {
+    return this.http.post<{ ok: boolean; sent: boolean }>('/api/integrations/readings-webhook/test', {});
   }
 
   // --- Inverter clock (plan.md §19 / T097) ---

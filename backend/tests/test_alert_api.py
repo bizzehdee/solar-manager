@@ -41,6 +41,17 @@ def test_alert_rule_crud_and_validation():
         assert not any(rule["id"] == "hot" for rule in client.get("/api/alert-rules").json()["rules"])
 
 
+def test_alert_rule_options_for_editor():
+    with _client() as client:
+        opts = client.get("/api/alert-rules/options").json()
+        # Canonical metrics + the two synthetic engine keys are all offered.
+        assert "battery_soc_pct" in opts["metrics"]
+        assert "__stale_s__" in opts["metrics"] and "__fault_count__" in opts["metrics"]
+        assert opts["ops"] == ["lt", "le", "gt", "ge", "eq", "ne"]
+        assert "critical" in opts["severities"]
+        assert "webhook" in opts["channels"]
+
+
 def test_alerts_list_ack_snooze_and_404():
     with _client() as client:
         # No alerts fired yet on a fresh dummy snapshot.

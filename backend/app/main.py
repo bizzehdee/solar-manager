@@ -25,9 +25,12 @@ from starlette.types import Scope
 
 from . import control
 from .alerts import AlertRule
+from .alerts.engine import METRIC_FAULT_COUNT, METRIC_STALE_S
 from .alerts.service import AlertService
 from .config import Settings
 from .grid_events import GridEventService
+from .integrations import ReadingsWebhookService
+from .metrics import ALL_METRICS
 from .devices.base import TransportError, system_clock
 from .devices.factory import (
     build_device_from_config,
@@ -130,9 +133,14 @@ async def lifespan(app: FastAPI):
     grid_events = GridEventService(history_repo, poller, interval_s=settings.alert_interval_s, clock=clock)
     app.state.grid_events = grid_events
     await grid_events.start()
+
+    readings_webhook = ReadingsWebhookService(poller, app_config)
+    app.state.readings_webhook = readings_webhook
+    await readings_webhook.start()
     try:
         yield
     finally:
+        await readings_webhook.stop()
         await grid_events.stop()
         await alerts.stop()
         await persistence.stop()
@@ -538,6 +546,18 @@ def create_app(
         repo: AlertRepository = app.state.alert_repo
         return JSONResponse({"rules": await repo.list_rules()})
 
+    @app.get("/api/alert-rules/options")
+    async def alert_rule_options() -> JSONResponse:
+        """Field choices for the rule-editor UI (L11): selectable metrics (the canonical
+        vocabulary plus the two synthetic keys the engine resolves specially), comparison
+        operators, severities, and the configured notification channels."""
+        return JSONResponse({
+            "metrics": sorted(ALL_METRICS) + [METRIC_STALE_S, METRIC_FAULT_COUNT],
+            "ops": ["lt", "le", "gt", "ge", "eq", "ne"],
+            "severities": ["info", "warning", "critical"],
+            "channels": ["webhook"],  # in-app inbox is always recorded; webhook is opt-in
+        })
+
     @app.put("/api/alert-rules/{rule_id}")
     async def put_alert_rule(rule_id: str, body: dict = Body(...)) -> JSONResponse:
         repo: AlertRepository = app.state.alert_repo
@@ -557,6 +577,44 @@ def create_app(
         app.state.alerts._engine.forget(rule_id)
         await app.state.alerts.reload()
         return JSONResponse(None, status_code=204)
+
+    # ---- outbound readings webhook (Later / L09) ------------------------------
+    def _readings_webhook_view(cfg: dict) -> dict:
+        return {
+            "url": cfg.get("url"),
+            "interval_s": float(cfg.get("interval_s") or 60.0),
+            "enabled": bool(cfg.get("enabled", False)),
+        }
+
+    @app.get("/api/integrations/readings-webhook")
+    async def get_readings_webhook() -> JSONResponse:
+        cfg = await app.state.app_config.get("readings_webhook", {}) or {}
+        return JSONResponse(_readings_webhook_view(cfg))
+
+    @app.put("/api/integrations/readings-webhook")
+    async def put_readings_webhook(body: dict = Body(...)) -> JSONResponse:
+        cfg = {
+            "url": (str(body.get("url") or "").strip()) or None,
+            "interval_s": max(float(body.get("interval_s", 60.0)), 5.0),
+            "enabled": bool(body.get("enabled", False)),
+        }
+        await app.state.app_config.set("readings_webhook", cfg)
+        return JSONResponse(_readings_webhook_view(cfg))
+
+    @app.post("/api/integrations/readings-webhook/test")
+    async def test_readings_webhook() -> JSONResponse:
+        """Send one snapshot POST now and report the result, so the user can verify the URL
+        without waiting for the next tick. Off the hot path — only the manual caller sees it."""
+        cfg = await app.state.app_config.get("readings_webhook", {}) or {}
+        url = cfg.get("url")
+        if not url:
+            raise HTTPException(status_code=400, detail="no webhook URL configured")
+        svc: ReadingsWebhookService = app.state.readings_webhook
+        try:
+            sent = await svc.post_once(url)
+        except Exception as exc:  # surface the failure to the manual caller
+            raise HTTPException(status_code=502, detail=f"webhook POST failed: {exc}") from exc
+        return JSONResponse({"ok": True, "sent": sent})
 
     # ---- inverter clock sync (Phase 8 / T097) ---------------------------------
     @app.get("/api/devices/{device_id}/clock")

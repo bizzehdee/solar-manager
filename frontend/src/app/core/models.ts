@@ -364,6 +364,38 @@ export interface AlertsResponse {
   active_count: number; // active AND unacknowledged — drives the bell badge
 }
 
+/** A configurable alert rule (L11 editor). Mirrors the backend `AlertRule` model. */
+export interface AlertRule {
+  id: string;
+  name: string;
+  metric: string;
+  op: string;
+  threshold: number;
+  hysteresis: number;
+  debounce_s: number;
+  severity: string;
+  channels: string[];
+  quiet_hours: [number, number] | null;
+  device_id: string | null;
+  message: string;
+  enabled: boolean;
+}
+
+/** Field choices backing the rule-editor dropdowns. */
+export interface AlertRuleOptions {
+  metrics: string[];
+  ops: string[];
+  severities: string[];
+  channels: string[];
+}
+
+/** Outbound readings webhook config (L09). */
+export interface ReadingsWebhookConfig {
+  url: string | null;
+  interval_s: number;
+  enabled: boolean;
+}
+
 /** One audit-log entry: every settings write is recorded (when / source / old→new / result). */
 export interface AuditEntry {
   ts: number;

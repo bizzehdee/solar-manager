@@ -10,6 +10,7 @@ import {
   DeviceProfileOption,
   DeviceTestResult,
   ForecastConfig,
+  ReadingsWebhookConfig,
   SerialPort,
   StatsConfig,
 } from '../../core/models';
@@ -293,6 +294,41 @@ import {
       </div>
     </div>
 
+    <!-- Integrations › outbound readings webhook (L09): periodically POST the latest snapshot to a
+         user URL (Node-RED / IFTTT / custom). Off the hot path — a dead endpoint never blocks monitoring. -->
+    <div class="card mt-3">
+      <div class="card-header"><i class="bi bi-broadcast"></i> Outbound readings webhook</div>
+      <div class="card-body">
+        @if (webhookMsg(); as msg) { <div class="alert alert-{{ msg.cls }} py-2">{{ msg.text }}</div> }
+        <div class="row g-3 align-items-end">
+          <div class="col-12 col-md-6">
+            <label class="form-label small text-secondary" for="wh-url">URL</label>
+            <input id="wh-url" class="form-control" [(ngModel)]="webhook.url" name="whUrl" placeholder="your endpoint URL" />
+          </div>
+          <div class="col-6 col-md-3">
+            <label class="form-label small text-secondary" for="wh-int">Interval (s)</label>
+            <input id="wh-int" type="number" min="5" class="form-control" [(ngModel)]="webhook.interval_s" name="whInterval" />
+          </div>
+          <div class="col-6 col-md-3">
+            <div class="form-check form-switch mt-md-4">
+              <input class="form-check-input" type="checkbox" role="switch" id="wh-en" [(ngModel)]="webhook.enabled" name="whEnabled" />
+              <label class="form-check-label" for="wh-en">Enabled</label>
+            </div>
+          </div>
+        </div>
+        <div class="mt-3 d-flex gap-2">
+          <button type="button" class="btn btn-primary" (click)="saveWebhook()"><i class="bi bi-save"></i> Save</button>
+          <button type="button" class="btn btn-outline-secondary" (click)="testWebhook()" [disabled]="!webhook.url">
+            <i class="bi bi-send"></i> Send test
+          </button>
+        </div>
+        <p class="small text-secondary mt-2 mb-0">
+          POSTs the latest normalized snapshot as JSON on the chosen interval. Save before sending a
+          test. A failing endpoint is logged and never disrupts monitoring; alert egress is set per rule.
+        </p>
+      </div>
+    </div>
+
     <!-- Formatting & locale (T093): drives date/number formatting (applied on reload). -->
     <div class="card mt-3">
       <div class="card-header"><i class="bi bi-translate"></i> {{ 'settings.locale.title' | translate }}</div>
@@ -457,6 +493,10 @@ export class SettingsPage implements OnInit {
   readonly restoring = signal(false);
   readonly restoreMsg = signal<{ cls: string; text: string } | null>(null);
 
+  // Outbound readings webhook (L09).
+  readonly webhookMsg = signal<{ cls: string; text: string } | null>(null);
+  webhook: ReadingsWebhookConfig = { url: '', interval_s: 60, enabled: false };
+
   // Locale (T093).
   readonly prefs = inject(PreferencesService);
   localeChoice = this.prefs.locale();
@@ -477,6 +517,45 @@ export class SettingsPage implements OnInit {
     this.loadProfiles();
     this.loadTariff();
     this.loadForecast();
+    this.loadWebhook();
+  }
+
+  private loadWebhook(): void {
+    this.api.getReadingsWebhook().subscribe({
+      next: (c) => (this.webhook = { url: c.url ?? '', interval_s: c.interval_s, enabled: c.enabled }),
+    });
+  }
+
+  saveWebhook(): void {
+    this.api
+      .putReadingsWebhook({
+        url: (this.webhook.url || '').trim() || null,
+        interval_s: Number(this.webhook.interval_s),
+        enabled: this.webhook.enabled,
+      })
+      .subscribe({
+        next: (c) => {
+          this.webhook = { url: c.url ?? '', interval_s: c.interval_s, enabled: c.enabled };
+          this.flashWebhook('success', 'Saved.');
+        },
+        error: () => this.flashWebhook('danger', 'Could not save the webhook.'),
+      });
+  }
+
+  testWebhook(): void {
+    this.api.testReadingsWebhook().subscribe({
+      next: (r) =>
+        this.flashWebhook(
+          r.sent ? 'success' : 'warning',
+          r.sent ? 'Test POST sent.' : 'Nothing to send yet — no readings available.',
+        ),
+      error: (err) => this.flashWebhook('danger', err?.error?.detail || 'Test POST failed.'),
+    });
+  }
+
+  private flashWebhook(cls: string, text: string): void {
+    this.webhookMsg.set({ cls, text });
+    setTimeout(() => this.webhookMsg.set(null), 4000);
   }
 
   /** Re-enumerate the host's serial ports (also the rescan button). */
