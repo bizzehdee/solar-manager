@@ -32,6 +32,7 @@ test.describe('Alerts inbox + Prometheus (on the dummy)', () => {
     // New rule → fill the form → save.
     await page.getByRole('button', { name: /New rule/ }).click();
     await page.locator('#a-name').fill('E2E test rule');
+    await page.getByRole('button', { name: /Add action/ }).click();
     await page.locator('#at0').selectOption('timer_slots|target_soc_pct');
     await page.locator('#ai0').fill('0');
     await page.locator('#av0').fill('80');
