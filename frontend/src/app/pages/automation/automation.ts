@@ -180,6 +180,7 @@ import {
                         <label class="small text-secondary">Setting</label>
                         <select class="form-select form-select-sm" [ngModel]="targetKey(a)" (ngModelChange)="setTarget(a, $event)"
                                 [name]="'at' + $index" [id]="'at' + $index">
+                          <option value="|">— choose a setting —</option>
                           @for (t of options().targets; track t.section + t.field) {
                             <option [value]="t.section + '|' + t.field">{{ t.section_label }} · {{ t.label }}</option>
                           }
@@ -384,11 +385,10 @@ export class AutomationPage implements OnInit {
 
   addAction(): void {
     const e = this.editing();
-    const t = this.options().targets[0];
-    if (e && t) {
+    if (e) {
       e.actions = [...e.actions, {
-        target: { section: t.section, field: t.field, index: t.repeating ? 0 : null },
-        value: t.type === 'bool' ? false : 0, enabled: false,
+        target: { section: '', field: '', index: null },
+        value: null, enabled: false,
       }];
     }
   }
@@ -420,6 +420,9 @@ export class AutomationPage implements OnInit {
     if (!e) return;
     const name = (e.name || '').trim();
     if (!name) { this.formError.set('Name is required.'); return; }
+    if (e.actions.some(a => !a.target.section || !a.target.field)) {
+      this.formError.set('Every action must have a setting selected.'); return;
+    }
     const id = this.creating() ? this.slug(name) || `rule-${Date.now()}` : e.id;
     this.api.putAutomationRule(id, { ...e, id, name }).subscribe({
       next: () => { this.editing.set(null); this.afterSave(); },

@@ -488,14 +488,39 @@ versioned releases.*
     - [x] **L03e-4 · Rule-editor UI + live preview** · Deps: L03e-2
       - Build/edit/prioritise rules; per-rule and per-action enable; a live "what it would do now"
         panel; current→proposed diff with the safe/at-risk/blocked badge. *Refs: §18, §8.*
-    - [ ] **L03e-5 · Non-write automation actions (notify / webhook)** · Deps: L03e-1, L10, L09
-      - Add action *types* beyond "set inverter setting": **send a notification** (reuse the alert
-        channel seam — email/Telegram/ntfy/Gotify/Pushover) and **POST an outbound webhook**. These
-        touch no inverter register, so they are **not** gated by `ENABLE_CONTROL` — they run whenever
-        their rule/action is armed, even on a monitoring-only deploy. Requires generalising the
-        engine's `Action`/`ProposedChange` (currently setting-only) to a tagged action kind, splitting
-        the apply path (writes still gated; notify/webhook always allowed), and an editor action-type
-        picker. Keep it off the hot path (a failing notify degrades to a warning). *Refs: §18, §15, §9.*
+    - [ ] **L03e-5 · Absorb alerts into automation (notify + alert action types; retire AlertService)** · Deps: L03e-3, L10
+      - The standalone `AlertRule`/`AlertEngine`/`AlertService` is replaced by automation rules that
+        carry `notify` and `alert` action types alongside the existing `set_setting` type. One rule
+        engine, one editor, all output types. *Refs: §18, §15.*
+      - Sub-tasks (implement in order, ask before each):
+        - [ ] **L03e-5a · Engine: add action types** — Extend `Action` in `rules.py` with `action_type`
+          (`"set_setting"` | `"notify"` | `"alert"`), `channels: list[str]`, `message: str`,
+          `severity: str`, `debounce_s: float`. `settings_to_apply()` filters to `set_setting` only.
+          Add `notify_actions()` + `alert_actions()` on `AutomationDecision`. Move the `compare`
+          helper into `rules.py` (was imported from `alerts.engine`). Add `__stale_s__` /
+          `__fault_count__` as resolved-by-service synthetic keys documented in `EvalContext`.
+        - [ ] **L03e-5b · Service: wire dispatch + debounce** — `AutomationService` resolves
+          `__stale_s__` and `__fault_count__` into `EvalContext.metrics`. After each evaluation, for
+          every armed `notify` action: check debounce, dispatch via `channels.dispatch()`, swallow
+          failures. For every armed `alert` action: check debounce, insert inbox row via
+          `AlertRepository`. Track per-(rule-id, action-index) last-fire epoch in service state.
+          Seed default automation rules (low-SoC, device-stale, inverter-fault) as `notify`+`alert`
+          actions on first start (replacing `AlertService.seed_rules`).
+        - [ ] **L03e-5c · API: remove alert-rules CRUD; keep inbox + channels** — Delete
+          `GET/PUT/DELETE /api/alert-rules` and `GET /api/alert-rules/options` endpoints. Keep all
+          `/api/alerts` inbox endpoints (ack/snooze) and all `/api/alert-channels` endpoints.
+          Update `/api/automation/options` to return available notification channels + severity list.
+          Remove `AlertService` from `lifespan`; `AutomationService` handles evaluation.
+        - [ ] **L03e-5d · Frontend: automation editor gets notify/alert actions; Alerts page = inbox only** —
+          Action-type picker in the rule editor ("Set setting" / "Send notification" / "Create in-app alert").
+          For `notify`: channel multi-select, message, severity, debounce field. For `alert`: severity,
+          message, debounce. Remove the Rules tab from the Alerts page (rule authoring is in Automation);
+          Alerts page becomes inbox-only (active/history, ack/snooze, bell badge unchanged). Remove
+          alert-rules API calls from `api.service.ts`.
+        - [ ] **L03e-5e · Remove alerts engine + service** — Delete `backend/app/alerts/engine.py`
+          and `backend/app/alerts/service.py`. Update `alerts/__init__.py`. Delete or fold
+          `test_alert_engine.py` and `test_alert_api.py` alert-rules tests (inbox + channel tests stay).
+          Update `main.py` imports. `compare` now lives in `automation/rules.py`.
 - [-] **L04 · More vendors / protocol families** — Growatt/Solis/Sungrow/… (new YAML each);
   generic SunSpec profile; text-command family (Voltronic/Must) + Victron family each carry a
   one-time transport+profile-contract cost, then siblings are cheap. *Refs: §20.*

@@ -15,6 +15,10 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Literal
 
+# compare() now lives in automation.rules (canonical home); re-exported here for compat
+# until AlertEngine is retired in L03e-5e.
+from ..automation.rules import compare  # noqa: F401
+
 AlertEvent = Literal["fire", "clear"]
 
 # Synthetic metric keys the service resolves specially (everything else is a canonical metric).
@@ -22,23 +26,6 @@ METRIC_STALE_S = "__stale_s__"        # seconds since the device's last reading 
 METRIC_FAULT_COUNT = "__fault_count__"  # number of active inverter fault codes
 
 _OPS = {"lt", "le", "gt", "ge", "eq", "ne"}
-
-
-def compare(value: float, op: str, threshold: float) -> bool:
-    """The raw firing condition `value <op> threshold`."""
-    if op == "lt":
-        return value < threshold
-    if op == "le":
-        return value <= threshold
-    if op == "gt":
-        return value > threshold
-    if op == "ge":
-        return value >= threshold
-    if op == "eq":
-        return value == threshold
-    if op == "ne":
-        return value != threshold
-    raise ValueError(f"unknown operator {op!r}")
 
 
 def in_quiet_hours(quiet_hours: tuple[int, int] | None, dt: datetime) -> bool:

@@ -18,6 +18,7 @@ from .planner import (
     plan_timer,
 )
 from .rules import (
+    ACTION_TYPES,
     Action,
     AllowList,
     AutomationDecision,
@@ -27,6 +28,7 @@ from .rules import (
     ProposedChange,
     Target,
     allow_list_from_schema,
+    compare,
     evaluate_condition,
     evaluate_rules,
     rule_matches,
@@ -40,6 +42,7 @@ __all__ = [
     "overnight_target_soc_pct",
     "peak_window",
     "plan_timer",
+    "ACTION_TYPES",
     "Action",
     "AllowList",
     "AutomationDecision",
@@ -49,6 +52,7 @@ __all__ = [
     "ProposedChange",
     "Target",
     "allow_list_from_schema",
+    "compare",
     "evaluate_condition",
     "evaluate_rules",
     "rule_matches",

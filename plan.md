@@ -559,6 +559,8 @@ A rule-driven alerting subsystem (the original Phase-6 one-liner, fleshed out �
 - **Alert inbox & history** — active + acknowledged alerts, past-firing log, snooze/ack; surfaced via a header bell badge.
 - **Sensible defaults shipped on** — low-SoC, source-offline/stale-data, inverter-fault — all editable.
 
+**Architecture revision (L03e-5):** The standalone alert-rule engine (`AlertRule`, `AlertEngine`, `AlertService`) is retired in favour of the §18 automation engine, which now supports `notify` and `alert` action types alongside the existing `set_setting` type. Rule authoring moves to the Automation page. The notification channels (`alerts/channels.py`) and the alert inbox (database rows, ack/snooze, bell badge) remain; they are now driven by automation rules. Default alert rules become seeded automation rules. The `/api/alert-rules` CRUD endpoints are removed; the inbox endpoints (`/api/alerts`, ack/snooze) stay.
+
 ## 16. Inverter Alarms & Fault Decoding
 
 Beyond `inverter_status`, real inverters expose **fault/alarm bitfields and run-state codes** users depend on for diagnosis:
@@ -581,7 +583,9 @@ The natural high-value extension once monitoring + forecast + control + tariffs 
 - **Tariff + forecast optimization** — combine §5 tariffs and §6 forecast into a proposed daily timer plan that minimizes cost / maximizes self-consumption.
 - **User-authored rules too** — beyond the built-in cost-arbitrage planner, condition→action rules the user combines (day-of-week, time/date/season, metric thresholds, tariff window), each rule and action **prioritised** (highest wins a conflicting write) and **armed individually** (both default off; a disabled rule/action is shown as a live preview — "would set X now, if running").
 - **One gate, on writes only.** Building, previewing and arming rules needs **no flag** — automation is always available. Anything that *writes an inverter register* (the planner's apply, a rule's "set setting" action, the background scheduler) runs entirely on the **§12 safeguards** (validate→write→read-back→audit) and is gated by the single **`SOLARVOLT_ENABLE_CONTROL`** flag — the same switch that guards all write-back. There is **no separate automation flag**. **Suggest/preview is always available; apply is opt-in via control.**
-- **Non-write actions are ungated.** Automation actions that touch no register — **send a notification** (the §15 channel seam) or **POST an outbound webhook** (§9) — run whenever their rule is armed, even on a monitoring-only deploy with control off.
+- **Non-write actions are ungated.** Automation actions that touch no register — **send a notification** (`notify` action type, the §15 channel seam: email/Telegram/ntfy/Gotify/Pushover/webhook), **create an in-app alert** (`alert` action type, written to the inbox with ack/snooze/badge) — run whenever their rule/action is armed, even on a monitoring-only deploy with control off. These action types absorb the standalone §15 alert-rule system: one rule engine, one editor, all output types.
+- **Debounce on notify/alert actions.** A `debounce_s` field on each notify/alert action prevents re-firing within the window; the service tracks per-action last-fire time. Without debounce, a matched condition would dispatch on every scheduler tick.
+- **Synthetic metrics in the eval context.** The two system-state metrics the old alert engine resolved specially — `__stale_s__` (seconds since last reading) and `__fault_count__` (active inverter fault codes) — are injected into the automation `EvalContext.metrics` by the service, so users can create "device offline" or "inverter fault" automation conditions using the existing `metric` condition kind.
 - Sequenced **after** Control (in "Later") — the schema-driven settings + forecast + tariffs are deliberately laid so this slots in with no core changes.
 
 ## 19. Operational & UX Essentials

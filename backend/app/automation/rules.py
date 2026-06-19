@@ -1,21 +1,21 @@
 """Rule-based automation engine — pure, suggest-first (plan.md §18; extends L03).
 
 Where `planner.py` is one built-in *strategy* (cost-arbitrage), this is the **user-authored**
-layer: condition→action rules that set inverter settings (e.g. "on weekends, set work-mode
-slot 1 target SoC to 80%"). Rules are **combinable** (every matching rule contributes its
-actions) and **prioritised** (on a conflicting write to the same field, the highest-priority
-rule wins). The whole module is pure — plain data in, a decision out — so the decision logic
-(a §21 critical surface) is unit-testable with known vectors; DB/clock/device/writes live in
-the wiring layers.
+layer: condition→action rules with three action types:
+  - ``set_setting``  — write an inverter register (gated by ENABLE_CONTROL, §12 safeguards).
+  - ``notify``       — dispatch a push notification via the §15 channel seam (ungated).
+  - ``alert``        — create an in-app inbox alert with ack/snooze (ungated).
 
-Safety model (per the product decision): an action only *applies* when **both** its rule and
-the action itself are affirmatively `enabled` (both default **off**). A disabled rule/action
-is still evaluated and surfaced as a **preview** — "this would set X right now, if running" —
-so the user can see what a rule would do before arming it. The set of writable targets is the
-**inverter profile's** allow-list; a target in the profile's automation-safe subset is `ok`,
-one that's writable-but-not-safe is `at_risk`, and one that isn't writable at all is `blocked`
-(never applied, even if armed). With no allow-list supplied the engine treats every target as
-`ok` (the wiring supplies the profile-derived list).
+Rules are **combinable** and **prioritised**: for ``set_setting`` the highest-priority matching
+action wins on a field conflict; ``notify``/``alert`` actions all fire independently.
+Disabled rules/actions produce previews but never fire.
+
+The ``compare`` helper lives here (moved from ``alerts.engine``); ``alerts.engine`` re-imports
+it for backwards-compat until the alert engine is retired in L03e-5e.
+
+EvalContext metrics include two synthetic keys resolved by the service:
+  ``__stale_s__``    — seconds since the device's last reading (offline/stale detection).
+  ``__fault_count__``— count of active inverter fault codes.
 """
 
 from __future__ import annotations
@@ -24,11 +24,29 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Iterable, Mapping, Sequence
 
-from ..alerts.engine import compare
 from ..tariff import RateSchedule
 
 CONDITION_KINDS = ("day_of_week", "time_window", "date_range", "metric", "tariff_window")
+ACTION_TYPES = ("set_setting", "notify", "alert")
 _MATCH_MODES = ("all", "any")
+_OPS = {"lt", "le", "gt", "ge", "eq", "ne"}
+
+
+def compare(value: float, op: str, threshold: float) -> bool:
+    """The raw firing condition ``value <op> threshold``."""
+    if op == "lt":
+        return value < threshold
+    if op == "le":
+        return value <= threshold
+    if op == "gt":
+        return value > threshold
+    if op == "ge":
+        return value >= threshold
+    if op == "eq":
+        return value == threshold
+    if op == "ne":
+        return value != threshold
+    raise ValueError(f"unknown operator {op!r}")
 
 
 # --- evaluation context --------------------------------------------------------
@@ -126,20 +144,56 @@ class Target:
 
 @dataclass(frozen=True, slots=True)
 class Action:
-    """Set `target` to `value`. Only applied when `enabled` (and its rule is enabled); otherwise
-    it's surfaced as a preview."""
+    """One action in an automation rule.
 
-    target: Target
-    value: Any
+    ``action_type`` selects the kind:
+      - ``set_setting``: write ``value`` to the settings ``target`` (gated by ENABLE_CONTROL).
+      - ``notify``: dispatch a push message via the §15 channel seam (ungated); uses ``channels``,
+        ``message``, ``severity``, ``debounce_s``.
+      - ``alert``: create an in-app inbox alert (ungated); uses ``message``, ``severity``,
+        ``debounce_s``.
+
+    Both rule and action must be ``enabled`` for the action to fire; otherwise it is a preview.
+    """
+
+    action_type: str = "set_setting"
+    target: Target | None = None   # set_setting only
+    value: Any = None              # set_setting only
     enabled: bool = False
+    channels: tuple[str, ...] = ()   # notify only
+    message: str = ""                # notify + alert
+    severity: str = "info"           # notify + alert
+    debounce_s: float = 0.0          # notify + alert
 
     @classmethod
     def from_dict(cls, d: Mapping[str, Any]) -> "Action":
-        return cls(target=Target.from_dict(d["target"]), value=d.get("value"),
-                   enabled=bool(d.get("enabled", False)))
+        action_type = str(d.get("action_type", "set_setting"))
+        if action_type not in ACTION_TYPES:
+            raise ValueError(f"unknown action_type {action_type!r}")
+        raw_target = d.get("target")
+        target = Target.from_dict(raw_target) if raw_target else None
+        return cls(
+            action_type=action_type,
+            target=target,
+            value=d.get("value"),
+            enabled=bool(d.get("enabled", False)),
+            channels=tuple(d.get("channels", []) or []),
+            message=str(d.get("message", "")),
+            severity=str(d.get("severity", "info")),
+            debounce_s=float(d.get("debounce_s", 0.0)),
+        )
 
     def to_dict(self) -> dict:
-        return {"target": self.target.to_dict(), "value": self.value, "enabled": self.enabled}
+        return {
+            "action_type": self.action_type,
+            "target": self.target.to_dict() if self.target else None,
+            "value": self.value,
+            "enabled": self.enabled,
+            "channels": list(self.channels),
+            "message": self.message,
+            "severity": self.severity,
+            "debounce_s": self.debounce_s,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -246,46 +300,80 @@ def rule_matches(rule: AutomationRule, ctx: EvalContext) -> bool:
 # --- decision ------------------------------------------------------------------
 @dataclass(frozen=True, slots=True)
 class ProposedChange:
-    """One action a matching rule wants to take. `active` is True only when the rule and the
-    action are both enabled (else it's a preview). `status` is the allow-list verdict; a change
-    is actually applied only when `active and status != 'blocked'` (see `will_apply`)."""
+    """One action a matching rule wants to take.
 
+    ``active`` is True only when the rule and action are both enabled.
+    For ``set_setting``: ``status`` is the allow-list verdict; ``will_apply`` requires
+      active *and* not blocked.
+    For ``notify``/``alert``: ``will_apply`` requires active only (no allow-list gate).
+    """
+
+    action_type: str              # set_setting | notify | alert
     rule_id: str
     rule_name: str
     priority: int
-    target: Target
-    value: Any
     active: bool
-    status: str  # ok | at_risk | blocked
+    # set_setting fields
+    target: Target | None = None
+    value: Any = None
+    status: str = "ok"            # ok | at_risk | blocked
+    # notify + alert fields
+    channels: tuple[str, ...] = ()
+    message: str = ""
+    severity: str = "info"
+    debounce_s: float = 0.0
 
     @property
     def will_apply(self) -> bool:
-        return self.active and self.status != "blocked"
+        if self.action_type == "set_setting":
+            return self.active and self.status != "blocked"
+        return self.active
 
     def as_dict(self) -> dict:
         return {
+            "action_type": self.action_type,
             "rule_id": self.rule_id, "rule_name": self.rule_name, "priority": self.priority,
-            "target": self.target.to_dict(), "value": self.value,
-            "active": self.active, "status": self.status, "will_apply": self.will_apply,
+            "target": self.target.to_dict() if self.target else None,
+            "value": self.value, "active": self.active, "status": self.status,
+            "channels": list(self.channels), "message": self.message,
+            "severity": self.severity, "debounce_s": self.debounce_s,
+            "will_apply": self.will_apply,
         }
 
 
 @dataclass(frozen=True, slots=True)
 class AutomationDecision:
-    """The merged outcome: `changes` are the winning per-target proposals (sorted), `overridden`
-    are proposals that lost a priority conflict (kept for transparency in the UI)."""
+    """The merged outcome of evaluating all rules.
+
+    ``changes``        — winning ``set_setting`` proposals (priority-resolved, sorted).
+    ``overridden``     — ``set_setting`` proposals that lost a priority conflict.
+    ``notifications``  — all matching ``notify`` actions (no conflict resolution).
+    ``in_app_alerts``  — all matching ``alert`` actions (no conflict resolution).
+    """
 
     changes: tuple[ProposedChange, ...] = ()
     overridden: tuple[ProposedChange, ...] = ()
+    notifications: tuple[ProposedChange, ...] = ()
+    in_app_alerts: tuple[ProposedChange, ...] = ()
 
     def settings_to_apply(self) -> tuple[ProposedChange, ...]:
-        """Just the winning changes that are armed and not blocked — what the apply path writes."""
+        """Armed, non-blocked set_setting winners — what the apply path writes."""
         return tuple(c for c in self.changes if c.will_apply)
+
+    def notify_actions(self) -> tuple[ProposedChange, ...]:
+        """Armed notify actions ready to dispatch."""
+        return tuple(n for n in self.notifications if n.active)
+
+    def alert_actions(self) -> tuple[ProposedChange, ...]:
+        """Armed alert actions ready to create inbox entries."""
+        return tuple(a for a in self.in_app_alerts if a.active)
 
     def as_dict(self) -> dict:
         return {
             "changes": [c.as_dict() for c in self.changes],
             "overridden": [c.as_dict() for c in self.overridden],
+            "notifications": [n.as_dict() for n in self.notifications],
+            "in_app_alerts": [a.as_dict() for a in self.in_app_alerts],
         }
 
 
@@ -295,42 +383,65 @@ def evaluate_rules(
     *,
     allow_list: AllowList | None = None,
 ) -> AutomationDecision:
-    """Evaluate every rule against `ctx`, gather the actions of the matching ones, then resolve
-    conflicts by priority. For each target field, the highest-priority matching action wins
-    (ties broken by the order rules are given — declare important rules first); the losers are
-    recorded in `overridden`. Allow-list status is stamped on every change.
+    """Evaluate every rule against ``ctx`` and collect its actions.
 
-    Disabled rules/actions are *included* (as non-`active` previews) so the UI can show what a
-    rule would do before it's armed — they simply never get `will_apply=True`."""
+    ``set_setting`` actions go through priority/conflict resolution: the highest-priority
+    matching action wins per target field (ties broken by declaration order); losers land in
+    ``overridden``. Disabled rules/actions are included as non-active previews.
+
+    ``notify`` and ``alert`` actions are collected without conflict resolution — all matching
+    ones are included so the service can dispatch them (with per-action debounce).
+    """
     winners: dict[tuple[str, str | None, str], ProposedChange] = {}
     overridden: list[ProposedChange] = []
+    notifications: list[ProposedChange] = []
+    in_app_alerts: list[ProposedChange] = []
 
     for rule in rules:
         if not rule_matches(rule, ctx):
             continue
+        active = rule.enabled
         for action in rule.actions:
-            status = allow_list.status(action.target.section, action.target.field) if allow_list else "ok"
-            change = ProposedChange(
-                rule_id=rule.id,
-                rule_name=rule.name,
-                priority=rule.priority,
-                target=action.target,
-                value=action.value,
-                active=rule.enabled and action.enabled,
-                status=status,
-            )
-            key = action.target.key
-            incumbent = winners.get(key)
-            if incumbent is None:
-                winners[key] = change
-            elif change.priority > incumbent.priority:
-                winners[key] = change
-                overridden.append(incumbent)
-            else:
-                overridden.append(change)
+            armed = active and action.enabled
+            if action.action_type == "set_setting":
+                if not action.target:
+                    continue  # skip incomplete actions (no target chosen yet)
+                status = allow_list.status(action.target.section, action.target.field) if allow_list else "ok"
+                change = ProposedChange(
+                    action_type="set_setting",
+                    rule_id=rule.id, rule_name=rule.name, priority=rule.priority,
+                    active=armed, target=action.target, value=action.value, status=status,
+                )
+                key = action.target.key
+                incumbent = winners.get(key)
+                if incumbent is None:
+                    winners[key] = change
+                elif change.priority > incumbent.priority:
+                    winners[key] = change
+                    overridden.append(incumbent)
+                else:
+                    overridden.append(change)
+            elif action.action_type == "notify":
+                notifications.append(ProposedChange(
+                    action_type="notify",
+                    rule_id=rule.id, rule_name=rule.name, priority=rule.priority, active=armed,
+                    channels=action.channels, message=action.message,
+                    severity=action.severity, debounce_s=action.debounce_s,
+                ))
+            elif action.action_type == "alert":
+                in_app_alerts.append(ProposedChange(
+                    action_type="alert",
+                    rule_id=rule.id, rule_name=rule.name, priority=rule.priority, active=armed,
+                    message=action.message, severity=action.severity, debounce_s=action.debounce_s,
+                ))
 
     ordered = sorted(
         winners.values(),
-        key=lambda c: (-c.priority, c.target.section, c.target.index or 0, c.target.field),
+        key=lambda c: (-c.priority, c.target.section if c.target else "", c.target.index or 0 if c.target else 0, c.target.field if c.target else ""),
     )
-    return AutomationDecision(changes=tuple(ordered), overridden=tuple(overridden))
+    return AutomationDecision(
+        changes=tuple(ordered),
+        overridden=tuple(overridden),
+        notifications=tuple(notifications),
+        in_app_alerts=tuple(in_app_alerts),
+    )

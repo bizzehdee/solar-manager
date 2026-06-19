@@ -113,6 +113,10 @@ describe('AutomationPage', () => {
     e.name = 'Cheap charge';
     fixture.componentInstance.addCondition();
     fixture.componentInstance.addAction();
+    // Set a valid target before saving (empty target now fails validation)
+    const action = fixture.componentInstance.editing()!.actions[0];
+    fixture.componentInstance.setTarget(action, 'timer_slots|target_soc_pct');
+    action.value = 80;
     fixture.componentInstance.saveRule();
 
     const put = http.expectOne((r) => r.method === 'PUT' && r.url === '/api/automation/rules/cheap_charge');

@@ -1,5 +1,6 @@
 """Pure rule-based automation engine (§18; extends L03) — conditions, combining, priority,
-the enable/preview semantics, and the profile allow-list. No DB/IO."""
+the enable/preview semantics, the profile allow-list, and the new notify/alert action types.
+No DB/IO."""
 
 from __future__ import annotations
 
@@ -14,6 +15,8 @@ from app.automation.rules import (
     Condition,
     EvalContext,
     Target,
+    allow_list_from_schema,
+    compare,
     evaluate_condition,
     evaluate_rules,
     rule_matches,
@@ -31,6 +34,16 @@ def _ctx(now=SAT, metrics=None, schedule=None) -> EvalContext:
 
 def _soc_action(index=1, value=80, enabled=True) -> Action:
     return Action(target=Target("timer_slots", "target_soc_pct", index), value=value, enabled=enabled)
+
+
+def _notify_action(channels=("webhook",), message="Low SoC", severity="warning", debounce_s=300.0, enabled=True) -> Action:
+    return Action(action_type="notify", channels=tuple(channels), message=message,
+                  severity=severity, debounce_s=debounce_s, enabled=enabled)
+
+
+def _alert_action(message="Low SoC", severity="warning", debounce_s=300.0, enabled=True) -> Action:
+    return Action(action_type="alert", message=message, severity=severity,
+                  debounce_s=debounce_s, enabled=enabled)
 
 
 # --- conditions ----------------------------------------------------------------
@@ -151,10 +164,10 @@ def test_priority_resolves_conflicts_on_the_same_target():
 def test_non_conflicting_actions_all_merge():
     cond = Condition("day_of_week", {"days": [5]})
     r1 = AutomationRule("a", "A", conditions=(cond,),
-                        actions=(Action(Target("timer_slots", "target_soc_pct", 1), 80, enabled=True),),
+                        actions=(Action(target=Target("timer_slots", "target_soc_pct", 1), value=80, enabled=True),),
                         enabled=True)
     r2 = AutomationRule("b", "B", conditions=(cond,),
-                        actions=(Action(Target("timer_slots", "target_soc_pct", 2), 60, enabled=True),),
+                        actions=(Action(target=Target("timer_slots", "target_soc_pct", 2), value=60, enabled=True),),
                         enabled=True)
     decision = evaluate_rules([r1, r2], _ctx(SAT))
     assert {c.target.index for c in decision.changes} == {1, 2}
@@ -170,9 +183,9 @@ def test_allow_list_marks_safe_at_risk_and_blocks():
     cond = Condition("day_of_week", {"days": [5]})
     safe_rule = AutomationRule("s", "s", conditions=(cond,), actions=(_soc_action(enabled=True),), enabled=True)
     risky = AutomationRule("k", "k", conditions=(cond,),
-                           actions=(Action(Target("globals", "max_charge_current"), 30, enabled=True),), enabled=True)
+                           actions=(Action(target=Target("globals", "max_charge_current"), value=30, enabled=True),), enabled=True)
     blocked = AutomationRule("x", "x", conditions=(cond,),
-                             actions=(Action(Target("globals", "grid_sell_enable"), 1, enabled=True),), enabled=True)
+                             actions=(Action(target=Target("globals", "grid_sell_enable"), value=1, enabled=True),), enabled=True)
     decision = evaluate_rules([safe_rule, risky, blocked], _ctx(SAT), allow_list=allow)
     status = {c.target.section + "." + c.target.field: c.status for c in decision.changes}
     assert status["timer_slots.target_soc_pct"] == "ok"
@@ -189,12 +202,29 @@ def test_rule_dict_round_trip():
         "id": "weekend", "name": "Weekend top-up", "match": "all", "priority": 3, "enabled": True,
         "conditions": [{"kind": "day_of_week", "params": {"days": [5, 6]}},
                        {"kind": "metric", "params": {"metric": "battery_soc_pct", "op": "lt", "threshold": 50}}],
-        "actions": [{"target": {"section": "timer_slots", "field": "target_soc_pct", "index": 1},
-                     "value": 80, "enabled": True}],
+        "actions": [{
+            "action_type": "set_setting",
+            "target": {"section": "timer_slots", "field": "target_soc_pct", "index": 1},
+            "value": 80, "enabled": True,
+            "channels": [], "message": "", "severity": "info", "debounce_s": 0.0,
+        }],
     }
     rule = AutomationRule.from_dict(d)
     assert rule.to_dict() == d
     assert rule.priority == 3 and rule.enabled is True
+
+
+def test_rule_dict_backwards_compat_no_action_type():
+    """Old rules stored without action_type default to set_setting."""
+    d = {
+        "id": "old", "name": "Old rule", "match": "all", "priority": 0, "enabled": False,
+        "conditions": [],
+        "actions": [{"target": {"section": "timer_slots", "field": "target_soc_pct", "index": 1},
+                     "value": 80, "enabled": False}],
+    }
+    rule = AutomationRule.from_dict(d)
+    assert rule.actions[0].action_type == "set_setting"
+    assert rule.actions[0].target is not None
 
 
 def test_invalid_match_mode_rejected():
@@ -241,3 +271,152 @@ def test_decision_as_dict_serialises():
     assert d["changes"][0]["value"] == 80 and d["changes"][0]["will_apply"] is True
     assert d["changes"][0]["target"]["section"] == "timer_slots"
     assert d["overridden"] == []
+    assert d["notifications"] == []
+    assert d["in_app_alerts"] == []
+
+
+# --- compare (moved from alerts.engine) ----------------------------------------
+def test_compare_all_operators():
+    assert compare(5.0, "lt", 10.0) is True
+    assert compare(10.0, "lt", 10.0) is False
+    assert compare(10.0, "le", 10.0) is True
+    assert compare(15.0, "gt", 10.0) is True
+    assert compare(10.0, "ge", 10.0) is True
+    assert compare(10.0, "eq", 10.0) is True
+    assert compare(10.0, "ne", 9.0) is True
+    with pytest.raises(ValueError):
+        compare(1.0, "bad_op", 0.0)
+
+
+# --- notify / alert action types -----------------------------------------------
+def test_notify_action_round_trip():
+    d = {
+        "action_type": "notify",
+        "target": None, "value": None, "enabled": True,
+        "channels": ["webhook", "telegram"], "message": "Low SoC",
+        "severity": "warning", "debounce_s": 300.0,
+    }
+    action = Action.from_dict(d)
+    assert action.action_type == "notify"
+    assert action.channels == ("webhook", "telegram")
+    assert action.message == "Low SoC"
+    assert action.debounce_s == 300.0
+    assert action.to_dict() == d
+
+
+def test_alert_action_round_trip():
+    d = {
+        "action_type": "alert",
+        "target": None, "value": None, "enabled": False,
+        "channels": [], "message": "Device offline",
+        "severity": "critical", "debounce_s": 60.0,
+    }
+    action = Action.from_dict(d)
+    assert action.action_type == "alert"
+    assert action.severity == "critical"
+    assert action.to_dict() == d
+
+
+def test_unknown_action_type_rejected():
+    with pytest.raises(ValueError):
+        Action.from_dict({"action_type": "fly_to_moon"})
+
+
+def test_notify_actions_collected_without_conflict_resolution():
+    cond = Condition("day_of_week", {"days": [5]})
+    r1 = AutomationRule("a", "A", conditions=(cond,), actions=(_notify_action(message="msg1"),), enabled=True)
+    r2 = AutomationRule("b", "B", conditions=(cond,), actions=(_notify_action(message="msg2"),), enabled=True)
+    decision = evaluate_rules([r1, r2], _ctx(SAT))
+    assert len(decision.notifications) == 2
+    msgs = {n.message for n in decision.notifications}
+    assert msgs == {"msg1", "msg2"}
+    assert decision.changes == ()  # no set_setting actions
+
+
+def test_alert_actions_collected_without_conflict_resolution():
+    cond = Condition("day_of_week", {"days": [5]})
+    r = AutomationRule("r", "R", conditions=(cond,),
+                       actions=(_alert_action(message="fault"), _alert_action(message="stale")),
+                       enabled=True)
+    decision = evaluate_rules([r], _ctx(SAT))
+    assert len(decision.in_app_alerts) == 2
+    assert {a.message for a in decision.in_app_alerts} == {"fault", "stale"}
+
+
+def test_notify_actions_filters_armed():
+    cond = Condition("day_of_week", {"days": [5]})
+    r = AutomationRule("r", "R", conditions=(cond,),
+                       actions=(_notify_action(enabled=True), _notify_action(enabled=False)),
+                       enabled=True)
+    decision = evaluate_rules([r], _ctx(SAT))
+    assert len(decision.notifications) == 2    # both in the list (preview semantics)
+    assert len(decision.notify_actions()) == 1  # only the armed one
+
+
+def test_alert_actions_filters_armed():
+    cond = Condition("day_of_week", {"days": [5]})
+    r = AutomationRule("r", "R", conditions=(cond,),
+                       actions=(_alert_action(enabled=False),), enabled=True)
+    decision = evaluate_rules([r], _ctx(SAT))
+    assert len(decision.in_app_alerts) == 1    # preview shown
+    assert decision.alert_actions() == ()       # not armed
+
+
+def test_disabled_rule_notify_action_is_preview():
+    cond = Condition("day_of_week", {"days": [5]})
+    r = AutomationRule("r", "R", conditions=(cond,), actions=(_notify_action(enabled=True),), enabled=False)
+    decision = evaluate_rules([r], _ctx(SAT))
+    assert decision.notifications[0].active is False
+    assert decision.notify_actions() == ()
+
+
+def test_set_setting_action_with_no_target_is_skipped():
+    """Incomplete set_setting actions (empty target from the editor) are silently dropped."""
+    cond = Condition("day_of_week", {"days": [5]})
+    r = AutomationRule("r", "R", conditions=(cond,),
+                       actions=(Action(action_type="set_setting", target=None, value=80, enabled=True),),
+                       enabled=True)
+    decision = evaluate_rules([r], _ctx(SAT))
+    assert decision.changes == ()
+
+
+def test_notify_alert_will_apply_equals_active():
+    """will_apply for notify/alert is just active (no allow-list gate)."""
+    from app.automation.rules import ProposedChange
+    armed = ProposedChange(action_type="notify", rule_id="r", rule_name="R", priority=0, active=True,
+                           channels=("webhook",))
+    disarmed = ProposedChange(action_type="alert", rule_id="r", rule_name="R", priority=0, active=False)
+    assert armed.will_apply is True
+    assert disarmed.will_apply is False
+
+
+def test_allow_list_from_schema_derives_safe_and_writable():
+    schema = {
+        "sections": [
+            {"key": "timer_slots", "fields": [
+                {"key": "target_soc_pct", "writable": True, "automation_safe": True},
+                {"key": "start_time", "writable": True},           # writable but not safe
+                {"key": "label", "writable": False},               # not writable at all
+            ]},
+        ]
+    }
+    al = allow_list_from_schema(schema)
+    assert al.status("timer_slots", "target_soc_pct") == "ok"
+    assert al.status("timer_slots", "start_time") == "at_risk"
+    assert al.status("timer_slots", "label") == "blocked"
+    assert allow_list_from_schema(None) == AllowList()
+    assert allow_list_from_schema({}) == AllowList()
+
+
+def test_mixed_action_types_in_one_rule():
+    cond = Condition("day_of_week", {"days": [5]})
+    r = AutomationRule("r", "R", conditions=(cond,),
+                       actions=(_soc_action(enabled=True), _notify_action(enabled=True), _alert_action(enabled=True)),
+                       enabled=True)
+    decision = evaluate_rules([r], _ctx(SAT))
+    assert len(decision.changes) == 1
+    assert len(decision.notifications) == 1
+    assert len(decision.in_app_alerts) == 1
+    assert len(decision.settings_to_apply()) == 1
+    assert len(decision.notify_actions()) == 1
+    assert len(decision.alert_actions()) == 1
