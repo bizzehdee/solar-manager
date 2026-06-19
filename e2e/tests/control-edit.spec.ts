@@ -39,6 +39,6 @@ test.describe('Settings control / write-back (control enabled, on the dummy)', (
     await expect(slotTable.locator('tbody tr').first()).toContainText('80');
     const recent = page.locator('.card', { hasText: 'Recent changes' });
     await expect(recent).toContainText('timer_slots slot 1');
-    await expect(recent.locator('.badge', { hasText: 'ok' })).toBeVisible();
+    await expect(recent.locator('.badge', { hasText: 'ok' }).first()).toBeVisible();
   });
 });
