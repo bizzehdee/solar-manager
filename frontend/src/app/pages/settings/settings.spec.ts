@@ -370,6 +370,55 @@ describe('SettingsPage', () => {
     expect(fixture.componentInstance.testing()).toBe(false);
   });
 
+  it('defaults to the Devices tab and renders six tabs', () => {
+    const fixture = TestBed.createComponent(SettingsPage);
+    fixture.detectChanges();
+    http.expectOne('/api/devices').flush({ devices: [device({ name: 'My Inverter' })] });
+    flushConfig();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.tab()).toBe('devices');
+    const tabs = (fixture.nativeElement as HTMLElement).querySelectorAll('.nav-tabs .nav-link');
+    expect(tabs.length).toBe(6);
+    // The default (Devices) tab content is rendered; the tariff card is not.
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain('My Inverter');
+    expect((fixture.nativeElement as HTMLElement).textContent).not.toContain('Import pricing');
+  });
+
+  it('switches tabs — selecting Tariff reveals its card', () => {
+    const fixture = TestBed.createComponent(SettingsPage);
+    fixture.detectChanges();
+    http.expectOne('/api/devices').flush({ devices: [] });
+    flushConfig();
+    fixture.detectChanges();
+
+    fixture.componentInstance.tab.set('tariff');
+    fixture.detectChanges();
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain('Import pricing');
+  });
+
+  it('embeds the Diagnostics page on the Diagnostics tab (loads its own data)', () => {
+    const fixture = TestBed.createComponent(SettingsPage);
+    fixture.detectChanges();
+    http.expectOne('/api/devices').flush({ devices: [] });
+    flushConfig();
+
+    // Not rendered until the tab is opened — no diagnostics request yet.
+    http.expectNone('/api/diagnostics');
+
+    fixture.componentInstance.tab.set('diagnostics');
+    fixture.detectChanges();
+    // The embedded DiagnosticsPage fires its own loads on init.
+    http.expectOne('/api/diagnostics').flush({
+      version: '9.9', schema_version: 1, poll_interval_s: 3, control_enabled: false,
+      database: { path: ':memory:', size_bytes: 1024 },
+      rollup: { lag_s: 0 }, alerts: { active_count: 0 }, devices: [],
+    });
+    http.expectOne((r) => r.url === '/api/grid-events').flush({ events: [] });
+    fixture.detectChanges();
+    expect((fixture.nativeElement as HTMLElement).querySelector('app-diagnostics')).toBeTruthy();
+  });
+
   it('saveForecast() PUTs site/arrays/battery to /api/forecast/config (T064)', () => {
     const fixture = TestBed.createComponent(SettingsPage);
     fixture.detectChanges();

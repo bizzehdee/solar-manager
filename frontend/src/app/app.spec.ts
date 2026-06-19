@@ -23,6 +23,7 @@ describe('App shell', () => {
       .match('/api/health')
       .forEach((r) => r.flush({ version: '9.9', devices: [], poll_interval_s: 3, status: 'ok', control_enabled: false }));
     expect(el.querySelector('.navbar-brand')?.textContent).toContain('SolarVolt');
-    expect(el.querySelectorAll('.app-sidebar .nav-link').length).toBe(8);
+    // Diagnostics moved into Settings (now a tab), so the sidebar has 7 entries.
+    expect(el.querySelectorAll('.app-sidebar .nav-link').length).toBe(7);
   });
 });

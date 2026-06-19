@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/api.service';
 import { PreferencesService } from '../../core/preferences.service';
 import { TranslatePipe } from '../../core/translate.pipe';
+import { DiagnosticsPage } from '../diagnostics/diagnostics';
 import {
   ArraySpec,
   DeviceConfig,
@@ -17,12 +18,27 @@ import {
 
 // Settings › Devices (plan.md §6, §11): the device registry. Lists configured devices and
 // offers an inline add/edit/delete form. Single-house deployment, no auth (CLAUDE.md).
+type SettingsTab = 'devices' | 'solar' | 'tariff' | 'notifications' | 'system' | 'diagnostics';
+
 @Component({
   selector: 'app-settings',
-  imports: [FormsModule, TranslatePipe],
+  imports: [FormsModule, TranslatePipe, DiagnosticsPage],
   template: `
-    <h4 class="mb-3"><i class="bi bi-gear"></i> {{ 'settings.devices.title' | translate }}</h4>
+    <h4 class="mb-3"><i class="bi bi-gear"></i> {{ 'settings.title' | translate }}</h4>
 
+    <ul class="nav nav-tabs mb-3" role="tablist">
+      @for (t of tabs; track t.id) {
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" type="button" role="tab"
+                  [class.active]="tab() === t.id" [attr.aria-selected]="tab() === t.id"
+                  (click)="tab.set(t.id)">
+            <i class="bi {{ t.icon }}"></i> {{ t.labelKey | translate }}
+          </button>
+        </li>
+      }
+    </ul>
+
+    @if (tab() === 'devices') {
     <div class="card mb-3">
       <div class="card-header">{{ 'settings.devices.configured' | translate }}</div>
       <div class="card-body p-0">
@@ -179,11 +195,13 @@ import {
         </form>
       </div>
     </div>
+    }
 
     <!-- Tariff & economics (T051/T052): standing charge + import (flat or time-of-use windows)
          + flat export + CO₂/system cost. Rates are per kWh and the standing charge per day, in
          major currency units (e.g. enter 0.293 for 29.3p, 0.6075 for 60.75p). -->
-    <div class="card mt-3">
+    @if (tab() === 'tariff') {
+    <div class="card">
       <div class="card-header"><i class="bi bi-cash-coin"></i> {{ 'settings.tariff.title' | translate }}</div>
       <div class="card-body">
         @if (tariffSaved()) {
@@ -270,9 +288,11 @@ import {
         </form>
       </div>
     </div>
+    }
 
     <!-- Backup & data (T091): download a full SQLite snapshot, restore from one, export history. -->
-    <div class="card mt-3">
+    @if (tab() === 'system') {
+    <div class="card">
       <div class="card-header"><i class="bi bi-database"></i> {{ 'settings.backup.title' | translate }}</div>
       <div class="card-body">
         @if (restoreMsg(); as msg) {
@@ -293,11 +313,13 @@ import {
         </p>
       </div>
     </div>
+    }
 
     <!-- Notification channels (L10): how fired alerts are pushed (in addition to the in-app inbox).
          Each channel is selectable per rule once configured. Off the hot path — a dead channel never
          blocks monitoring. Secrets are stored in the local DB (single-house, no-auth deployment). -->
-    <div class="card mt-3">
+    @if (tab() === 'notifications') {
+    <div class="card">
       <div class="card-header"><i class="bi bi-send"></i> Notification channels</div>
       <div class="card-body">
         @if (channelsMsg(); as msg) { <div class="alert alert-{{ msg.cls }} py-2">{{ msg.text }}</div> }
@@ -398,8 +420,10 @@ import {
         </p>
       </div>
     </div>
+    }
 
     <!-- Formatting & locale (T093): drives date/number formatting (applied on reload). -->
+    @if (tab() === 'system') {
     <div class="card mt-3">
       <div class="card-header"><i class="bi bi-translate"></i> {{ 'settings.locale.title' | translate }}</div>
       <div class="card-body">
@@ -422,15 +446,17 @@ import {
           </div>
         </div>
         <p class="small text-secondary mt-2 mb-0">
-          Currency is configured with the tariff above. The locale controls how dates and numbers
+          Currency is configured on the Tariff tab. The locale controls how dates and numbers
           are formatted, and the UI language where a translation is available (English otherwise).
         </p>
       </div>
     </div>
+    }
 
     <!-- Solar array & site (T064): drives the Phase 4 forecast model. Site location + overall
          derating, the PV array geometry (one row per string), and the battery operating window. -->
-    <div class="card mt-3">
+    @if (tab() === 'solar') {
+    <div class="card">
       <div class="card-header"><i class="bi bi-sun"></i> {{ 'settings.solar.title' | translate }}</div>
       <div class="card-body">
         @if (forecastSaved()) {
@@ -520,10 +546,29 @@ import {
         </form>
       </div>
     </div>
+    }
+
+    <!-- Diagnostics (T092): a read-only operational snapshot, embedded here (no longer a top-level
+         nav item). The component loads its own data when this tab is first opened. -->
+    @if (tab() === 'diagnostics') {
+      <app-diagnostics />
+    }
   `,
 })
 export class SettingsPage implements OnInit {
   private readonly api = inject(ApiService);
+
+  // Tabbed layout: each tab groups one concern. Diagnostics is embedded here (T092) rather than
+  // being its own sidebar entry. Devices is the default landing tab.
+  readonly tab = signal<SettingsTab>('devices');
+  readonly tabs: { id: SettingsTab; labelKey: string; icon: string }[] = [
+    { id: 'devices', labelKey: 'settings.tab.devices', icon: 'bi-hdd-network' },
+    { id: 'solar', labelKey: 'settings.tab.solar', icon: 'bi-sun' },
+    { id: 'tariff', labelKey: 'settings.tab.tariff', icon: 'bi-cash-coin' },
+    { id: 'notifications', labelKey: 'settings.tab.notifications', icon: 'bi-send' },
+    { id: 'system', labelKey: 'settings.tab.system', icon: 'bi-sliders' },
+    { id: 'diagnostics', labelKey: 'settings.tab.diagnostics', icon: 'bi-clipboard-pulse' },
+  ];
 
   readonly devices = signal<DeviceConfig[]>([]);
   readonly error = signal<string | null>(null);

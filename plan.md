@@ -332,11 +332,11 @@ A classic fixed admin layout built on **Bootstrap 5.3** (no heavyweight admin te
 - Graceful degradation: if the socket drops, status pill goes amber and the client falls back to polling `/api/live`.
 
 ### Views (sidebar nav)
-1. **Now** — energy-flow diagram (PV → house / battery / grid) using Bootstrap cards + semantic colors, live SoC & power gauges, connection health, and a **fault/alarm banner** when the inverter reports faults (§16). Optional battery-detail panel (SoH, cell voltages) when the BMS exposes it (§17).
+1. **Now** — the **`<energy-flow>` widget** (five-node solar/inverter/house/battery/grid topology with direction-aware animated flow; see Componentisation below), live SoC & power gauges, connection health, and a **fault/alarm banner** when the inverter reports faults (§16). Optional battery-detail panel (SoH, cell voltages) when the BMS exposes it (§17).
 2. **History** — selectable metrics, date range, resolution; stacked energy bars (day/month); **day/period comparison overlay** (yesterday, same day last year); KPI cards (self-consumption, self-sufficiency, peak, **cost saved, CO₂ avoided, ROI/payback** §19). CSV/Excel export of the current view.
 3. **Forecast** — tomorrow's expected generation curve, projected SoC line, "battery expected to reach X% by HH:MM", forecast-vs-actual accuracy.
 4. **Control / Device Settings** — **device-agnostic, schema-driven** page, **per writable device**. Renders entirely from the selected device's `settings_schema()` (§4): a generic form builder maps `Field`/`RepeatingGroup` → Bootstrap inputs (number/toggle/enum/time), so the **same page edits any device's writable settings**. For the Sunsynk inverter it shows the **6 work-mode timer slots** (time, target SoC, power, charge-from-grid, charge-from-gen) plus global timer enable & work mode. **BMS settings appear here too, in the right place per topology** (Decision #3): on the *inverter's* page if it relays writes, or on a *separate BMS device's* page if directly connected. Flow: load current settings → edit → client+server validation → **confirm dialog** → write → read-back → show confirmed state (or diff/rollback on mismatch). Devices without a schema (dummy, monitor-only, read-only BMS) simply don't show this page.
-5. **Settings** — **Devices** (add/edit/remove; pick vendor profile + transport + connection params; the dummy inverter is preconfigured), system spec, location, tariffs. UI panels driven by each device's advertised capabilities.
+5. **Settings** — a **tabbed** page grouping configuration by concern: **Devices** (add/edit/remove; pick vendor profile + transport + connection params; the dummy inverter is preconfigured), **Solar & battery** (forecast site/array/battery), **Tariff** (import/export/economics), **Notifications** (alert channels + outbound readings webhook), **System & data** (locale/formatting + backup/restore), and **Diagnostics** (the read-only operational snapshot — §19 — embedded here rather than a separate nav item). UI panels driven by each device's advertised capabilities.
 
 ### Build approach
 - **Angular 21 (standalone components) + TypeScript**, Bootstrap 5.3 added via styles (SCSS) rather than a heavyweight admin template.
@@ -362,6 +362,51 @@ The UI is built as **small, self-contained, reusable components**, not page-spec
 - **Configurable, not hard-coded.** Components are parameterised (units, colour role, thresholds, min/max) via inputs and use the theme's semantic colours — so the same `<gauge>` serves SoC, power, or temperature by configuration alone.
 - **Standalone components + `OnPush` change detection**, typed input/output models shared with the API DTOs, and **signals** for reactive local state. Each component ships with its own unit test; consider **Storybook** to develop/showcase the library in isolation (and double as visual regression).
 - **Smart/dumb keeps live-update isolated:** only container components subscribe to the WebSocket; presentational ones just re-render on input change — so reuse never drags data-fetching along.
+
+### The `<energy-flow>` widget (Now view centrepiece)
+The flagship presentational component on the Now page: a compact, square topology diagram of where
+energy is moving *right now*. Five nodes, four connecting lines, direction-aware animated flow.
+
+```
+   ┌─────────┐                 ┌─────────┐
+   │ ☀ Solar │                 │ ⌂ House │
+   └────╲────┘                 └────╱────┘
+         ╲                        ╱
+          ╲      ┌─────────┐     ╱
+           ╲─────│ ↯ Inv.  │────╱
+           ╱     └─────────┘    ╲
+          ╱                      ╲
+   ┌────╱────┐                 ┌──╲──────┐
+   │ ⚡ Batt │                 │ 🗲 Grid │
+   └─────────┘                 └─────────┘
+```
+
+- **Layout.** Inverter centre; **solar** top-left, **house** top-right, **battery** bottom-left,
+  **grid** bottom-right. A line connects each corner node to the inverter (corners never connect to
+  each other — all energy routes through the inverter). Square 1:1 aspect, scales to its container.
+- **Node ring colour** encodes per-node status, mapped to the standard Bootstrap semantic palette
+  (theme-aware, light/dark) — **green = `success`, red = `danger`, grey = `secondary`**:
+  - **Solar** — green producing (`pv_power_w > 0`), grey idle.
+  - **Battery** — green charging, red discharging, grey idle (sign of `battery_power_w`: +charge / −discharge per §4).
+  - **Grid** — green exporting, red importing, grey idle (sign of `grid_power_w`: +import / −export per §4).
+  - **House** — **always grey.** Load is a sink, not a source; colour would carry no directional meaning.
+  - **Inverter** — green online/connected, red fault or offline (from run-state / connection health, §16).
+- **Animated flow.** Each *active* edge carries motion travelling **in the energy-flow direction**
+  (solar→inverter, inverter→house, inverter↔battery and grid↔inverter flip with the sign). Direction
+  is read from motion, not decoded from a static arrowhead. Flow takes the **receiving** node's status
+  colour (green particles toward a charging battery; red away from a discharging one), reinforcing cause
+  and effect without a legend. **Magnitude is deliberately not encoded in the flow** — wattage already
+  lives in the adjacent power gauges/cards; the widget answers *where*, the gauges answer *how much*.
+- **Rendering.** Pure **SVG + Bootstrap CSS variables** (consistent with `<soc-gauge>`/`<power-gauge>`):
+  theme-aware for free (rings/flow read `--bs-success`/`--bs-danger`/`--bs-secondary`, so the widget
+  re-colours on the light/dark toggle with no redraw), and DOM-testable. Geometry is computed (node
+  positions + trimmed connector lines), not hand-authored path data; flow is animated in **CSS**
+  (chevrons travelling node→node along each active edge). Fed normalized metrics only — a dumb
+  presentational component (`@Input() metrics`, `@Input() inverterOnline`), no services, no HTTP; the
+  Now container subscribes to the WebSocket and feeds it.
+- **Reduced motion.** Respects `prefers-reduced-motion`: the travelling chevrons are suppressed and each
+  active edge shows a static directional dashed stroke + arrowhead instead; node ring colours remain
+  fully visible.
 
 ---
 

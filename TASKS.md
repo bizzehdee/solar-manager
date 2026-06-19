@@ -354,6 +354,10 @@ deferred — tracked under "Later — Integrations & notifications" below.*
   - `/api/diagnostics` + Diagnostics page: build/schema version, DB size, rollup lag, active
     alerts, and per-device online + Modbus comms stats (transactions/failures/retries, last
     error, RTT — tracked in `ModbusRtuSource`). *Refs: §7, §19.*
+  - **Update:** `DiagnosticsPage` is now embedded as the **Diagnostics tab inside Settings**
+    (the Settings page was split into tabs — Devices / Solar & battery / Tariff / Notifications /
+    System & data / Diagnostics) rather than a top-level sidebar item; `/diagnostics` redirects to
+    `settings`. The component is unchanged and loads its own data when the tab is first opened.
 - [x] **T093 · Localization & formatting** · Deps: T011
   - Configurable **locale** (drives date/number formatting) persisted in `app_config` +
     localStorage; `LOCALE_ID` resolved at bootstrap, formatting data for en-US/en-GB/de/fr/es
@@ -591,6 +595,44 @@ versioned releases.*
     (`metric-card`, `soc-gauge`, `time-series-chart`, `stat-card`) via a small widget registry.
   - *Notes:* larger UX effort (edit mode + layout model + a drag/grid lib, self-hosted per §8 —
     no CDN). Keep presentational widgets dumb; the dashboard config is just data. *Refs: §8.*
+
+- [x] **L14 · `<energy-flow>` widget — animated topology diagram on the Now page** · Deps: T018
+  - **Deliverable:** the five-node energy-flow widget specified in §8 (Componentisation): inverter
+    centre, **solar** top-left / **house** top-right / **battery** bottom-left / **grid** bottom-right,
+    each corner connected to the inverter by a line; node **ring colours** green/red/grey by per-node
+    status; **direction-aware animated flow** along each active edge in the energy-flow direction.
+  - **State mapping** (from the canonical vocabulary, §4 — never re-derive signs in the UI):
+    solar green producing (`pv_power_w > 0`) / grey idle; battery green charging / red discharging /
+    grey idle (sign of `battery_power_w`, +charge/−discharge); grid green exporting / red importing /
+    grey idle (sign of `grid_power_w`, +import/−export); **house always grey**; inverter green
+    online / red fault-or-offline (run-state / connection health, §16). Colours map to Bootstrap
+    `success`/`danger`/`secondary` (theme-aware, light & dark).
+  - **Presentational & dumb:** `app-energy-flow` takes `@Input() metrics` + `@Input() inverterOnline`,
+    no services/HTTP; the Now container feeds it from the existing WebSocket path. Render with
+    Canvas (generated geometry, not hand-authored SVG paths). **Magnitude is not encoded in the
+    flow** — the adjacent power gauges already show wattage (where vs. how much).
+  - **Done when:** the widget renders on the Now page, ring colours + flow direction track live
+    dummy metrics (every node/flow state reachable via the deterministic dummy), and
+    `prefers-reduced-motion` suppresses animation in favour of a static directional dashed stroke
+    while keeping ring colours. Unit tests cover the pure metric→{ring colour, flow direction} mapping
+    (incl. the sign boundaries and house-always-grey); a Playwright E2E asserts the widget appears and
+    its node states change across dummy scenarios. *Refs: §8 (Componentisation), §4, §16, §21.*
+  - **Done:** `shared/energy-flow.ts` (`<app-energy-flow>`) — dumb/presentational (`[metrics]` +
+    `[inverterOnline]` inputs, no services), so it drops straight into the L06 widget registry. Pure
+    `computeEnergyFlow()` does the metric→{ring colour, flow direction} mapping (signs read straight
+    from the canonical vocabulary, never re-derived); flow colour = the corner node's own status, the
+    house leg stays grey, and an offline inverter suppresses every flow. **SVG + Bootstrap CSS
+    variables** (not Canvas — theme-aware with no redraw, DOM-testable, consistent with the gauges):
+    HTML nodes carry the Bootstrap-Icon glyphs, an SVG layer draws the trimmed connector wires + a
+    tinted "lit" wire per active edge, and chevrons ride a CSS `offset-path` (`offset-rotate:auto`
+    aligns them to the travel direction) animating `offset-distance`. `prefers-reduced-motion` drops
+    the chevrons for a static arrowhead near the destination; rings stay coloured. Wired into the Now
+    page above the gauges; `inverterOnline` = a live reading with no active faults and not in a
+    fault/standby/shutdown run-state. Tests: `energy-flow.spec.ts` (7 pure-mapping incl. sign
+    boundaries/idle/offline/null + 4 DOM render/colour) — frontend suite 141 green; Now E2E asserts
+    five nodes, four wires, a green inverter ring and an active flow on the dummy; e2e 15 green.
+    *Gotcha logged:* Angular's per-property style bindings (`[style.offset-path]`, `[style.--ep]`)
+    silently no-op on these SVG `<path>` nodes — the offset-path must be written via `[attr.style]`.
 
 ## Later — Integrations & notifications (deferred from Phase 7, on request)
 

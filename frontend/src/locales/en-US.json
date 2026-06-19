@@ -1,6 +1,13 @@
 {
   "meta": { "id": "en-US", "label": "English (US)" },
   "strings": {
+    "settings.title": "Settings",
+    "settings.tab.devices": "Devices",
+    "settings.tab.solar": "Solar & battery",
+    "settings.tab.tariff": "Tariff",
+    "settings.tab.notifications": "Notifications",
+    "settings.tab.system": "System & data",
+    "settings.tab.diagnostics": "Diagnostics",
     "settings.devices.title": "Settings — Devices",
     "settings.devices.configured": "Configured devices",
     "settings.devices.none": "No devices configured yet.",

@@ -10,6 +10,7 @@ export const routes: Routes = [
   { path: 'automation', loadComponent: () => import('./pages/automation/automation').then((m) => m.AutomationPage), title: 'Automation' },
   { path: 'alerts', loadComponent: () => import('./pages/alerts/alerts').then((m) => m.AlertsPage), title: 'Alerts' },
   { path: 'settings', loadComponent: () => import('./pages/settings/settings').then((m) => m.SettingsPage), title: 'Settings' },
-  { path: 'diagnostics', loadComponent: () => import('./pages/diagnostics/diagnostics').then((m) => m.DiagnosticsPage), title: 'Diagnostics' },
+  // Diagnostics moved into Settings (its own tab); keep the old path as a redirect for bookmarks.
+  { path: 'diagnostics', redirectTo: 'settings' },
   { path: '**', redirectTo: 'now' },
 ];

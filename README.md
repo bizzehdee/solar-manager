@@ -15,8 +15,10 @@ and watch your panels, battery and grid in real time.
 
 ## What it does
 
-- **Live "Now" dashboard** — PV, battery SoC/power, grid import/export and load, updating
-  in real time over a WebSocket (falls back to polling if the socket drops).
+- **Live "Now" dashboard** — an at-a-glance **energy-flow diagram** (solar, battery, house, grid and
+  inverter, with animated arrows showing which way power is moving right now) plus PV, battery
+  SoC/power, grid import/export and load gauges — updating in real time over a WebSocket (falls back
+  to polling if the socket drops).
 - **History & charts** — every reading is logged to a local SQLite database, rolled up
   (5-minute / hourly / daily) and charted, with metric, resolution and date-range pickers.
 - **Multiple devices** — add, edit and remove devices from **Settings › Devices**; mix
@@ -63,7 +65,7 @@ and watch your panels, battery and grid in real time.
   and an **outbound readings webhook** posts each snapshot as JSON to a URL of your choice
   (Node-RED / IFTTT / custom). (MQTT / Home-Assistant discovery and PVOutput are on the roadmap.)
 - **Operational niceties** — **backup / restore** the database and **export any metric to CSV**;
-  a **Diagnostics** page (DB size, rollup lag, per-device Modbus comms health, grid-outage log);
+  a **Diagnostics** tab in Settings (DB size, rollup lag, per-device Modbus comms health, grid-outage log);
   **inverter clock drift** with one-click sync; a **performance-ratio calibration** that tunes the
   forecast from measured history; selectable **locale** for date/number formatting; and an
   **installable PWA** (add to home screen, rides out brief network blips) — all self-hosted.

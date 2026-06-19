@@ -7,12 +7,13 @@ import { DeviceClock, MetricValue } from '../../core/models';
 import { MetricCard } from '../../shared/metric-card';
 import { SocGauge } from '../../shared/soc-gauge';
 import { PowerGauge } from '../../shared/power-gauge';
+import { EnergyFlow } from '../../shared/energy-flow';
 
 // "Now" view (plan.md §8): live energy snapshot driven by the WebSocket. A container
 // component — it subscribes to LiveService and feeds the presentational gauge/cards.
 @Component({
   selector: 'app-now',
-  imports: [MetricCard, SocGauge, PowerGauge, DatePipe],
+  imports: [MetricCard, SocGauge, PowerGauge, EnergyFlow, DatePipe],
   template: `
     <h4 class="mb-3 d-flex align-items-center gap-2">
       Now
@@ -30,6 +31,13 @@ import { PowerGauge } from '../../shared/power-gauge';
     }
 
     @if (metrics(); as m) {
+      <!-- Energy-flow widget (L14): where energy is moving right now. -->
+      <div class="card mb-3">
+        <div class="card-body">
+          <app-energy-flow [metrics]="m" [inverterOnline]="inverterOnline()" />
+        </div>
+      </div>
+
       <!-- Live flows as circular gauges (battery SoC + the four power flows). -->
       <div class="row row-cols-2 row-cols-md-3 row-cols-xl-5 g-3 mb-3">
         <div class="col">
@@ -209,6 +217,15 @@ export class NowPage implements OnInit {
   readonly runState = computed<string | undefined>(() => {
     const v = this.metrics()?.['run_state'];
     return typeof v === 'string' ? v.replace(/_/g, ' ') : undefined;
+  });
+
+  /** Inverter connected/online (drives the energy-flow centre ring): a live reading with no active
+   *  faults and not in a fault/standby run-state. Feeds `<app-energy-flow>` (L14). */
+  readonly inverterOnline = computed<boolean>(() => {
+    if (!this.metrics()) return false;
+    if (this.faultCodes().length > 0) return false;
+    const rs = (this.metrics()?.['run_state'] as string | undefined)?.toLowerCase();
+    return rs !== 'fault' && rs !== 'standby' && rs !== 'shutdown';
   });
 
   /** Battery health is reported when SoH and/or cycle count are present (capability-gated). */
