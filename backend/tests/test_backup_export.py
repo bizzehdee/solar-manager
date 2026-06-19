@@ -31,7 +31,7 @@ def test_restore_roundtrips_a_backup(tmp_path):
         r = client.post("/api/restore", files={"file": ("b.sqlite", backup, "application/x-sqlite3")})
         assert r.status_code == 200 and r.json()["ok"] is True
         # App still works after the live DB was swapped.
-        assert client.get("/api/alert-rules").status_code == 200
+        assert client.get("/api/alerts").status_code == 200
 
 
 def test_restore_rejects_non_database(tmp_path):
