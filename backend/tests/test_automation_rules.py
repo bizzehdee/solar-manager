@@ -275,7 +275,7 @@ def test_decision_as_dict_serialises():
     assert d["in_app_alerts"] == []
 
 
-# --- compare (moved from alerts.engine) ----------------------------------------
+# --- compare ------------------------------------------------------------------
 def test_compare_all_operators():
     assert compare(5.0, "lt", 10.0) is True
     assert compare(10.0, "lt", 10.0) is False

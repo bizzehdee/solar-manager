@@ -10,8 +10,7 @@ Rules are **combinable** and **prioritised**: for ``set_setting`` the highest-pr
 action wins on a field conflict; ``notify``/``alert`` actions all fire independently.
 Disabled rules/actions produce previews but never fire.
 
-The ``compare`` helper lives here (moved from ``alerts.engine``); ``alerts.engine`` re-imports
-it for backwards-compat until the alert engine is retired in L03e-5e.
+The ``compare`` helper lives here (moved from the retired ``alerts.engine`` in L03e-5e).
 
 EvalContext metrics include two synthetic keys resolved by the service:
   ``__stale_s__``    — seconds since the device's last reading (offline/stale detection).
