@@ -16,7 +16,7 @@ import { DashboardHost } from '../../shared/dashboard-host';
   template: `
     @if (dashboard(); as d) {
       <h4 class="mb-3">{{ d.name }}</h4>
-      <app-dashboard-host [dashboard]="d" [data]="data.data()" />
+      <app-dashboard-host [dashboard]="d" [data]="data.data()" (layoutSaved)="onSaved(d, $event)" />
     } @else if (notFound()) {
       <div class="alert alert-warning">That dashboard doesn't exist.</div>
     } @else {
@@ -53,5 +53,10 @@ export class DashboardPage implements OnInit, OnDestroy {
       next: (d) => this.dashboard.set(d),
       error: () => this.notFound.set(true),
     });
+  }
+
+  /** Persist an edited layout for this user dashboard. */
+  onSaved(d: DashboardConfig, widgets: DashboardConfig['widgets']): void {
+    this.api.putDashboard(d.id, { name: d.name, widgets }).subscribe({ next: (saved) => this.dashboard.set(saved) });
   }
 }

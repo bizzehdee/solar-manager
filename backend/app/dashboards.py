@@ -63,10 +63,6 @@ class DashboardError(Exception):
     """Base for dashboard validation/protection errors."""
 
 
-class BuiltinProtected(DashboardError):
-    """Raised when a write/delete targets a builtin dashboard."""
-
-
 class DashboardNotFound(DashboardError):
     """Raised when an id matches neither a builtin nor a stored user dashboard."""
 
@@ -102,36 +98,49 @@ def _validate(dashboard_id: str, body: dict) -> dict:
 
 
 class DashboardStore:
-    """Builtins from code + user dashboards in app_config (one blob per `dashboard:<id>`)."""
+    """Builtins (seeded from code) + user dashboards, both overlaid by app_config (one blob per
+    `dashboard:<id>`). A builtin id can carry a **personalised override** in app_config — it keeps
+    its `builtin` flag and its code seed is preserved as the reset target (delete drops the override).
+    """
 
     def __init__(self, app_config) -> None:
         self._cfg = app_config
 
+    def _as_builtin(self, dashboard_id: str, stored: dict) -> dict:
+        """A stored override for a builtin keeps the builtin flag + canonical id."""
+        return {**stored, "id": dashboard_id, "builtin": True}
+
     async def list(self) -> list[dict]:
-        """All dashboards: builtins first (in declaration order), then user dashboards by name."""
+        """Builtins first (in declaration order; personalised override wins), then user dashboards by name."""
         stored = await self._cfg.list_prefix(KEY_PREFIX)
-        users = sorted(stored.values(), key=lambda d: str(d.get("name", "")).lower())
-        return list(BUILTINS.values()) + users
+        result: list[dict] = []
+        for bid, seed in BUILTINS.items():
+            override = stored.get(KEY_PREFIX + bid)
+            result.append(self._as_builtin(bid, override) if override else seed)
+        users = [v for k, v in stored.items() if k[len(KEY_PREFIX):] not in BUILTINS]
+        users.sort(key=lambda d: str(d.get("name", "")).lower())
+        return result + users
 
     async def get(self, dashboard_id: str) -> dict:
+        stored = await self._cfg.get(KEY_PREFIX + dashboard_id, None)
+        if stored is not None:
+            return self._as_builtin(dashboard_id, stored) if dashboard_id in BUILTINS else stored
         if dashboard_id in BUILTINS:
             return BUILTINS[dashboard_id]
-        stored = await self._cfg.get(KEY_PREFIX + dashboard_id, None)
-        if stored is None:
-            raise DashboardNotFound(dashboard_id)
-        return stored
+        raise DashboardNotFound(dashboard_id)
 
     async def put(self, dashboard_id: str, body: dict) -> dict:
-        """Create or replace a user dashboard. Raises BuiltinProtected for builtin ids,
-        ValueError for an invalid body."""
-        if dashboard_id in BUILTINS:
-            raise BuiltinProtected(dashboard_id)
+        """Create/replace a user dashboard, or store a personalised override for a builtin.
+        Raises ValueError for an invalid body."""
         dashboard = _validate(dashboard_id, body)
+        if dashboard_id in BUILTINS:
+            dashboard["builtin"] = True  # personalised builtin stays a builtin
         await self._cfg.set(KEY_PREFIX + dashboard_id, dashboard)
         return dashboard
 
     async def delete(self, dashboard_id: str) -> None:
-        if dashboard_id in BUILTINS:
-            raise BuiltinProtected(dashboard_id)
-        if not await self._cfg.delete(KEY_PREFIX + dashboard_id):
+        """User dashboard → remove it (404 if missing). Builtin → reset: drop any personalised
+        override (idempotent — the builtin itself is never removed)."""
+        removed = await self._cfg.delete(KEY_PREFIX + dashboard_id)
+        if not removed and dashboard_id not in BUILTINS:
             raise DashboardNotFound(dashboard_id)

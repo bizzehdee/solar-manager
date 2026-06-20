@@ -10,23 +10,23 @@ describe('mergeLayout', () => {
     { type: 'metric-gauge', x: 6, y: 0, w: 2, h: 2, config: { metric: 'battery_soc_pct' } },
   ];
 
-  it('maps saved nodes back onto widgets by gs-id, preserving type + config', () => {
+  it('applies node positions to widgets by gs-id, preserving order + type + config', () => {
     const nodes: GridStackNode[] = [
       { id: '1', x: 0, y: 0, w: 2, h: 2 },
       { id: '0', x: 0, y: 2, w: 6, h: 6 },
     ];
     const out = mergeLayout(widgets, nodes);
-    // Sorted by (y, x): the metric-gauge (now at 0,0) comes before the energy-flow (now at 0,2).
-    expect(out[0].type).toBe('metric-gauge');
-    expect(out[0].config).toEqual({ metric: 'battery_soc_pct' });
-    expect(out[0]).toMatchObject({ x: 0, y: 0, w: 2, h: 2 });
-    expect(out[1].type).toBe('energy-flow');
-    expect(out[1]).toMatchObject({ x: 0, y: 2, w: 6, h: 6 });
+    // Order is preserved (no reorder); each widget gets its matching node's position.
+    expect(out[0].type).toBe('energy-flow');
+    expect(out[0]).toMatchObject({ x: 0, y: 2, w: 6, h: 6 });
+    expect(out[1].type).toBe('metric-gauge');
+    expect(out[1].config).toEqual({ metric: 'battery_soc_pct' });
+    expect(out[1]).toMatchObject({ x: 0, y: 0, w: 2, h: 2 });
   });
 
-  it('drops nodes whose id does not match a widget', () => {
-    const out = mergeLayout(widgets, [{ id: '99', x: 0, y: 0, w: 2, h: 2 }]);
-    expect(out).toEqual([]);
+  it('preserves widgets whose id is not in the node set (no drop on partial/empty save)', () => {
+    expect(mergeLayout(widgets, [{ id: '99', x: 0, y: 0, w: 2, h: 2 }])).toEqual(widgets);
+    expect(mergeLayout(widgets, [])).toEqual(widgets); // empty save must not wipe the layout
   });
 
   it('falls back to the original position when a node omits a coordinate', () => {
@@ -70,5 +70,68 @@ describe('DashboardHost', () => {
     fixture.componentRef.setInput('dashboard', { id: 'x', name: 'X', builtin: false, widgets } as DashboardConfig);
     fixture.detectChanges();
     expect((fixture.nativeElement as HTMLElement).textContent).toContain('Unknown widget: does-not-exist');
+  });
+
+  // --- edit mode (T_DB7) ---
+  function editFixture() {
+    const widgets: DashboardWidget[] = [
+      { type: 'metric-card', x: 0, y: 0, w: 2, h: 2, config: { metric: 'pv_power_w', label: 'Solar' } },
+    ];
+    const fixture = TestBed.createComponent(DashboardHost);
+    fixture.componentRef.setInput('dashboard', { id: 'u', name: 'U', builtin: false, widgets } as DashboardConfig);
+    fixture.detectChanges();
+    return fixture;
+  }
+
+  it('adds a widget at its default size', () => {
+    const fixture = editFixture();
+    const host = fixture.componentInstance;
+    host.enterEdit();
+    host.addWidget('metric-gauge');
+    expect(host.items.length).toBe(2);
+    const added = host.items[1];
+    expect(added.type).toBe('metric-gauge');
+    expect(added.w).toBe(2); // metric-gauge default
+  });
+
+  it('removes a widget by index', () => {
+    const fixture = editFixture();
+    const host = fixture.componentInstance;
+    host.enterEdit();
+    host.removeAt(0);
+    expect(host.items.length).toBe(0);
+  });
+
+  it('save emits the current layout', () => {
+    const fixture = editFixture();
+    const host = fixture.componentInstance;
+    let emitted: DashboardWidget[] | undefined;
+    host.layoutSaved.subscribe((w) => (emitted = w));
+    host.enterEdit();
+    host.addWidget('metric-gauge');
+    host.save();
+    expect(host.editing()).toBe(false);
+    expect(emitted?.length).toBe(2);
+  });
+
+  it('discard reverts the draft to the loaded dashboard', () => {
+    const fixture = editFixture();
+    const host = fixture.componentInstance;
+    host.enterEdit();
+    host.addWidget('metric-gauge');
+    expect(host.items.length).toBe(2);
+    host.discard();
+    expect(host.editing()).toBe(false);
+    expect(host.items.length).toBe(1); // back to the original single widget
+  });
+
+  it('setConfig updates the selected widget config immutably', () => {
+    const fixture = editFixture();
+    const host = fixture.componentInstance;
+    host.enterEdit();
+    host.configure(0);
+    host.setConfig('label', 'PV');
+    expect(host.items[0].config['label']).toBe('PV');
+    expect(host.items[0].config['metric']).toBe('pv_power_w'); // others preserved
   });
 });

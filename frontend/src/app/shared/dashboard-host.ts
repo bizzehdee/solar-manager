@@ -5,109 +5,154 @@ import {
   ElementRef,
   OnDestroy,
   effect,
+  inject,
   input,
   output,
+  signal,
   viewChild,
 } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { GridStack, GridStackNode } from 'gridstack';
 
 import { DashboardConfig, DashboardData, DashboardWidget } from '../core/models';
-import { widgetDef } from './widget-registry';
+import { WIDGET_REGISTRY, widgetDef } from './widget-registry';
 
-// Pure layout host for L06 dashboards (T_DB2). Loads a DashboardConfig, lays its widgets out on a
-// 12-column GridStack, and — in edit mode — lets the user drag/resize, emitting the updated layout.
-// Deliberately knows *nothing* about widgets: it renders a placeholder per cell; T_DB3 swaps in the
-// widget registry. GridStack mutates the DOM directly, so the item list is snapshotted from the
-// input once per dashboard and never re-rendered by Angular while GridStack owns it.
+// Layout host + editor for L06 dashboards (T_DB2 + T_DB7). Loads a DashboardConfig, lays its
+// widgets out on a 12-column GridStack, and — in edit mode — supports drag/resize, add/remove and
+// per-widget configuration, emitting the new layout on Save. GridStack owns the DOM once laid out,
+// so the item list is snapshotted from the input and only re-rendered on structural changes
+// (add/remove/dashboard switch), after which GridStack is re-initialised.
 
 const COLUMNS = 12;
 
-/** Map GridStack's saved nodes back onto the original widgets (type/config preserved), using the
- *  `gs-id` we stamped as the widget's index. Pure + exported so it's unit-testable without a DOM. */
+/** Apply GridStack's saved node positions onto the widgets, matched by the `gs-id` we stamped as
+ *  the widget's index. Every widget is preserved (count + order kept) — only positions of reported
+ *  nodes are updated — so a partial/empty save (e.g. mid re-init) never drops widgets. Pure +
+ *  exported so it's unit-testable without a DOM. */
 export function mergeLayout(widgets: DashboardWidget[], nodes: GridStackNode[]): DashboardWidget[] {
-  return nodes
-    .map((n) => {
-      const orig = widgets[Number(n.id)];
-      if (!orig) return null;
-      return {
-        ...orig,
-        x: n.x ?? orig.x,
-        y: n.y ?? orig.y,
-        w: n.w ?? orig.w,
-        h: n.h ?? orig.h,
-      };
-    })
-    .filter((w): w is DashboardWidget => w !== null)
-    .sort((a, b) => a.y - b.y || a.x - b.x);
+  const byId = new Map(nodes.map((n) => [Number(n.id), n]));
+  return widgets.map((w, i) => {
+    const n = byId.get(i);
+    return n ? { ...w, x: n.x ?? w.x, y: n.y ?? w.y, w: n.w ?? w.w, h: n.h ?? w.h } : w;
+  });
 }
 
 @Component({
   selector: 'app-dashboard-host',
-  imports: [NgComponentOutlet],
+  imports: [NgComponentOutlet, FormsModule],
   template: `
+    <div class="d-flex flex-wrap gap-2 mb-2 align-items-center">
+      @if (!editing()) {
+        <button class="btn btn-sm btn-outline-secondary ms-auto" (click)="enterEdit()">
+          <i class="bi bi-pencil"></i> Edit
+        </button>
+      } @else {
+        <div class="dropdown">
+          <select class="form-select form-select-sm" #addSel (change)="addWidget(addSel.value); addSel.value=''">
+            <option value="" selected>+ Add widget…</option>
+            @for (t of widgetTypes; track t.type) {
+              <option [value]="t.type">{{ t.label }}</option>
+            }
+          </select>
+        </div>
+        <button class="btn btn-sm btn-primary ms-auto" (click)="save()"><i class="bi bi-save"></i> Save</button>
+        <button class="btn btn-sm btn-outline-secondary" (click)="discard()">Discard</button>
+      }
+    </div>
+
     <div class="grid-stack" #grid>
       @for (w of items; track $index) {
-        <div
-          class="grid-stack-item"
-          [attr.gs-id]="$index"
-          [attr.gs-x]="w.x"
-          [attr.gs-y]="w.y"
-          [attr.gs-w]="w.w"
-          [attr.gs-h]="w.h"
-        >
-          <div class="grid-stack-item-content">
+        <div class="grid-stack-item" [attr.gs-id]="$index"
+             [attr.gs-x]="w.x" [attr.gs-y]="w.y" [attr.gs-w]="w.w" [attr.gs-h]="w.h">
+          <div class="grid-stack-item-content position-relative">
+            @if (editing()) {
+              <div class="widget-edit-overlay position-absolute top-0 end-0 m-1 d-flex gap-1" style="z-index:5">
+                @if (defFor(w.type)?.configSchema?.length) {
+                  <button class="btn btn-sm btn-light border" (click)="configure($index)" aria-label="Configure widget">
+                    <i class="bi bi-gear"></i>
+                  </button>
+                }
+                <button class="btn btn-sm btn-light border text-danger" (click)="removeAt($index)" aria-label="Remove widget">
+                  <i class="bi bi-x-lg"></i>
+                </button>
+              </div>
+            }
             @if (defFor(w.type); as def) {
               <ng-container *ngComponentOutlet="def.component; inputs: def.inputs(w.config, data())" />
             } @else {
-              <div class="card h-100">
-                <div class="card-body d-flex align-items-center justify-content-center text-secondary small">
-                  Unknown widget: {{ w.type }}
-                </div>
-              </div>
+              <div class="card h-100"><div class="card-body d-flex align-items-center justify-content-center text-secondary small">
+                Unknown widget: {{ w.type }}
+              </div></div>
             }
           </div>
         </div>
       }
     </div>
+
+    <!-- Inline config panel for the selected widget (T_DB7). -->
+    @if (editing() && configIndex() !== null && items[configIndex()!]; as w) {
+      <div class="card mt-3">
+        <div class="card-header d-flex justify-content-between align-items-center py-2">
+          <span><i class="bi bi-gear"></i> Configure {{ defFor(w.type)?.label || w.type }}</span>
+          <button class="btn btn-sm btn-outline-secondary" (click)="configIndex.set(null)">Done</button>
+        </div>
+        <div class="card-body">
+          <div class="row g-3">
+            @for (f of defFor(w.type)?.configSchema || []; track f.key) {
+              <div class="col-12 col-md-4">
+                <label class="form-label small text-secondary" [attr.for]="'cfg-' + f.key">{{ f.label }}</label>
+                @if (f.type === 'metric') {
+                  <select [id]="'cfg-' + f.key" class="form-select form-select-sm"
+                          [ngModel]="configValue(w, f.key)" (ngModelChange)="setConfig(f.key, $event)">
+                    @for (m of metricOptions(w, f.key); track m) { <option [value]="m">{{ m }}</option> }
+                  </select>
+                } @else if (f.type === 'number') {
+                  <input [id]="'cfg-' + f.key" type="number" class="form-control form-control-sm"
+                         [ngModel]="configValue(w, f.key)" (ngModelChange)="setConfig(f.key, $event)" />
+                } @else {
+                  <input [id]="'cfg-' + f.key" class="form-control form-control-sm"
+                         [ngModel]="configValue(w, f.key)" (ngModelChange)="setConfig(f.key, $event)" />
+                }
+              </div>
+            }
+          </div>
+        </div>
+      </div>
+    }
   `,
 })
 export class DashboardHost implements AfterViewInit, OnDestroy {
   readonly dashboard = input.required<DashboardConfig>();
-  /** Edit mode: drag + resize enabled. View mode (default): the grid is static. */
-  readonly editable = input(false);
-  /** Cell height as a rem-based unit so rows track Bootstrap's spacing scale. */
   readonly cellHeight = input('5rem');
-
-  /** Live data fed to each widget via the registry's `inputs(config, data)` adapter. */
   readonly data = input<DashboardData>({ metrics: {} });
 
-  /** Emitted (in edit mode) whenever the user moves/resizes a widget. */
-  readonly layoutChange = output<DashboardWidget[]>();
-
-  /** Registry lookup for the template — `undefined` ⇒ render the unknown-widget placeholder. */
-  protected readonly defFor = widgetDef;
+  /** Emitted on Save with the edited layout — the page persists it. */
+  readonly layoutSaved = output<DashboardWidget[]>();
 
   private readonly gridEl = viewChild.required<ElementRef<HTMLElement>>('grid');
   private grid: GridStack | null = null;
 
-  /** Snapshot of the widgets currently rendered — taken per dashboard, not re-bound during edits. */
+  protected readonly defFor = widgetDef;
+  protected readonly widgetTypes = Object.entries(WIDGET_REGISTRY).map(([type, def]) => ({ type, label: def.label }));
+  readonly editing = signal(false);
+  readonly configIndex = signal<number | null>(null);
+
   items: DashboardWidget[] = [];
-  private renderedId: string | null = null;
+  private renderedRef: DashboardConfig | null = null;
+  private rebuildTimer?: ReturnType<typeof setTimeout>;
+  private destroyed = false;
 
   constructor() {
-    // Re-snapshot only when the dashboard identity changes (a new layout to lay out).
+    // Re-snapshot when a new dashboard object arrives (load or after save/discard reload).
     effect(() => {
       const d = this.dashboard();
-      if (d.id !== this.renderedId) {
-        this.renderedId = d.id;
-        this.items = d.widgets.map((w) => ({ ...w }));
+      if (d !== this.renderedRef) {
+        this.renderedRef = d;
+        this.items = d.widgets.map((w) => ({ ...w, config: { ...w.config } }));
+        this.editing.set(false);
+        this.configIndex.set(null);
         this.rebuild();
       }
-    });
-    // Toggle static/interactive as edit mode flips, without rebuilding.
-    effect(() => {
-      const editable = this.editable();
-      this.grid?.setStatic(!editable);
     });
   }
 
@@ -116,43 +161,105 @@ export class DashboardHost implements AfterViewInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.destroyed = true;
+    clearTimeout(this.rebuildTimer);
     this.grid?.destroy(false);
     this.grid = null;
   }
 
+  // --- edit actions ---
+  enterEdit(): void {
+    this.editing.set(true);
+    this.grid?.setStatic(false);
+  }
+
+  save(): void {
+    this.captureLayout();
+    this.editing.set(false);
+    this.configIndex.set(null);
+    this.grid?.setStatic(true);
+    this.layoutSaved.emit(this.items.map((w) => ({ ...w, config: { ...w.config } })));
+  }
+
+  discard(): void {
+    // Revert the draft to the loaded dashboard and leave edit mode.
+    this.items = this.dashboard().widgets.map((w) => ({ ...w, config: { ...w.config } }));
+    this.editing.set(false);
+    this.configIndex.set(null);
+    this.rebuild();
+  }
+
+  addWidget(type: string): void {
+    const def = widgetDef(type);
+    if (!def) return;
+    this.captureLayout();
+    const y = this.items.reduce((max, w) => Math.max(max, w.y + w.h), 0); // place at the bottom
+    this.items = [...this.items, { type, x: 0, y, w: def.defaultW, h: def.defaultH, config: {} }];
+    this.configIndex.set(null);
+    this.rebuild();
+  }
+
+  removeAt(i: number): void {
+    this.captureLayout();
+    this.items = this.items.filter((_, idx) => idx !== i);
+    this.configIndex.set(null);
+    this.rebuild();
+  }
+
+  configure(i: number): void {
+    this.configIndex.set(this.configIndex() === i ? null : i);
+  }
+
+  // --- config form helpers ---
+  configValue(w: DashboardWidget, key: string): unknown {
+    return w.config[key] ?? '';
+  }
+
+  setConfig(key: string, value: unknown): void {
+    const i = this.configIndex();
+    if (i === null) return;
+    // New config + item object so the widget's ngComponentOutlet inputs recompute.
+    const w = this.items[i];
+    const config = { ...w.config, [key]: value };
+    this.items = this.items.map((it, idx) => (idx === i ? { ...it, config } : it));
+  }
+
+  /** Metric dropdown options: live metric keys plus the widget's current value. */
+  metricOptions(w: DashboardWidget, key: string): string[] {
+    const keys = new Set(Object.keys(this.data().metrics));
+    const cur = w.config[key];
+    if (typeof cur === 'string' && cur) keys.add(cur);
+    return Array.from(keys).sort();
+  }
+
+  // --- GridStack lifecycle ---
   private init(): void {
-    if (this.grid) return;
+    if (this.grid || this.destroyed) return;
     try {
       this.grid = GridStack.init(
-        {
-          column: COLUMNS,
-          cellHeight: this.cellHeight(),
-          margin: '0.5rem',
-          float: true,
-          staticGrid: !this.editable(),
-        },
+        { column: COLUMNS, cellHeight: this.cellHeight(), margin: '0.5rem', float: true, staticGrid: !this.editing() },
         this.gridEl().nativeElement,
       );
-      this.grid.on('change', () => this.emitLayout());
+      this.grid.on('change', () => this.captureLayout());
     } catch {
-      // GridStack needs a real layout engine (ResizeObserver/getComputedStyle); in headless
-      // unit tests it may be unavailable. The placeholder markup still renders + is testable.
-      this.grid = null;
+      this.grid = null; // headless test env without a layout engine
     }
   }
 
-  /** Re-create the GridStack from the current `items` (after Angular has rendered them). */
   private rebuild(): void {
     if (!this.grid) return;
     this.grid.destroy(false);
     this.grid = null;
-    // Defer so Angular flushes the @for before GridStack re-reads the DOM.
-    queueMicrotask(() => this.init());
+    // Re-init on a macrotask so Angular has flushed the @for DOM changes first (otherwise
+    // GridStack reads a stale child set and a freshly-added widget isn't registered).
+    clearTimeout(this.rebuildTimer);
+    this.rebuildTimer = setTimeout(() => this.init(), 0);
   }
 
-  private emitLayout(): void {
+  /** Sync `items` with GridStack's current node positions (after a drag/resize or before a
+   *  structural change), so positions aren't lost. */
+  private captureLayout(): void {
     if (!this.grid) return;
-    const nodes = this.grid.save(false) as GridStackNode[];
-    this.layoutChange.emit(mergeLayout(this.items, nodes));
+    this.items = mergeLayout(this.items, this.grid.save(false) as GridStackNode[]);
   }
 }

@@ -96,10 +96,31 @@ def test_export_then_import_under_new_id():
         assert len(imported["widgets"]) == len(exported["widgets"])
 
 
-def test_builtin_writes_are_forbidden():
+def test_builtin_can_be_personalised_then_reset():
+    """A builtin keeps its flag but stores a personalised override; delete resets it to the seed."""
     with _client() as client:
-        assert client.put("/api/dashboards/now", json={"name": "x", "widgets": []}).status_code == 403
-        assert client.delete("/api/dashboards/history").status_code == 403
+        seed = client.get("/api/dashboards/now").json()
+        seed_count = len(seed["widgets"])
+
+        # Personalise: save a different layout under the builtin id.
+        r = client.put("/api/dashboards/now", json={"name": "Now", "widgets": [
+            {"type": "metric-card", "x": 0, "y": 0, "w": 2, "h": 2, "config": {"metric": "pv_power_w"}},
+        ]})
+        assert r.status_code == 200
+        assert r.json()["builtin"] is True  # still a builtin
+        assert len(client.get("/api/dashboards/now").json()["widgets"]) == 1
+        # Still listed first as a builtin (not duplicated into the user section).
+        ids = [d["id"] for d in client.get("/api/dashboards").json()["dashboards"]]
+        assert ids[:2] == ["now", "history"] and ids.count("now") == 1
+
+        # Reset (delete) restores the code seed.
+        assert client.delete("/api/dashboards/now").status_code == 204
+        assert len(client.get("/api/dashboards/now").json()["widgets"]) == seed_count
+
+
+def test_delete_builtin_without_override_is_noop():
+    with _client() as client:
+        assert client.delete("/api/dashboards/history").status_code == 204  # idempotent reset
 
 
 def test_delete_unknown_is_404():

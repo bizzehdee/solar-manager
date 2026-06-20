@@ -38,7 +38,7 @@ import { DashboardHost } from '../../shared/dashboard-host';
     }
 
     @if (dashboard(); as d) {
-      <app-dashboard-host [dashboard]="d" [data]="data.data()" />
+      <app-dashboard-host [dashboard]="d" [data]="data.data()" (layoutSaved)="onSaved(d, $event)" />
     } @else {
       <div class="text-secondary"><span class="spinner-border spinner-border-sm"></span> Loading dashboard…</div>
     }
@@ -132,9 +132,14 @@ export class NowPage implements OnInit {
     this.api.getDashboard('now').subscribe({ next: (d) => this.dashboard.set(d), error: () => {} });
   }
 
-  /** Restore the built-in's default layout (re-fetches the server-seeded config). */
+  /** Persist an edited layout as a personalised override of the built-in. */
+  onSaved(d: DashboardConfig, widgets: DashboardConfig['widgets']): void {
+    this.api.putDashboard('now', { name: d.name, widgets }).subscribe({ next: (saved) => this.dashboard.set(saved) });
+  }
+
+  /** Restore the built-in's default layout (drops any personalised override, then reloads). */
   reset(): void {
-    this.loadDashboard();
+    this.api.deleteDashboard('now').subscribe({ next: () => this.loadDashboard() });
   }
 
   /** Human drift: "in sync" under 1 s, else signed seconds (or minutes when large). */

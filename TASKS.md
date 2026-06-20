@@ -787,7 +787,7 @@ versioned releases.*
     + settings tab count; E2E `dashboards.spec.ts` (2: create→sidebar→delete; builtin has no delete)
     + retargeted `now.spec.ts` nav assertions. Frontend 166 green, e2e 21 green, build + no-CDN green.
 
-- [ ] **T_DB7 · Dashboard editor (drag-drop + widget management)** · Deps: T_DB6 · Required by: T_DB8
+- [x] **T_DB7 · Dashboard editor (drag-drop + widget management)** · Deps: T_DB6 · Required by: T_DB8
   - Edit-mode toggle button in the dashboard header (pencil icon). In edit mode:
     GridStack enables drag-and-drop + resize (snap to 12-col grid); a widget toolbar appears at
     top with "+ Add widget" (opens a picker: widget type → places it at the first free slot at
@@ -797,6 +797,20 @@ versioned releases.*
     Editing a built-in creates a personalised copy (stored in `app_config`) — the seed layout is
     preserved as the reset target. Tests: edit → save → reload preserves layout; discard reverts;
     add/remove widget round-trip.
+  - **Done:** `DashboardHost` is now a self-contained editor: an Edit toggle reveals an add-widget
+    picker (from the registry) + Save/Discard; GridStack goes interactive (drag/resize); each widget
+    gets ⚙ (configure) + × (remove) overlays in edit mode. The ⚙ opens an inline config panel built
+    from the widget's `configSchema` (metric fields render a dropdown of live metric keys; number/text
+    inputs otherwise). Save emits `(layoutSaved)`; the page `PUT`s it. **Backend personalisation:**
+    `DashboardStore` now overlays builtins with an app_config override (`PUT` to a builtin id stores a
+    personalised copy keeping `builtin:true`; `DELETE` = reset to the code seed). `main.py` drops the
+    builtin-write 403s; Now/History "Reset to default" now `DELETE`s the override. Fixed two host
+    robustness bugs found via E2E: `mergeLayout` now **preserves all widgets** (only applies matched
+    positions — an empty/partial GridStack `save()` during re-init no longer wipes the layout), and
+    re-init runs on a macrotask after Angular flushes the DOM (+ timer cleared on destroy). Tests:
+    host editor specs (add/remove/save/discard/setConfig), rewritten `mergeLayout` specs, backend
+    personalise/reset (`test_dashboards.py`, module 100%), E2E edit→add→save→reload round-trip.
+    Frontend 175 green, backend 375 green, e2e 22 green, build + no-CDN gate green.
 
 - [ ] **T_DB8 · Export / import JSON** · Deps: T_DB7
   - Export: the "Export JSON" action downloads `dashboard-<name>.json` (the raw `DashboardConfig`

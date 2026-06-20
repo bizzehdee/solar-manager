@@ -30,6 +30,43 @@ test.describe('Dashboard management', () => {
     await expect(card.getByRole('cell', { name: 'E2E Test Dash' })).toHaveCount(0);
   });
 
+  test('edit a user dashboard: add a widget, save, persists on reload', async ({ page }) => {
+    await page.goto('/');
+    await page.locator('.app-sidebar .nav-link', { hasText: 'Settings' }).click();
+    await page.locator('.nav-tabs .nav-link', { hasText: 'Dashboards' }).click();
+    const card = page.locator('.card', { hasText: 'Dashboards' });
+
+    // Create a fresh user dashboard and open it from the sidebar.
+    await card.getByRole('button', { name: /New/ }).click();
+    await page.locator('.modal #dlg-input').fill('Edit Round Trip');
+    await page.locator('.modal').getByRole('button', { name: 'Create' }).click();
+    await page.locator('.app-sidebar .nav-link', { hasText: 'Edit Round Trip' }).click();
+
+    // The user dashboard page renders its host.
+    const host = page.locator('app-dashboard-host');
+    await expect(page.getByRole('heading', { name: 'Edit Round Trip' })).toBeVisible();
+
+    // Enter edit mode, add a widget, and save.
+    await host.getByRole('button', { name: 'Edit' }).click();
+    await host.locator('select').selectOption('metric-gauge');
+    await expect(page.locator('.grid-stack-item')).toHaveCount(1);
+    const saveResp = page.waitForResponse((r) => r.url().includes('/api/dashboards/edit-round-trip') && r.request().method() === 'PUT');
+    await host.getByRole('button', { name: 'Save' }).click();
+    await saveResp;
+    await expect(page.locator('.grid-stack-item')).toHaveCount(1); // still there after save
+
+    // Reload the page — the saved widget is still there.
+    await page.reload();
+    await expect(page.locator('.grid-stack-item')).toHaveCount(1);
+
+    // Cleanup so the dashboard doesn't leak into other tests in the run.
+    await page.locator('.app-sidebar .nav-link', { hasText: 'Settings' }).click();
+    await page.locator('.nav-tabs .nav-link', { hasText: 'Dashboards' }).click();
+    const row = card.locator('tr', { hasText: 'Edit Round Trip' });
+    await row.locator('button.btn-outline-danger').click();
+    await page.locator('.modal').getByRole('button', { name: 'Delete' }).click();
+  });
+
   test('built-in dashboards cannot be deleted', async ({ page }) => {
     await page.goto('/');
     await page.locator('.app-sidebar .nav-link', { hasText: 'Settings' }).click();

@@ -35,6 +35,8 @@ const syncCalls: string[] = [];
 
 const fakeApi = {
   getDashboard: () => of(nowConfig),
+  putDashboard: () => of(nowConfig),
+  deleteDashboard: () => of(undefined),
   getDevices: () => of({ devices: [{ id: 'd1', ratings: { ac_power_w: 5000 } }] }),
   getDeviceClock: () => of(clockResponse),
   syncDeviceClock: (id: string) => {

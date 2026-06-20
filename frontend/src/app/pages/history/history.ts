@@ -21,7 +21,7 @@ import { DashboardHost } from '../../shared/dashboard-host';
     </div>
 
     @if (dashboard(); as d) {
-      <app-dashboard-host [dashboard]="d" />
+      <app-dashboard-host [dashboard]="d" (layoutSaved)="onSaved(d, $event)" />
     } @else {
       <div class="text-secondary"><span class="spinner-border spinner-border-sm"></span> Loading dashboard…</div>
     }
@@ -41,8 +41,13 @@ export class HistoryPage implements OnInit {
     this.api.getDashboard('history').subscribe({ next: (d) => this.dashboard.set(d), error: () => {} });
   }
 
-  /** Restore the built-in's default layout (re-fetches the server-seeded config). */
+  /** Persist an edited layout as a personalised override of the built-in. */
+  onSaved(d: DashboardConfig, widgets: DashboardConfig['widgets']): void {
+    this.api.putDashboard('history', { name: d.name, widgets }).subscribe({ next: (saved) => this.dashboard.set(saved) });
+  }
+
+  /** Restore the built-in's default layout (drops any personalised override, then reloads). */
   reset(): void {
-    this.loadDashboard();
+    this.api.deleteDashboard('history').subscribe({ next: () => this.loadDashboard() });
   }
 }

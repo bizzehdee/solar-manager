@@ -27,11 +27,7 @@ from . import control
 from .alerts.channels import SUPPORTED_CHANNELS, build_channels
 from .automation.service import AutomationService
 from .config import Settings
-from .dashboards import (
-    BuiltinProtected,
-    DashboardNotFound,
-    DashboardStore,
-)
+from .dashboards import DashboardNotFound, DashboardStore
 from .grid_events import GridEventService
 from .integrations import ReadingsWebhookService, MqttService
 from .devices.base import TransportError, system_clock
@@ -431,21 +427,19 @@ def create_app(
 
     @app.put("/api/dashboards/{dashboard_id}")
     async def put_dashboard(dashboard_id: str, body: dict = Body(...)) -> JSONResponse:
+        # Creates/updates a user dashboard, or saves a personalised override for a builtin.
         store: DashboardStore = app.state.dashboards
         try:
             return JSONResponse(await store.put(dashboard_id, body))
-        except BuiltinProtected:
-            raise HTTPException(status_code=403, detail="builtin dashboards are read-only") from None
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     @app.delete("/api/dashboards/{dashboard_id}")
     async def delete_dashboard(dashboard_id: str) -> Response:
+        # User dashboard → delete; builtin → reset to the seed layout (drops any override).
         store: DashboardStore = app.state.dashboards
         try:
             await store.delete(dashboard_id)
-        except BuiltinProtected:
-            raise HTTPException(status_code=403, detail="builtin dashboards cannot be deleted") from None
         except DashboardNotFound:
             raise HTTPException(status_code=404, detail="no such dashboard") from None
         return Response(status_code=204)

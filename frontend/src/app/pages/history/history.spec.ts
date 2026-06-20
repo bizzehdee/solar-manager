@@ -19,6 +19,8 @@ const historyConfig: DashboardConfig = {
 // calls they make on init too (empty metrics ⇒ no follow-up history fetch).
 const fakeApi = {
   getDashboard: () => of(historyConfig),
+  putDashboard: () => of(historyConfig),
+  deleteDashboard: () => of(undefined),
   getDailyStats: () => of(null),
   getHistoryMetrics: () => of({ device_id: 'd1', metrics: [] }),
 } as unknown as ApiService;
