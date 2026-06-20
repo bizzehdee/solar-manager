@@ -11,6 +11,7 @@ function diag(over: Partial<Diagnostics> = {}): Diagnostics {
     database: { path: 'solarvolt.db', size_bytes: 2_500_000 },
     rollup: { watermark_ts: 1_700_000_000, lag_s: 42 },
     alerts: { active_count: 1 },
+    network: null,
     devices: [
       { device_id: 'dummy', vendor: 'dummy', model: 'Sim', online: true, last_sample_age_s: 2, comms: null },
       { device_id: 'inv', vendor: 'sunsynk', model: 'SG05LP1', online: true, last_sample_age_s: 1,
@@ -48,6 +49,42 @@ describe('DiagnosticsPage', () => {
     expect(text).toContain('— (no wire)'); // dummy has no comms
     expect(text).toContain('timeout'); // last error surfaced
     expect(text).toContain('No grid loss/return events'); // empty grid timeline
+  });
+
+  it('renders the host Wi-Fi network card with SSID + signal', () => {
+    const fixture = TestBed.createComponent(DiagnosticsPage);
+    fixture.detectChanges();
+    http.expectOne('/api/diagnostics').flush(diag({
+      network: {
+        interface: 'wlan0', ip: '192.168.1.42', type: 'wifi', status: 'up',
+        wifi: { ssid: 'MyHomeWiFi', signal_dbm: -48, signal_pct: 96, link_quality: 62 },
+        ethernet: null,
+      },
+    }));
+    http.expectOne((r) => r.url === '/api/grid-events').flush({ events: [] });
+    fixture.detectChanges();
+    const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(text).toContain('Host network');
+    expect(text).toContain('192.168.1.42');
+    expect(text).toContain('MyHomeWiFi');
+    expect(text).toContain('96%');
+    expect(text).toContain('-48 dBm');
+  });
+
+  it('renders the host Ethernet network card with link speed', () => {
+    const fixture = TestBed.createComponent(DiagnosticsPage);
+    fixture.detectChanges();
+    http.expectOne('/api/diagnostics').flush(diag({
+      network: {
+        interface: 'eth0', ip: '10.0.0.5', type: 'ethernet', status: 'up',
+        wifi: null, ethernet: { name: 'eth0', link_speed_mbps: 1000 },
+      },
+    }));
+    http.expectOne((r) => r.url === '/api/grid-events').flush({ events: [] });
+    fixture.detectChanges();
+    const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(text).toContain('eth0');
+    expect(text).toContain('1000 Mbps');
   });
 
   it('renders the grid-outage timeline when events exist', () => {

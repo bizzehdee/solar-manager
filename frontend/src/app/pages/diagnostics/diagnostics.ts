@@ -44,6 +44,32 @@ import { Diagnostics, GridEvent } from '../../core/models';
         <span>DB path: <code>{{ d.database.path }}</code></span>
       </div></div>
 
+      <!-- Host network link (IP, status, Wi-Fi SSID/signal or Ethernet name/link speed). -->
+      @if (d.network; as net) {
+        <div class="card mb-3">
+          <div class="card-header d-flex align-items-center gap-2">
+            <i class="bi {{ net.type === 'wifi' ? 'bi-wifi' : net.type === 'ethernet' ? 'bi-ethernet' : 'bi-hdd-network' }}"></i>
+            Host network
+            @if (net.status) { <span class="badge text-bg-{{ isUp(net.status) ? 'success' : 'secondary' }} ms-auto text-capitalize">{{ net.status }}</span> }
+          </div>
+          <div class="card-body small d-flex flex-wrap gap-4">
+            <span>IP address: <strong>{{ net.ip || '—' }}</strong></span>
+            <span>Interface: <strong>{{ net.interface || '—' }}</strong> <span class="text-secondary">({{ net.type }})</span></span>
+            @if (net.wifi; as w) {
+              <span>SSID: <strong>{{ w.ssid || '—' }}</strong></span>
+              <span>Signal:
+                <strong>{{ w.signal_pct === null ? '—' : w.signal_pct + '%' }}</strong>
+                @if (w.signal_dbm !== null) { <span class="text-secondary">({{ w.signal_dbm }} dBm)</span> }
+              </span>
+            }
+            @if (net.ethernet; as e) {
+              <span>Link: <strong>{{ e.name || '—' }}</strong></span>
+              <span>Speed: <strong>{{ e.link_speed_mbps === null ? '—' : e.link_speed_mbps + ' Mbps' }}</strong></span>
+            }
+          </div>
+        </div>
+      }
+
       <div class="card">
         <div class="card-header"><i class="bi bi-hdd-network"></i> Devices</div>
         <div class="table-responsive">
@@ -114,6 +140,11 @@ export class DiagnosticsPage implements OnInit {
       error: () => (this.diag.set(null), this.loading.set(false)),
     });
     this.api.getGridEvents().subscribe({ next: (r) => this.gridEvents.set(r.events), error: () => {} });
+  }
+
+  /** Treat "up"/"connected" operstates as a healthy (green) link. */
+  isUp(status: string): boolean {
+    return status === 'up' || status === 'connected';
   }
 
   /** Bytes → human (KB/MB/GB). */

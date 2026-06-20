@@ -317,6 +317,7 @@ export interface Diagnostics {
   database: { path: string; size_bytes: number | null };
   rollup: { watermark_ts: number | null; lag_s: number | null };
   alerts: { active_count: number };
+  network: HostNetwork | null;
   devices: {
     device_id: string;
     vendor: string;
@@ -325,6 +326,16 @@ export interface Diagnostics {
     last_sample_age_s: number | null;
     comms: Record<string, unknown> | null;
   }[];
+}
+
+/** Host device's primary network link (Diagnostics). Fields are null when unavailable. */
+export interface HostNetwork {
+  interface: string | null;
+  ip: string | null;
+  type: 'wifi' | 'ethernet' | 'unknown';
+  status: string | null;
+  wifi: { ssid: string | null; signal_dbm: number | null; signal_pct: number | null; link_quality: number | null } | null;
+  ethernet: { name: string | null; link_speed_mbps: number | null } | null;
 }
 
 /** Grid loss/return event (plan.md §19 / T095) for the outage timeline. */

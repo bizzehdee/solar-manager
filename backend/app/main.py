@@ -29,6 +29,7 @@ from .automation.service import AutomationService
 from .config import Settings
 from .dashboards import DashboardNotFound, DashboardStore
 from .grid_events import GridEventService
+from .host_network import host_network
 from .integrations import ReadingsWebhookService, MqttService
 from .devices.base import TransportError, system_clock
 from .devices.factory import (
@@ -203,6 +204,10 @@ def create_app(
 
         watermark = await history.rollup_watermark()
         now_ts = app.state.clock().timestamp()
+        try:
+            network = host_network()
+        except Exception:  # never let a host-probe quirk break diagnostics
+            network = None
         health = {d["device_id"]: d for d in poller.health()["devices"]}
         devices = []
         for device in registry.devices:
@@ -226,6 +231,7 @@ def create_app(
                 "lag_s": round(now_ts - watermark, 1) if watermark else None,
             },
             "alerts": {"active_count": await app.state.alert_repo.active_count()},
+            "network": network,
             "devices": devices,
         })
 
