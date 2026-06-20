@@ -237,7 +237,16 @@ export class DashboardHost implements AfterViewInit, OnDestroy {
     if (this.grid || this.destroyed) return;
     try {
       this.grid = GridStack.init(
-        { column: COLUMNS, cellHeight: this.cellHeight(), margin: '0.5rem', float: true, staticGrid: !this.editing() },
+        {
+          column: COLUMNS,
+          // Responsive: collapse to a single stacked column on narrow (mobile) viewports so
+          // widgets stay full-width and readable instead of being crushed into 12 columns.
+          columnOpts: { breakpointForWindow: true, breakpoints: [{ w: 768, c: 1 }] },
+          cellHeight: this.cellHeight(),
+          margin: '0.5rem',
+          float: true,
+          staticGrid: !this.editing(),
+        },
         this.gridEl().nativeElement,
       );
       this.grid.on('change', () => this.captureLayout());

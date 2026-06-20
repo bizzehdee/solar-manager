@@ -98,25 +98,34 @@ def _validate(dashboard_id: str, body: dict) -> dict:
 
 
 class DashboardStore:
-    """Builtins (seeded from code) + user dashboards, both overlaid by app_config (one blob per
-    `dashboard:<id>`). A builtin id can carry a **personalised override** in app_config — it keeps
-    its `builtin` flag and its code seed is preserved as the reset target (delete drops the override).
+    """All dashboards live in app_config (one blob per `dashboard:<id>`) and are always read from
+    there, so user edits persist. The Now/History **builtins are seeded into the DB from the code
+    `BUILTINS` on first run**; the code seed is retained only as the **reset-to-default** target
+    (delete on a builtin rewrites the seed rather than removing the row).
     """
 
     def __init__(self, app_config) -> None:
         self._cfg = app_config
 
     def _as_builtin(self, dashboard_id: str, stored: dict) -> dict:
-        """A stored override for a builtin keeps the builtin flag + canonical id."""
+        """A stored builtin keeps its builtin flag + canonical id regardless of what was saved."""
         return {**stored, "id": dashboard_id, "builtin": True}
 
+    async def seed_builtins(self) -> None:
+        """Write the code seed for each builtin into the DB if it isn't there yet (first run /
+        new builtin in an upgrade). Never overwrites an existing (possibly user-edited) row."""
+        for bid, seed in BUILTINS.items():
+            if await self._cfg.get(KEY_PREFIX + bid, None) is None:
+                await self._cfg.set(KEY_PREFIX + bid, {**seed})
+
     async def list(self) -> list[dict]:
-        """Builtins first (in declaration order; personalised override wins), then user dashboards by name."""
+        """Builtins first (in declaration order), then user dashboards by name — all from the DB,
+        with the code seed as a defensive fallback if a builtin row is somehow absent."""
         stored = await self._cfg.list_prefix(KEY_PREFIX)
         result: list[dict] = []
         for bid, seed in BUILTINS.items():
-            override = stored.get(KEY_PREFIX + bid)
-            result.append(self._as_builtin(bid, override) if override else seed)
+            row = stored.get(KEY_PREFIX + bid)
+            result.append(self._as_builtin(bid, row) if row else seed)
         users = [v for k, v in stored.items() if k[len(KEY_PREFIX):] not in BUILTINS]
         users.sort(key=lambda d: str(d.get("name", "")).lower())
         return result + users
@@ -126,21 +135,22 @@ class DashboardStore:
         if stored is not None:
             return self._as_builtin(dashboard_id, stored) if dashboard_id in BUILTINS else stored
         if dashboard_id in BUILTINS:
-            return BUILTINS[dashboard_id]
+            return BUILTINS[dashboard_id]  # defensive: not seeded yet
         raise DashboardNotFound(dashboard_id)
 
     async def put(self, dashboard_id: str, body: dict) -> dict:
-        """Create/replace a user dashboard, or store a personalised override for a builtin.
-        Raises ValueError for an invalid body."""
+        """Create/replace a user dashboard, or save an edited builtin. Raises ValueError on a bad body."""
         dashboard = _validate(dashboard_id, body)
         if dashboard_id in BUILTINS:
-            dashboard["builtin"] = True  # personalised builtin stays a builtin
+            dashboard["builtin"] = True  # an edited builtin stays a builtin
         await self._cfg.set(KEY_PREFIX + dashboard_id, dashboard)
         return dashboard
 
     async def delete(self, dashboard_id: str) -> None:
-        """User dashboard → remove it (404 if missing). Builtin → reset: drop any personalised
-        override (idempotent — the builtin itself is never removed)."""
-        removed = await self._cfg.delete(KEY_PREFIX + dashboard_id)
-        if not removed and dashboard_id not in BUILTINS:
+        """User dashboard → remove it (404 if missing). Builtin → reset to the code seed (rewrite
+        the DB row; the builtin is never removed)."""
+        if dashboard_id in BUILTINS:
+            await self._cfg.set(KEY_PREFIX + dashboard_id, {**BUILTINS[dashboard_id]})
+            return
+        if not await self._cfg.delete(KEY_PREFIX + dashboard_id):
             raise DashboardNotFound(dashboard_id)

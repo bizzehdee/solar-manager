@@ -100,6 +100,7 @@ async def lifespan(app: FastAPI):
     app.state.audit_repo = audit_repo
     app.state.alert_repo = alert_repo
     app.state.dashboards = DashboardStore(app_config)
+    await app.state.dashboards.seed_builtins()  # Now/History → DB on first run (code seed = reset target)
     app.state.stats = StatsService(history_repo, app_config)
     weather = app.state.weather or OpenMeteoClient()
     app.state.weather = weather

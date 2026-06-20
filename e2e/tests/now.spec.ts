@@ -18,6 +18,19 @@ test.describe('Now dashboard (live, on the dummy)', () => {
     await expect(page.locator('app-dashboard-host .grid-stack')).toBeVisible();
   });
 
+  test('mobile viewport stacks widgets into a single column', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 800 });
+    await page.goto('/');
+    const items = page.locator('app-dashboard-host .grid-stack-item');
+    await expect(items.first()).toBeVisible();
+    // In 1-column mode every widget is left-aligned at the same x (stacked vertically).
+    const a = await items.nth(0).boundingBox();
+    const b = await items.nth(1).boundingBox();
+    expect(a && b).toBeTruthy();
+    expect(Math.abs((a!.x) - (b!.x))).toBeLessThan(5);
+    expect(b!.y).toBeGreaterThan(a!.y); // second widget is below the first, not beside it
+  });
+
   test('battery gauge updates from a live WebSocket reading', async ({ page }) => {
     await page.goto('/');
     // SoC is now a generic metric-gauge (a power-gauge with unit "%"); its value text appears

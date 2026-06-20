@@ -12,8 +12,54 @@ from fastapi.testclient import TestClient
 import pytest
 
 from app.config import Settings
-from app.dashboards import _validate
+from app.dashboards import DashboardStore, KEY_PREFIX, _validate
 from app.main import create_app
+
+
+class _FakeCfg:
+    """Minimal in-memory app_config for store-level tests."""
+
+    def __init__(self):
+        self.d = {}
+
+    async def get(self, k, default=None):
+        return self.d.get(k, default)
+
+    async def set(self, k, v):
+        self.d[k] = v
+
+    async def delete(self, k):
+        return self.d.pop(k, None) is not None
+
+    async def list_prefix(self, p):
+        return {k: v for k, v in self.d.items() if k.startswith(p)}
+
+
+async def test_seed_builtins_writes_seeds_once_without_clobbering_edits():
+    cfg = _FakeCfg()
+    store = DashboardStore(cfg)
+    await store.seed_builtins()
+    assert cfg.d[KEY_PREFIX + "now"]["id"] == "now"
+    assert cfg.d[KEY_PREFIX + "history"]["id"] == "history"
+
+    # Edit a builtin, then re-seed (e.g. next boot) — the edit is preserved.
+    cfg.d[KEY_PREFIX + "now"] = {"id": "now", "name": "Now", "builtin": True, "widgets": []}
+    await store.seed_builtins()
+    assert cfg.d[KEY_PREFIX + "now"]["widgets"] == []  # not overwritten
+
+
+async def test_get_builtin_falls_back_to_seed_before_seeding():
+    store = DashboardStore(_FakeCfg())  # empty DB, seed_builtins not called
+    assert (await store.get("now"))["id"] == "now"
+
+
+async def test_delete_builtin_rewrites_the_code_seed():
+    cfg = _FakeCfg()
+    store = DashboardStore(cfg)
+    await store.put("now", {"name": "Now", "widgets": []})  # personalise to empty
+    assert cfg.d[KEY_PREFIX + "now"]["widgets"] == []
+    await store.delete("now")  # reset
+    assert len(cfg.d[KEY_PREFIX + "now"]["widgets"]) > 0  # seed restored
 
 
 def _client() -> TestClient:
@@ -118,9 +164,11 @@ def test_builtin_can_be_personalised_then_reset():
         assert len(client.get("/api/dashboards/now").json()["widgets"]) == seed_count
 
 
-def test_delete_builtin_without_override_is_noop():
+def test_delete_builtin_resets_to_seed():
     with _client() as client:
-        assert client.delete("/api/dashboards/history").status_code == 204  # idempotent reset
+        assert client.delete("/api/dashboards/history").status_code == 204  # reset is idempotent
+        # Still present as a builtin afterwards (reset re-seeds, never removes).
+        assert client.get("/api/dashboards/history").json()["builtin"] is True
 
 
 def test_delete_unknown_is_404():
