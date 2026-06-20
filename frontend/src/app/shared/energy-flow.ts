@@ -173,11 +173,14 @@ function renderEdge(e: FlowEdge): RenderEdge {
   `,
   styles: [
     `
+    /* Fill the container as the largest centred square (grows with the cell; rings/icons scale via
+       the cqi units below). Height-driven with a width cap so it never overflows a wide-but-short cell. */
     .ef-widget {
       position: relative;
-      width: 100%;
-      max-width: 360px;
       aspect-ratio: 1;
+      height: 100%;
+      width: auto;
+      max-width: 100%;
       margin: 0 auto;
       container-type: inline-size;
     }

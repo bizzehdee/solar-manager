@@ -64,26 +64,30 @@ export function mergeLayout(widgets: DashboardWidget[], nodes: GridStackNode[]):
       @for (w of items; track $index) {
         <div class="grid-stack-item" [attr.gs-id]="$index"
              [attr.gs-x]="w.x" [attr.gs-y]="w.y" [attr.gs-w]="w.w" [attr.gs-h]="w.h">
-          <div class="grid-stack-item-content position-relative">
-            @if (editing()) {
-              <div class="widget-edit-overlay position-absolute top-0 end-0 m-1 d-flex gap-1" style="z-index:5">
-                @if (defFor(w.type)?.configSchema?.length) {
-                  <button class="btn btn-sm btn-light border" (click)="configure($index)" aria-label="Configure widget">
-                    <i class="bi bi-gear"></i>
+          <!-- The .grid-stack-item-content must keep GridStack's own positioning (its margin
+               insets size it); the position-relative anchor for the edit overlay lives one level in. -->
+          <div class="grid-stack-item-content">
+            <div class="dash-widget">
+              @if (editing()) {
+                <div class="dash-overlay d-flex gap-1">
+                  @if (defFor(w.type)?.configSchema?.length) {
+                    <button class="btn btn-sm btn-light border" (click)="configure($index)" aria-label="Configure widget">
+                      <i class="bi bi-gear"></i>
+                    </button>
+                  }
+                  <button class="btn btn-sm btn-light border text-danger" (click)="removeAt($index)" aria-label="Remove widget">
+                    <i class="bi bi-x-lg"></i>
                   </button>
-                }
-                <button class="btn btn-sm btn-light border text-danger" (click)="removeAt($index)" aria-label="Remove widget">
-                  <i class="bi bi-x-lg"></i>
-                </button>
-              </div>
-            }
-            @if (defFor(w.type); as def) {
-              <ng-container *ngComponentOutlet="def.component; inputs: def.inputs(w.config, data())" />
-            } @else {
-              <div class="card h-100"><div class="card-body d-flex align-items-center justify-content-center text-secondary small">
-                Unknown widget: {{ w.type }}
-              </div></div>
-            }
+                </div>
+              }
+              @if (defFor(w.type); as def) {
+                <ng-container *ngComponentOutlet="def.component; inputs: def.inputs(w.config, data())" />
+              } @else {
+                <div class="card h-100"><div class="card-body d-flex align-items-center justify-content-center text-secondary small">
+                  Unknown widget: {{ w.type }}
+                </div></div>
+              }
+            </div>
           </div>
         </div>
       }
@@ -243,7 +247,7 @@ export class DashboardHost implements AfterViewInit, OnDestroy {
           // widgets stay full-width and readable instead of being crushed into 12 columns.
           columnOpts: { breakpointForWindow: true, breakpoints: [{ w: 768, c: 1 }] },
           cellHeight: this.cellHeight(),
-          margin: '0.5rem',
+          margin: 6, // px gap between cells (unambiguous; keeps card borders from touching)
           float: true,
           staticGrid: !this.editing(),
         },

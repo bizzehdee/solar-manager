@@ -7,6 +7,32 @@
 @use 'bootstrap/scss/bootstrap' as *;
 @use 'bootstrap-icons/font/bootstrap-icons' as *;
 
+// ── Dashboard grid cells (L06): clip widget overflow to the cell + round corners so adjacent
+//    widgets never visually bleed into each other. NOTE: do not set `position` or sizing on
+//    `.grid-stack-item-content` — GridStack positions it absolutely and its margin insets create
+//    the gap between cells; overriding position collapses that gap. The inner `.dash-widget` is the
+//    relative anchor (for the edit overlay) and the flex column that lets widgets fill the cell. ──
+app-dashboard-host .grid-stack-item-content {
+  overflow: hidden;
+  border-radius: 0.375rem;
+}
+app-dashboard-host .dash-widget {
+  position: relative;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+app-dashboard-host .dash-widget > :not(.dash-overlay) {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+app-dashboard-host .dash-overlay {
+  position: absolute;
+  top: 0.25rem;
+  right: 0.25rem;
+  z-index: 5;
+}
+
 // ── Fixed admin layout (header / sidebar / footer; content is the only scroll region) ──
 $header-h: 56px;
 $footer-h: 32px;
