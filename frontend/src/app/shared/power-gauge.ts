@@ -7,7 +7,7 @@ import { Component, computed, input } from '@angular/core';
 @Component({
   selector: 'app-power-gauge',
   template: `<div class="text-center">
-    <svg viewBox="0 0 120 120" width="150" height="150" role="img" [attr.aria-label]="label()">
+    <svg viewBox="0 0 120 120" width="135" height="135" class="d-block mx-auto" role="img" [attr.aria-label]="label()">
       <circle cx="60" cy="60" r="52" fill="none" stroke="var(--bs-border-color)" stroke-width="12" />
       <circle cx="60" cy="60" r="52" fill="none" [attr.stroke]="'var(--bs-' + role() + ')'"
         stroke-width="12" stroke-linecap="round"
