@@ -44,6 +44,12 @@ describe('DashboardsService', () => {
     expect(svc.uniqueId('Garage')).toBe('garage-2'); // 'garage' taken
   });
 
+  it('uniqueName suffixes a colliding name', () => {
+    loadList();
+    expect(svc.uniqueName('Loft')).toBe('Loft');
+    expect(svc.uniqueName('Garage')).toBe('Garage (2)'); // 'Garage' taken
+  });
+
   it('create PUTs a blank dashboard under a slug id and refreshes', () => {
     loadList();
     svc.create('My Loft').subscribe();

@@ -1,5 +1,5 @@
 import { DashboardData } from '../core/models';
-import { WIDGET_REGISTRY, widgetDef } from './widget-registry';
+import { WIDGET_REGISTRY, widgetDef, unknownWidgetTypes } from './widget-registry';
 
 const data: DashboardData = {
   metrics: { battery_soc_pct: 55, pv_power_w: 3200, grid_power_w: -1500, grid_voltage_v: 240 },
@@ -64,5 +64,13 @@ describe('WIDGET_REGISTRY', () => {
   it('widgetDef returns undefined for an unknown type', () => {
     expect(widgetDef('nope')).toBeUndefined();
     expect(widgetDef('metric-gauge')).toBe(WIDGET_REGISTRY['metric-gauge']);
+  });
+
+  it('unknownWidgetTypes lists distinct types not in the registry', () => {
+    const widgets = [
+      { type: 'metric-gauge' }, { type: 'mystery' }, { type: 'metric-card' }, { type: 'mystery' },
+    ];
+    expect(unknownWidgetTypes(widgets)).toEqual(['mystery']);
+    expect(unknownWidgetTypes([{ type: 'metric-gauge' }])).toEqual([]);
   });
 });

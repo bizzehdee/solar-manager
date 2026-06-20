@@ -1,10 +1,12 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
 
 import { ApiService } from '../../core/api.service';
 import { DashboardsService } from '../../core/dashboards.service';
 import { DialogService } from '../../core/dialog.service';
 import { downloadDashboard, parseDashboard } from '../../core/dashboard-file';
+import { unknownWidgetTypes } from '../../shared/widget-registry';
 import { PreferencesService } from '../../core/preferences.service';
 import { TranslatePipe } from '../../core/translate.pipe';
 import { DiagnosticsPage } from '../diagnostics/diagnostics';
@@ -686,6 +688,7 @@ export class SettingsPage implements OnInit {
   private readonly api = inject(ApiService);
   readonly dashboards = inject(DashboardsService);
   private readonly dialog = inject(DialogService);
+  private readonly router = inject(Router);
   readonly dashboardsMsg = signal<{ cls: string; text: string } | null>(null);
 
   // Tabbed layout: each tab groups one concern. Diagnostics is embedded here (T092) rather than
@@ -830,23 +833,30 @@ export class SettingsPage implements OnInit {
     const file = input.files?.[0];
     if (!file) return;
     file.text().then((text) => {
+      input.value = '';
       let parsed: { name: string; widgets: DashboardConfig['widgets'] };
       try {
         parsed = parseDashboard(text);
-      } catch (e) {
-        this.flashDashboards('danger', (e as Error).message || 'Invalid dashboard file.');
-        input.value = '';
+      } catch {
+        this.flashDashboards('danger', "That file isn't a valid dashboard JSON.");
         return;
       }
-      const id = this.dashboards.uniqueId(parsed.name);
-      this.api.putDashboard(id, { name: parsed.name, widgets: parsed.widgets }).subscribe({
-        next: () => {
+      // Unknown widget types are a warning, not a hard error — they render a placeholder.
+      const unknown = unknownWidgetTypes(parsed.widgets);
+      const name = this.dashboards.uniqueName(parsed.name);
+      const id = this.dashboards.uniqueId(name);
+      this.api.putDashboard(id, { name, widgets: parsed.widgets }).subscribe({
+        next: (saved) => {
           this.dashboards.refresh();
-          this.flashDashboards('success', `Imported "${parsed.name}".`);
+          if (unknown.length) {
+            this.flashDashboards('warning', `Imported "${name}" — unknown widget type(s): ${unknown.join(', ')}.`);
+          } else {
+            this.flashDashboards('success', `Imported "${name}".`);
+            this.router.navigate(['dashboard', saved.id]); // jump to a clean import
+          }
         },
         error: () => this.flashDashboards('danger', 'Could not import the dashboard.'),
       });
-      input.value = '';
     });
   }
 

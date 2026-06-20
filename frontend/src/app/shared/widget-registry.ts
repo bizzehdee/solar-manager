@@ -170,3 +170,9 @@ export const WIDGET_REGISTRY: Record<string, WidgetDef> = {
 export function widgetDef(type: string): WidgetDef | undefined {
   return WIDGET_REGISTRY[type];
 }
+
+/** Distinct widget types in `widgets` that aren't in the registry (for import validation —
+ *  unknown types are a warning, not a hard error: they render an "Unknown widget" placeholder). */
+export function unknownWidgetTypes(widgets: { type: string }[]): string[] {
+  return [...new Set(widgets.filter((w) => !(w.type in WIDGET_REGISTRY)).map((w) => w.type))];
+}

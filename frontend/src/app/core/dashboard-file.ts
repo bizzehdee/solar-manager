@@ -1,15 +1,16 @@
 import { DashboardConfig } from './models';
+import { slugify } from './dashboards.service';
 
 // Dashboard JSON file helpers (L06 / T_DB6+T_DB8): the DashboardConfig wire format is the export
 // format. Download triggers a browser save; parse validates a user-supplied file shape.
 
-/** Trigger a browser download of a dashboard as `dashboard-<id>.json`. */
+/** Trigger a browser download of a dashboard as `dashboard-<name>.json`. */
 export function downloadDashboard(cfg: DashboardConfig): void {
   const blob = new Blob([JSON.stringify(cfg, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `dashboard-${cfg.id || 'export'}.json`;
+  a.download = `dashboard-${slugify(cfg.name) || cfg.id || 'export'}.json`;
   a.click();
   URL.revokeObjectURL(url);
 }

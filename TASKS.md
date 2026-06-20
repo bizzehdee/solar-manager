@@ -603,7 +603,7 @@ versioned releases.*
     so a fresh install reaches a useful state without hand-editing config. Settings already
     expose every piece (devices/forecast/tariff); this is the guided-flow wrapper. *Refs: §19.*
 
-- [-] **L06 · Dynamic dashboards** · Deps: T018, T045, T047
+- [x] **L06 · Dynamic dashboards** · Deps: T018, T045, T047  *(all sub-tasks T_DB1–T_DB8 complete)*
   - **Deliverable:** a 12-column widget grid (powered by `gridstack`, self-hosted via npm — no CDN)
     with two built-in dashboards (**Now** and **History**) and unlimited user-created dashboards.
     Edit mode exposes drag-and-drop repositioning (snap-to-grid), resize handles, add/remove widgets,
@@ -812,7 +812,7 @@ versioned releases.*
     personalise/reset (`test_dashboards.py`, module 100%), E2E edit→add→save→reload round-trip.
     Frontend 175 green, backend 375 green, e2e 22 green, build + no-CDN gate green.
 
-- [ ] **T_DB8 · Export / import JSON** · Deps: T_DB7
+- [x] **T_DB8 · Export / import JSON** · Deps: T_DB7
   - Export: the "Export JSON" action downloads `dashboard-<name>.json` (the raw `DashboardConfig`
     wire format from `GET /api/dashboards/{id}`). Import: the "Import" button in Settings ›
     Dashboards accepts a `.json` file, validates it client-side against the widget registry
@@ -820,6 +820,15 @@ versioned releases.*
     from the JSON; disambiguated with a suffix if it collides). A successfully imported dashboard
     is navigated to immediately. Tests: export → re-import produces identical layout; invalid JSON
     shows error; unknown widget type in import file shows warning but succeeds.
+  - **Done:** `downloadDashboard()` now names the file from the dashboard name slug. Import in
+    Settings › Dashboards: `parseDashboard()` validates the file shape (friendly error on bad JSON),
+    `unknownWidgetTypes()` (new registry helper) flags unregistered types as a **warning** (still
+    imported — they render the "Unknown widget" placeholder), name de-duped via
+    `DashboardsService.uniqueName()` + a unique slug id. A **clean** import navigates straight to the
+    new dashboard; an import with unknown types stays on the page so the warning is seen. Tests:
+    `dashboard-file.spec.ts` (parse valid/default/invalid), `unknownWidgetTypes` + `uniqueName` specs,
+    E2E export→re-import round-trip + invalid-JSON error + unknown-type-warns-but-creates. Frontend
+    181 green, e2e 24 green, build + no-CDN gate green.
 
 ## Later — Integrations & notifications (deferred from Phase 7, on request)
 

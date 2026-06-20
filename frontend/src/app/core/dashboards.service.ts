@@ -46,6 +46,15 @@ export class DashboardsService {
     while (taken.has(`${base}-${n}`)) n++;
     return `${base}-${n}`;
   }
+
+  /** `name`, made unique against existing dashboard names with a " (2)" suffix (for imports). */
+  uniqueName(name: string): string {
+    const taken = new Set(this.dashboards().map((d) => d.name));
+    if (!taken.has(name)) return name;
+    let n = 2;
+    while (taken.has(`${name} (${n})`)) n++;
+    return `${name} (${n})`;
+  }
 }
 
 export function slugify(name: string): string {

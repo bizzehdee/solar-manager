@@ -21,6 +21,11 @@ and watch your panels, battery and grid in real time.
   to polling if the socket drops).
 - **History & charts** — every reading is logged to a local SQLite database, rolled up
   (5-minute / hourly / daily) and charted, with metric, resolution and date-range pickers.
+- **Customisable dashboards** — "Now" and "History" are built-in dashboards on a drag-and-drop
+  grid. Hit **Edit** to rearrange, resize, add or remove widgets (gauges, metric cards, charts,
+  the energy-flow diagram) and pick which metric each one shows. Build **your own dashboards** too,
+  and **export/import** them as JSON files to share or back up. Built-ins can be tweaked and reset
+  to default any time.
 - **Multiple devices** — add, edit and remove devices from **Settings › Devices**; mix
   brands/models freely (each is just a profile). Adding one is point-and-click: pick the
   serial port from a list of detected adapters and the model from a profile dropdown, then

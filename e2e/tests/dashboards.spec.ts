@@ -1,4 +1,12 @@
 import { test, expect } from '@playwright/test';
+import { readFileSync } from 'fs';
+
+async function openDashboardsTab(page: import('@playwright/test').Page) {
+  await page.goto('/');
+  await page.locator('.app-sidebar .nav-link', { hasText: 'Settings' }).click();
+  await page.locator('.nav-tabs .nav-link', { hasText: 'Dashboards' }).click();
+  return page.locator('.card', { hasText: 'Dashboards' });
+}
 
 // L06 / T_DB6: dashboard switcher + management. Create a user dashboard, see it in the sidebar +
 // Settings list, then delete it. Built-ins (Now, History) have no delete control.
@@ -68,11 +76,56 @@ test.describe('Dashboard management', () => {
   });
 
   test('built-in dashboards cannot be deleted', async ({ page }) => {
-    await page.goto('/');
-    await page.locator('.app-sidebar .nav-link', { hasText: 'Settings' }).click();
-    await page.locator('.nav-tabs .nav-link', { hasText: 'Dashboards' }).click();
-
-    const nowRow = page.locator('.card', { hasText: 'Dashboards' }).locator('tr', { hasText: 'Now' });
+    const nowRow = (await openDashboardsTab(page)).locator('tr', { hasText: 'Now' });
     await expect(nowRow.locator('button.btn-outline-danger')).toHaveCount(0);
+  });
+
+  test('export then re-import reproduces the layout (T_DB8)', async ({ page }) => {
+    const card = await openDashboardsTab(page);
+
+    // Export the Now built-in (download → read its JSON).
+    const nowRow = card.locator('tr', { hasText: 'Now' });
+    const download = await Promise.all([
+      page.waitForEvent('download'),
+      nowRow.locator('button.btn-outline-secondary').first().click(),
+    ]).then(([d]) => d);
+    const exported = JSON.parse(readFileSync(await download.path(), 'utf8'));
+    expect(exported.widgets.length).toBeGreaterThan(0);
+
+    // Re-import the same JSON → a clean import (all known types) navigates to the new copy.
+    await card.locator('input[type=file]').setInputFiles({
+      name: 'now.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(exported)),
+    });
+    await expect(page.getByRole('heading', { name: 'Now (2)' })).toBeVisible();
+    await expect(page.locator('app-dashboard-host .grid-stack-item')).toHaveCount(exported.widgets.length);
+
+    // Cleanup.
+    const card2 = await openDashboardsTab(page);
+    const row = card2.locator('tr', { hasText: 'Now (2)' });
+    await row.locator('button.btn-outline-danger').click();
+    await page.locator('.modal').getByRole('button', { name: 'Delete' }).click();
+  });
+
+  test('import: invalid JSON shows an error, unknown widget type warns but succeeds (T_DB8)', async ({ page }) => {
+    const card = await openDashboardsTab(page);
+
+    // Invalid JSON → error, stays on the page.
+    await card.locator('input[type=file]').setInputFiles({
+      name: 'bad.json', mimeType: 'application/json', buffer: Buffer.from('not json at all'),
+    });
+    await expect(card.getByText(/isn't a valid dashboard/i)).toBeVisible();
+
+    // Unknown widget type → warning, but the dashboard is still created (renders a placeholder).
+    const doc = { name: 'Mystery Dash', widgets: [{ type: 'mystery', x: 0, y: 0, w: 2, h: 2, config: {} }] };
+    await card.locator('input[type=file]').setInputFiles({
+      name: 'mystery.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(doc)),
+    });
+    await expect(card.getByText(/unknown widget type/i)).toBeVisible();
+    await expect(card.getByRole('cell', { name: 'Mystery Dash' })).toBeVisible();
+
+    // Cleanup.
+    const row = card.locator('tr', { hasText: 'Mystery Dash' });
+    await row.locator('button.btn-outline-danger').click();
+    await page.locator('.modal').getByRole('button', { name: 'Delete' }).click();
   });
 });
