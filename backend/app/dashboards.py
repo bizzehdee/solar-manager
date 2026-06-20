@@ -37,9 +37,9 @@ _NOW: dict[str, Any] = {
         _widget("metric-gauge", 6, 2, 2, 2, {"metric": "battery_soc_pct", "label": "Battery SoC", "unit": "%", "max": 100, "role": "success"}),
         _widget("metric-gauge", 8, 2, 2, 2, {"metric": "battery_power_w", "label": "Battery", "unit": "W", "max": 8000, "role": "success"}),
         _widget("metric-gauge", 10, 2, 2, 2, {"metric": "grid_power_w", "label": "Grid", "unit": "W", "max": 8000, "role": "info"}),
-        _widget("metric-card", 6, 4, 2, 2, {"metric": "grid_voltage_v", "label": "Grid V", "unit": "V", "icon": "bi-lightning", "role": "info"}),
-        _widget("metric-card", 8, 4, 2, 2, {"metric": "grid_frequency_hz", "label": "Grid Hz", "unit": "Hz", "icon": "bi-activity", "role": "info"}),
-        _widget("metric-card", 10, 4, 2, 2, {"metric": "today_pv_wh", "label": "Today solar", "unit": "kWh", "icon": "bi-graph-up", "role": "warning"}),
+        _widget("metric-card", 6, 4, 2, 1, {"metric": "grid_voltage_v", "label": "Grid V", "unit": "V", "icon": "bi-lightning", "role": "info"}),
+        _widget("metric-card", 8, 4, 2, 1, {"metric": "grid_frequency_hz", "label": "Grid Hz", "unit": "Hz", "icon": "bi-activity", "role": "info"}),
+        _widget("metric-card", 10, 4, 2, 1, {"metric": "today_pv_wh", "label": "Today solar", "unit": "kWh", "icon": "bi-graph-up", "role": "warning"}),
     ],
 }
 

@@ -80,9 +80,9 @@ export const WIDGET_REGISTRY: Record<string, WidgetDef> = {
     component: MetricCard,
     label: 'Metric card',
     minW: 2,
-    minH: 2,
+    minH: 1,
     defaultW: 2,
-    defaultH: 2,
+    defaultH: 1,
     configSchema: [
       { key: 'metric', label: 'Metric', type: 'metric' },
       { key: 'label', label: 'Label', type: 'text' },
