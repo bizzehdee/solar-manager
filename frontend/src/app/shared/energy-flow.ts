@@ -173,15 +173,22 @@ function renderEdge(e: FlowEdge): RenderEdge {
   `,
   styles: [
     `
-    /* Fill the container as the largest centred square (grows with the cell; rings/icons scale via
-       the cqi units below). Height-driven with a width cap so it never overflows a wide-but-short cell. */
+    /* The host is a size-query container filling the cell; the widget is the largest square that
+       fits it (min of the cell's width/height) and is centred. Keeping it exactly square means the
+       SVG fills it 1:1 so the %-positioned corner nodes stay on the SVG line endpoints at every
+       size. Rings/icons scale via the inline-size cqi units below. */
+    :host {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      height: 100%;
+      container-type: size;
+    }
     .ef-widget {
       position: relative;
-      aspect-ratio: 1;
-      height: 100%;
-      width: auto;
-      max-width: 100%;
-      margin: 0 auto;
+      width: min(100cqw, 100cqh);
+      height: min(100cqw, 100cqh);
       container-type: inline-size;
     }
     .ef-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
