@@ -706,7 +706,7 @@ versioned releases.*
     `dashboard-host.spec.ts` (4: mergeLayout mapping/drop/fallback + DOM render of grid attrs);
     frontend suite 150 green; e2e 16 green.
 
-- [ ] **T_DB3 · Widget registry** · Deps: T_DB2 · Required by: T_DB4, T_DB5
+- [x] **T_DB3 · Widget registry** · Deps: T_DB2 · Required by: T_DB4, T_DB5
   - A `WIDGET_REGISTRY` map: `type → { component, label, minW, minH, defaultW, defaultH, configSchema }`.
     Initial entries: `energy-flow` (6×6, no config), `soc-gauge` (2×2, metric fixed to
     `battery_soc_pct`), `power-gauge` (2×2, config: metric key + label + maxW setting),
@@ -714,6 +714,18 @@ versioned releases.*
     (4×4 min, config: metric key + resolution + range). The host resolves type → component via the
     registry and passes `config` + live data as inputs. Tests: registry completeness, unknown-type
     fallback renders a placeholder not a crash.
+  - **Done:** `shared/widget-registry.ts` — `WIDGET_REGISTRY` with all six types (incl. `stat-card`).
+    Each `WidgetDef` carries `component`, `label`, `minW/minH/defaultW/defaultH`, a `configSchema`
+    (typed fields — `metric`/`text`/`number`/`icon`/`role` — for the T_DB7 editor), and an
+    `inputs(config, data)` **adapter** that maps stored config + live `DashboardData` to the
+    component's specific inputs. This keeps the presentational widgets dumb (plan.md §8): the gauge
+    shows a flow's magnitude (`abs`, signs not re-derived), soc-gauge is fixed to `battery_soc_pct`,
+    absent metrics stay `undefined` (≠ 0), and time-series points come from `data.series[metric]`.
+    `DashboardHost` resolves type → component via `widgetDef()` and renders through
+    `*ngComponentOutlet` (`inputs:` bag); unknown types fall back to an "Unknown widget" card, not a
+    crash. Added `DashboardData` model. Tests: `widget-registry.spec.ts` (7: completeness +
+    per-type adapter mapping) + host render/fallback specs; frontend suite 158 green, build + no-CDN
+    gate green.
 
 - [ ] **T_DB4 · "Now" built-in dashboard** · Deps: T_DB3 · Required by: T_DB6
   - Seed the Now built-in with the specified layout (see L06 spec above). The Now page route

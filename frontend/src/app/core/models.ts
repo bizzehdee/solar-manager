@@ -523,3 +523,13 @@ export interface DashboardConfig {
   builtin: boolean;
   widgets: DashboardWidget[];
 }
+
+/** Live data the dashboard host feeds to its widgets (T_DB3+). Widgets stay dumb — the host pulls
+ *  the right slice for each via the widget registry's `inputs(config, data)` mapping. */
+export interface DashboardData {
+  metrics: Record<string, MetricValue>;
+  /** Per-metric history series, for time-series chart widgets. */
+  series?: Record<string, HistoryPoint[]>;
+  /** Inverter health for the energy-flow widget (see the Now page's `inverterOnline`). */
+  inverterOnline?: boolean;
+}

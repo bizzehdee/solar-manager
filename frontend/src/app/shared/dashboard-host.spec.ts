@@ -4,14 +4,12 @@ import type { GridStackNode } from 'gridstack';
 import { DashboardHost, mergeLayout } from './dashboard-host';
 import { DashboardConfig, DashboardWidget } from '../core/models';
 
-const widgets: DashboardWidget[] = [
-  { type: 'energy-flow', x: 0, y: 0, w: 6, h: 6, config: {} },
-  { type: 'soc-gauge', x: 6, y: 0, w: 2, h: 2, config: { metric: 'battery_soc_pct' } },
-];
-
-const dashboard: DashboardConfig = { id: 'now', name: 'Now', builtin: true, widgets };
-
 describe('mergeLayout', () => {
+  const widgets: DashboardWidget[] = [
+    { type: 'energy-flow', x: 0, y: 0, w: 6, h: 6, config: {} },
+    { type: 'soc-gauge', x: 6, y: 0, w: 2, h: 2, config: { metric: 'battery_soc_pct' } },
+  ];
+
   it('maps saved nodes back onto widgets by gs-id, preserving type + config', () => {
     const nodes: GridStackNode[] = [
       { id: '1', x: 0, y: 0, w: 2, h: 2 },
@@ -43,21 +41,34 @@ describe('DashboardHost', () => {
   });
 
   it('renders one grid-stack-item per widget with the config grid attributes', () => {
+    const widgets: DashboardWidget[] = [
+      { type: 'soc-gauge', x: 0, y: 0, w: 2, h: 2, config: {} },
+      { type: 'metric-card', x: 2, y: 0, w: 4, h: 2, config: { metric: 'grid_voltage_v', label: 'Grid V', unit: 'V' } },
+    ];
     const fixture = TestBed.createComponent(DashboardHost);
-    fixture.componentRef.setInput('dashboard', dashboard);
+    fixture.componentRef.setInput('dashboard', { id: 'now', name: 'Now', builtin: true, widgets } as DashboardConfig);
+    fixture.componentRef.setInput('data', { metrics: { battery_soc_pct: 55, grid_voltage_v: 240 } });
     fixture.detectChanges();
 
-    const items = (fixture.nativeElement as HTMLElement).querySelectorAll('.grid-stack-item');
+    const root = fixture.nativeElement as HTMLElement;
+    const items = root.querySelectorAll('.grid-stack-item');
     expect(items.length).toBe(2);
+    expect(items[0].getAttribute('gs-id')).toBe('0');
+    expect(items[1].getAttribute('gs-w')).toBe('4');
 
-    const first = items[0];
-    expect(first.getAttribute('gs-id')).toBe('0');
-    expect(first.getAttribute('gs-x')).toBe('0');
-    expect(first.getAttribute('gs-w')).toBe('6');
-    expect(first.getAttribute('gs-h')).toBe('6');
-    expect(first.textContent).toContain('energy-flow');
+    // The registry resolved each type → its presentational component.
+    expect(root.querySelector('app-soc-gauge')).not.toBeNull();
+    expect(root.querySelector('app-metric-card')).not.toBeNull();
+    // Live data + config flowed through the registry adapter into the metric card.
+    expect(root.querySelector('app-metric-card')?.textContent).toContain('Grid V');
+    expect(root.querySelector('app-metric-card')?.textContent).toContain('240');
+  });
 
-    expect(items[1].getAttribute('gs-x')).toBe('6');
-    expect(items[1].textContent).toContain('soc-gauge');
+  it('renders a placeholder (not a crash) for an unknown widget type', () => {
+    const widgets: DashboardWidget[] = [{ type: 'does-not-exist', x: 0, y: 0, w: 2, h: 2, config: {} }];
+    const fixture = TestBed.createComponent(DashboardHost);
+    fixture.componentRef.setInput('dashboard', { id: 'x', name: 'X', builtin: false, widgets } as DashboardConfig);
+    fixture.detectChanges();
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain('Unknown widget: does-not-exist');
   });
 });

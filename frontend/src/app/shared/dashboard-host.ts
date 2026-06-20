@@ -1,3 +1,4 @@
+import { NgComponentOutlet } from '@angular/common';
 import {
   AfterViewInit,
   Component,
@@ -10,7 +11,8 @@ import {
 } from '@angular/core';
 import { GridStack, GridStackNode } from 'gridstack';
 
-import { DashboardConfig, DashboardWidget } from '../core/models';
+import { DashboardConfig, DashboardData, DashboardWidget } from '../core/models';
+import { widgetDef } from './widget-registry';
 
 // Pure layout host for L06 dashboards (T_DB2). Loads a DashboardConfig, lays its widgets out on a
 // 12-column GridStack, and — in edit mode — lets the user drag/resize, emitting the updated layout.
@@ -41,6 +43,7 @@ export function mergeLayout(widgets: DashboardWidget[], nodes: GridStackNode[]):
 
 @Component({
   selector: 'app-dashboard-host',
+  imports: [NgComponentOutlet],
   template: `
     <div class="grid-stack" #grid>
       @for (w of items; track $index) {
@@ -52,11 +55,16 @@ export function mergeLayout(widgets: DashboardWidget[], nodes: GridStackNode[]):
           [attr.gs-w]="w.w"
           [attr.gs-h]="w.h"
         >
-          <div class="grid-stack-item-content card">
-            <!-- T_DB3 resolves w.type → a widget component here; placeholder until then. -->
-            <div class="card-body d-flex align-items-center justify-content-center text-secondary small">
-              {{ w.type }}
-            </div>
+          <div class="grid-stack-item-content">
+            @if (defFor(w.type); as def) {
+              <ng-container *ngComponentOutlet="def.component; inputs: def.inputs(w.config, data())" />
+            } @else {
+              <div class="card h-100">
+                <div class="card-body d-flex align-items-center justify-content-center text-secondary small">
+                  Unknown widget: {{ w.type }}
+                </div>
+              </div>
+            }
           </div>
         </div>
       }
@@ -70,8 +78,14 @@ export class DashboardHost implements AfterViewInit, OnDestroy {
   /** Cell height as a rem-based unit so rows track Bootstrap's spacing scale. */
   readonly cellHeight = input('5rem');
 
+  /** Live data fed to each widget via the registry's `inputs(config, data)` adapter. */
+  readonly data = input<DashboardData>({ metrics: {} });
+
   /** Emitted (in edit mode) whenever the user moves/resizes a widget. */
   readonly layoutChange = output<DashboardWidget[]>();
+
+  /** Registry lookup for the template — `undefined` ⇒ render the unknown-widget placeholder. */
+  protected readonly defFor = widgetDef;
 
   private readonly gridEl = viewChild.required<ElementRef<HTMLElement>>('grid');
   private grid: GridStack | null = null;

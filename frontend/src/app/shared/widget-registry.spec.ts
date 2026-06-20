@@ -1,0 +1,59 @@
+import { DashboardData } from '../core/models';
+import { WIDGET_REGISTRY, widgetDef } from './widget-registry';
+
+const data: DashboardData = {
+  metrics: { battery_soc_pct: 55, pv_power_w: 3200, grid_power_w: -1500, grid_voltage_v: 240 },
+  inverterOnline: true,
+  series: { pv_power_w: [{ ts: 1, value: 100 }] },
+};
+
+describe('WIDGET_REGISTRY', () => {
+  it('declares every L06 widget type with complete sizing metadata', () => {
+    const expected = ['energy-flow', 'soc-gauge', 'power-gauge', 'metric-card', 'stat-card', 'time-series-chart'];
+    expect(Object.keys(WIDGET_REGISTRY).sort()).toEqual([...expected].sort());
+    for (const def of Object.values(WIDGET_REGISTRY)) {
+      expect(def.component).toBeTruthy();
+      expect(def.label).toBeTruthy();
+      expect(def.defaultW).toBeGreaterThanOrEqual(def.minW);
+      expect(def.defaultH).toBeGreaterThanOrEqual(def.minH);
+      expect(Array.isArray(def.configSchema)).toBe(true);
+    }
+  });
+
+  it('soc-gauge is fixed to battery SoC regardless of config', () => {
+    const inputs = WIDGET_REGISTRY['soc-gauge'].inputs({ metric: 'ignored' }, data);
+    expect(inputs['value']).toBe(55);
+    expect(inputs['label']).toBe('Battery SoC');
+  });
+
+  it('power-gauge shows the magnitude of a (possibly negative) flow', () => {
+    const inputs = WIDGET_REGISTRY['power-gauge'].inputs({ metric: 'grid_power_w', label: 'Grid', maxW: 5000 }, data);
+    expect(inputs['value']).toBe(1500); // abs(-1500)
+    expect(inputs['max']).toBe(5000);
+    expect(inputs['label']).toBe('Grid');
+  });
+
+  it('metric-card maps config + live value, defaulting the label to the metric key', () => {
+    const inputs = WIDGET_REGISTRY['metric-card'].inputs({ metric: 'grid_voltage_v', unit: 'V' }, data);
+    expect(inputs['value']).toBe(240);
+    expect(inputs['unit']).toBe('V');
+    expect(inputs['label']).toBe('grid_voltage_v');
+  });
+
+  it('metric-card value is undefined (not 0) when the metric is absent', () => {
+    const inputs = WIDGET_REGISTRY['metric-card'].inputs({ metric: 'missing' }, data);
+    expect(inputs['value']).toBeUndefined();
+  });
+
+  it('time-series-chart pulls its points from data.series[metric]', () => {
+    const inputs = WIDGET_REGISTRY['time-series-chart'].inputs({ metric: 'pv_power_w' }, data);
+    expect((inputs['points'] as unknown[]).length).toBe(1);
+    const empty = WIDGET_REGISTRY['time-series-chart'].inputs({ metric: 'none' }, data);
+    expect(empty['points']).toEqual([]);
+  });
+
+  it('widgetDef returns undefined for an unknown type', () => {
+    expect(widgetDef('nope')).toBeUndefined();
+    expect(widgetDef('soc-gauge')).toBe(WIDGET_REGISTRY['soc-gauge']);
+  });
+});
