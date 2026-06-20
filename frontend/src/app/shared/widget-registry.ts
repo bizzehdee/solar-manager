@@ -4,7 +4,6 @@ import { DashboardData, MetricValue } from '../core/models';
 import { EnergyFlow } from './energy-flow';
 import { MetricCard } from './metric-card';
 import { PowerGauge } from './power-gauge';
-import { SocGauge } from './soc-gauge';
 import { StatCard } from './stat-card';
 import { TimeSeriesChart } from './time-series-chart';
 
@@ -47,40 +46,30 @@ export const WIDGET_REGISTRY: Record<string, WidgetDef> = {
     configSchema: [],
     inputs: (_config, data) => ({ metrics: data.metrics, inverterOnline: data.inverterOnline ?? true }),
   },
-  'soc-gauge': {
-    component: SocGauge,
-    label: 'Battery SoC gauge',
-    minW: 2,
-    minH: 2,
-    defaultW: 2,
-    defaultH: 2,
-    configSchema: [{ key: 'label', label: 'Label', type: 'text' }],
-    // Metric is fixed to battery SoC for this widget type.
-    inputs: (config, data) => ({
-      value: num(data.metrics['battery_soc_pct']) ?? 0,
-      label: str(config['label'], 'Battery SoC'),
-    }),
-  },
-  'power-gauge': {
+  'metric-gauge': {
     component: PowerGauge,
-    label: 'Power gauge',
+    label: 'Metric gauge',
     minW: 2,
     minH: 2,
     defaultW: 2,
     defaultH: 2,
+    // Generic radial gauge: pick any metric and (optionally) override its name, unit, full-scale
+    // and colour — e.g. battery_soc_pct with unit "%" and full-scale 100.
     configSchema: [
       { key: 'metric', label: 'Metric', type: 'metric' },
-      { key: 'label', label: 'Label', type: 'text' },
-      { key: 'maxW', label: 'Full-scale (W)', type: 'number' },
+      { key: 'label', label: 'Name', type: 'text' },
+      { key: 'unit', label: 'Unit', type: 'text' },
+      { key: 'max', label: 'Full-scale', type: 'number' },
       { key: 'role', label: 'Colour', type: 'role' },
     ],
-    // Power flows can be bidirectional — the gauge shows the magnitude (plan.md §4 signs not re-derived).
+    // The gauge shows the magnitude (bidirectional flows pass abs; plan.md §4 signs not re-derived).
     inputs: (config, data) => {
       const v = num(data.metrics[metricOf(config)]);
       return {
         value: v === undefined ? 0 : Math.abs(v),
-        max: num(config['maxW'] as MetricValue) ?? 8000,
-        label: str(config['label']),
+        max: num(config['max'] as MetricValue) ?? 8000,
+        label: str(config['label'], metricOf(config)),
+        unit: str(config['unit'], 'W'),
         role: str(config['role'], 'primary'),
       };
     },

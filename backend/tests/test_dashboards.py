@@ -34,8 +34,10 @@ def test_get_builtin_now_has_expected_layout():
         assert now["builtin"] is True
         ef = next(w for w in now["widgets"] if w["type"] == "energy-flow")
         assert (ef["x"], ef["y"], ef["w"], ef["h"]) == (0, 0, 6, 6)
-        soc = next(w for w in now["widgets"] if w["type"] == "soc-gauge")
-        assert soc["config"]["metric"] == "battery_soc_pct"
+        # Battery SoC is a generic metric-gauge (no dedicated soc-gauge widget type).
+        soc = next(w for w in now["widgets"] if w["config"].get("metric") == "battery_soc_pct")
+        assert soc["type"] == "metric-gauge"
+        assert soc["config"]["unit"] == "%" and soc["config"]["max"] == 100
 
 
 def test_get_unknown_is_404():
@@ -47,7 +49,7 @@ def test_user_dashboard_crud_roundtrip():
     with _client() as client:
         payload = {
             "name": "Garage",
-            "widgets": [{"type": "soc-gauge", "x": 0, "y": 0, "w": 2, "h": 2, "config": {"metric": "battery_soc_pct"}}],
+            "widgets": [{"type": "metric-gauge", "x": 0, "y": 0, "w": 2, "h": 2, "config": {"metric": "battery_soc_pct"}}],
         }
         r = client.put("/api/dashboards/garage", json=payload)
         assert r.status_code == 200
@@ -56,7 +58,7 @@ def test_user_dashboard_crud_roundtrip():
             "id": "garage",
             "name": "Garage",
             "builtin": False,
-            "widgets": [{"type": "soc-gauge", "x": 0, "y": 0, "w": 2, "h": 2, "config": {"metric": "battery_soc_pct"}}],
+            "widgets": [{"type": "metric-gauge", "x": 0, "y": 0, "w": 2, "h": 2, "config": {"metric": "battery_soc_pct"}}],
         }
 
         # Appears in the list (after builtins) and is fetchable by id.

@@ -7,7 +7,7 @@ import { DashboardConfig, DashboardWidget } from '../core/models';
 describe('mergeLayout', () => {
   const widgets: DashboardWidget[] = [
     { type: 'energy-flow', x: 0, y: 0, w: 6, h: 6, config: {} },
-    { type: 'soc-gauge', x: 6, y: 0, w: 2, h: 2, config: { metric: 'battery_soc_pct' } },
+    { type: 'metric-gauge', x: 6, y: 0, w: 2, h: 2, config: { metric: 'battery_soc_pct' } },
   ];
 
   it('maps saved nodes back onto widgets by gs-id, preserving type + config', () => {
@@ -16,8 +16,8 @@ describe('mergeLayout', () => {
       { id: '0', x: 0, y: 2, w: 6, h: 6 },
     ];
     const out = mergeLayout(widgets, nodes);
-    // Sorted by (y, x): the soc-gauge (now at 0,0) comes before the energy-flow (now at 0,2).
-    expect(out[0].type).toBe('soc-gauge');
+    // Sorted by (y, x): the metric-gauge (now at 0,0) comes before the energy-flow (now at 0,2).
+    expect(out[0].type).toBe('metric-gauge');
     expect(out[0].config).toEqual({ metric: 'battery_soc_pct' });
     expect(out[0]).toMatchObject({ x: 0, y: 0, w: 2, h: 2 });
     expect(out[1].type).toBe('energy-flow');
@@ -42,7 +42,7 @@ describe('DashboardHost', () => {
 
   it('renders one grid-stack-item per widget with the config grid attributes', () => {
     const widgets: DashboardWidget[] = [
-      { type: 'soc-gauge', x: 0, y: 0, w: 2, h: 2, config: {} },
+      { type: 'metric-gauge', x: 0, y: 0, w: 2, h: 2, config: { metric: 'battery_soc_pct', unit: '%', max: 100 } },
       { type: 'metric-card', x: 2, y: 0, w: 4, h: 2, config: { metric: 'grid_voltage_v', label: 'Grid V', unit: 'V' } },
     ];
     const fixture = TestBed.createComponent(DashboardHost);
@@ -57,7 +57,7 @@ describe('DashboardHost', () => {
     expect(items[1].getAttribute('gs-w')).toBe('4');
 
     // The registry resolved each type → its presentational component.
-    expect(root.querySelector('app-soc-gauge')).not.toBeNull();
+    expect(root.querySelector('app-power-gauge')).not.toBeNull();
     expect(root.querySelector('app-metric-card')).not.toBeNull();
     // Live data + config flowed through the registry adapter into the metric card.
     expect(root.querySelector('app-metric-card')?.textContent).toContain('Grid V');

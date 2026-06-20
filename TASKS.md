@@ -610,10 +610,11 @@ versioned releases.*
     and per-widget config. Layouts persist server-side in `app_config`. Dashboards are exportable and
     importable as JSON files (download/upload in the UI).
   - **Grid spec:** 12 columns; gauge/card widgets default to 2×2; energy-flow widget is 6×6.
-  - **Widget registry:** `energy-flow`, `soc-gauge`, `power-gauge`, `metric-card`, `time-series-chart`
-    (and `stat-card`). Each type declares its minimum size, default size, and a config schema (which
-    metric to display, label, unit overrides). Widgets remain dumb presentational components — the
-    dashboard host provides data.
+  - **Widget registry:** `energy-flow`, `metric-gauge`, `metric-card`, `stat-card`, `time-series-chart`.
+    `metric-gauge` and `metric-card` are **generic** — pick any metric and optionally override its
+    name/unit (and, for the gauge, full-scale + colour); there is no dedicated battery-SoC widget
+    (just a `metric-gauge` on `battery_soc_pct`). Each type declares its minimum size, default size,
+    and a config schema. Widgets remain dumb presentational components — the dashboard host provides data.
   - **Now built-in layout (col×row, all 2×2 except energy-flow):**
     `energy-flow` 0×0 (6×6) · `solar` 6×0 · `load` 10×0 · `battery-soc` 6×2 · `battery-power` 8×2
     · `grid-power` 10×2 · `grid-v` 6×4 · `grid-hz` 8×4 · `today-solar` 10×4.
@@ -714,18 +715,19 @@ versioned releases.*
     (4×4 min, config: metric key + resolution + range). The host resolves type → component via the
     registry and passes `config` + live data as inputs. Tests: registry completeness, unknown-type
     fallback renders a placeholder not a crash.
-  - **Done:** `shared/widget-registry.ts` — `WIDGET_REGISTRY` with all six types (incl. `stat-card`).
-    Each `WidgetDef` carries `component`, `label`, `minW/minH/defaultW/defaultH`, a `configSchema`
-    (typed fields — `metric`/`text`/`number`/`icon`/`role` — for the T_DB7 editor), and an
-    `inputs(config, data)` **adapter** that maps stored config + live `DashboardData` to the
-    component's specific inputs. This keeps the presentational widgets dumb (plan.md §8): the gauge
-    shows a flow's magnitude (`abs`, signs not re-derived), soc-gauge is fixed to `battery_soc_pct`,
-    absent metrics stay `undefined` (≠ 0), and time-series points come from `data.series[metric]`.
-    `DashboardHost` resolves type → component via `widgetDef()` and renders through
-    `*ngComponentOutlet` (`inputs:` bag); unknown types fall back to an "Unknown widget" card, not a
-    crash. Added `DashboardData` model. Tests: `widget-registry.spec.ts` (7: completeness +
-    per-type adapter mapping) + host render/fallback specs; frontend suite 158 green, build + no-CDN
-    gate green.
+  - **Done:** `shared/widget-registry.ts` — `WIDGET_REGISTRY` with five types: `energy-flow`,
+    `metric-gauge`, `metric-card`, `stat-card`, `time-series-chart`. **`metric-gauge` and
+    `metric-card` are generic** — pick any metric and override name/unit (gauge also full-scale +
+    colour); no dedicated SoC widget (battery SoC is a `metric-gauge` on `battery_soc_pct`, unit `%`,
+    full-scale 100). Each `WidgetDef` carries `component`, `label`, `minW/minH/defaultW/defaultH`, a
+    `configSchema` (typed fields — `metric`/`text`/`number`/`icon`/`role` — for the T_DB7 editor), and
+    an `inputs(config, data)` **adapter** mapping stored config + live `DashboardData` to the
+    component's inputs. Keeps widgets dumb (plan.md §8): the gauge shows magnitude (`abs`, signs not
+    re-derived), absent metrics stay `undefined` (≠ 0), time-series points come from
+    `data.series[metric]`. `DashboardHost` resolves type via `widgetDef()` + `*ngComponentOutlet`
+    (`inputs:` bag); unknown types fall back to an "Unknown widget" card, not a crash. Added
+    `DashboardData` model. Tests: `widget-registry.spec.ts` (7: completeness + per-type adapter incl.
+    SoC-via-metric-gauge) + host render/fallback; frontend 158 green, build + no-CDN gate green.
 
 - [ ] **T_DB4 · "Now" built-in dashboard** · Deps: T_DB3 · Required by: T_DB6
   - Seed the Now built-in with the specified layout (see L06 spec above). The Now page route

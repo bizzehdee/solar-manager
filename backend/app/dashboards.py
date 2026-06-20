@@ -23,19 +23,20 @@ def _widget(type_: str, x: int, y: int, w: int, h: int, config: dict | None = No
 
 # ── Builtins (seeded from code, never the DB) ──────────────────────────────────────────
 # "Now" — the live dashboard. Layout from the L06 spec (col×row; all 2×2 except energy-flow 6×6).
-# Shorthand names map to widget-registry types + config: solar/load/battery/grid → power-gauge,
-# battery-soc → soc-gauge, grid-v/grid-hz/today-solar → metric-card.
+# Shorthand names map to widget-registry types + config: solar/load/battery/grid/battery-soc →
+# metric-gauge (generic — pick a metric, override name/unit/full-scale); grid-v/grid-hz/today-solar
+# → metric-card.
 _NOW: dict[str, Any] = {
     "id": "now",
     "name": "Now",
     "builtin": True,
     "widgets": [
         _widget("energy-flow", 0, 0, 6, 6),
-        _widget("power-gauge", 6, 0, 2, 2, {"metric": "pv_power_w", "label": "Solar", "role": "warning"}),
-        _widget("power-gauge", 10, 0, 2, 2, {"metric": "load_power_w", "label": "Load", "role": "primary"}),
-        _widget("soc-gauge", 6, 2, 2, 2, {"metric": "battery_soc_pct", "label": "Battery SoC"}),
-        _widget("power-gauge", 8, 2, 2, 2, {"metric": "battery_power_w", "label": "Battery", "role": "success"}),
-        _widget("power-gauge", 10, 2, 2, 2, {"metric": "grid_power_w", "label": "Grid", "role": "info"}),
+        _widget("metric-gauge", 6, 0, 2, 2, {"metric": "pv_power_w", "label": "Solar", "unit": "W", "max": 8000, "role": "warning"}),
+        _widget("metric-gauge", 10, 0, 2, 2, {"metric": "load_power_w", "label": "Load", "unit": "W", "max": 8000, "role": "primary"}),
+        _widget("metric-gauge", 6, 2, 2, 2, {"metric": "battery_soc_pct", "label": "Battery SoC", "unit": "%", "max": 100, "role": "success"}),
+        _widget("metric-gauge", 8, 2, 2, 2, {"metric": "battery_power_w", "label": "Battery", "unit": "W", "max": 8000, "role": "success"}),
+        _widget("metric-gauge", 10, 2, 2, 2, {"metric": "grid_power_w", "label": "Grid", "unit": "W", "max": 8000, "role": "info"}),
         _widget("metric-card", 6, 4, 2, 2, {"metric": "grid_voltage_v", "label": "Grid V", "unit": "V", "icon": "bi-lightning", "role": "info"}),
         _widget("metric-card", 8, 4, 2, 2, {"metric": "grid_frequency_hz", "label": "Grid Hz", "unit": "Hz", "icon": "bi-activity", "role": "info"}),
         _widget("metric-card", 10, 4, 2, 2, {"metric": "today_pv_wh", "label": "Today solar", "unit": "kWh", "icon": "bi-graph-up", "role": "warning"}),

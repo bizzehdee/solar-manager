@@ -9,7 +9,7 @@ const data: DashboardData = {
 
 describe('WIDGET_REGISTRY', () => {
   it('declares every L06 widget type with complete sizing metadata', () => {
-    const expected = ['energy-flow', 'soc-gauge', 'power-gauge', 'metric-card', 'stat-card', 'time-series-chart'];
+    const expected = ['energy-flow', 'metric-gauge', 'metric-card', 'stat-card', 'time-series-chart'];
     expect(Object.keys(WIDGET_REGISTRY).sort()).toEqual([...expected].sort());
     for (const def of Object.values(WIDGET_REGISTRY)) {
       expect(def.component).toBeTruthy();
@@ -20,17 +20,23 @@ describe('WIDGET_REGISTRY', () => {
     }
   });
 
-  it('soc-gauge is fixed to battery SoC regardless of config', () => {
-    const inputs = WIDGET_REGISTRY['soc-gauge'].inputs({ metric: 'ignored' }, data);
-    expect(inputs['value']).toBe(55);
-    expect(inputs['label']).toBe('Battery SoC');
-  });
-
-  it('power-gauge shows the magnitude of a (possibly negative) flow', () => {
-    const inputs = WIDGET_REGISTRY['power-gauge'].inputs({ metric: 'grid_power_w', label: 'Grid', maxW: 5000 }, data);
+  it('metric-gauge shows the magnitude of a (possibly negative) flow', () => {
+    const inputs = WIDGET_REGISTRY['metric-gauge'].inputs({ metric: 'grid_power_w', label: 'Grid', max: 5000 }, data);
     expect(inputs['value']).toBe(1500); // abs(-1500)
     expect(inputs['max']).toBe(5000);
     expect(inputs['label']).toBe('Grid');
+    expect(inputs['unit']).toBe('W'); // default unit
+  });
+
+  it('metric-gauge can render battery SoC with overridden name/unit/full-scale', () => {
+    const inputs = WIDGET_REGISTRY['metric-gauge'].inputs(
+      { metric: 'battery_soc_pct', label: 'Charge', unit: '%', max: 100 },
+      data,
+    );
+    expect(inputs['value']).toBe(55);
+    expect(inputs['label']).toBe('Charge');
+    expect(inputs['unit']).toBe('%');
+    expect(inputs['max']).toBe(100);
   });
 
   it('metric-card maps config + live value, defaulting the label to the metric key', () => {
@@ -54,6 +60,6 @@ describe('WIDGET_REGISTRY', () => {
 
   it('widgetDef returns undefined for an unknown type', () => {
     expect(widgetDef('nope')).toBeUndefined();
-    expect(widgetDef('soc-gauge')).toBe(WIDGET_REGISTRY['soc-gauge']);
+    expect(widgetDef('metric-gauge')).toBe(WIDGET_REGISTRY['metric-gauge']);
   });
 });
