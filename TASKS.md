@@ -683,7 +683,7 @@ versioned releases.*
     `DashboardNotFound`→404, `ValueError`→422. Tests: `test_dashboards.py` (10) — CRUD round-trip,
     export→import under a new id, builtin write/delete 403, unknown 404, validation 422; module 100%.
 
-- [ ] **T_DB2 · Frontend grid engine** · Deps: T_DB1 · Required by: T_DB3
+- [x] **T_DB2 · Frontend grid engine** · Deps: T_DB1 · Required by: T_DB3
   - Install `gridstack` via npm (self-hosted, no CDN — verify no-CDN gate still green).
     `DashboardHostComponent` loads a `DashboardConfig`, initialises a GridStack instance
     (12 columns, `cellHeight` = a rem-based unit consistent with Bootstrap spacing), and renders
@@ -691,6 +691,20 @@ versioned releases.*
     In **view mode** GridStack is static (no drag, no resize). In **edit mode** drag + resize are
     enabled; on `change` events the component emits the updated layout for persistence.
     No widget logic here — host is purely layout.
+  - **Done:** `gridstack@12` installed; its CSS added to `angular.json` styles (bundled/self-hosted,
+    no-CDN gate stays green — verified in built `styles-*.css`). `shared/dashboard-host.ts`
+    (`<app-dashboard-host>`) — signal inputs `[dashboard]` / `[editable]` / `[cellHeight]` (default
+    `5rem`), output `(layoutChange)`. Snapshots the config's widgets once per dashboard id (GridStack
+    owns the DOM thereafter), renders each as a `.grid-stack-item` with `gs-id`(=index)/`gs-x/y/w/h`,
+    and inits GridStack (12 cols, `float`, `margin 0.5rem`, `staticGrid` = view mode) in
+    `ngAfterViewInit`. An `effect` flips `setStatic` on edit-mode change; the `change` event reads
+    `grid.save()` and emits the merged layout. Pure exported `mergeLayout()` maps saved nodes back to
+    widgets by `gs-id` (type/config preserved, sorted by y,x, unknown ids dropped) — unit-tested
+    without a DOM. GridStack init is wrapped so headless unit tests (no ResizeObserver) still render
+    the testable placeholder markup. Widget content is a typed placeholder card — T_DB3 plugs in the
+    registry. Models `DashboardConfig`/`DashboardWidget` + `ApiService` dashboard CRUD added. Tests:
+    `dashboard-host.spec.ts` (4: mergeLayout mapping/drop/fallback + DOM render of grid attrs);
+    frontend suite 150 green; e2e 16 green.
 
 - [ ] **T_DB3 · Widget registry** · Deps: T_DB2 · Required by: T_DB4, T_DB5
   - A `WIDGET_REGISTRY` map: `type → { component, label, minW, minH, defaultW, defaultH, configSchema }`.

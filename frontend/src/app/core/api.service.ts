@@ -12,6 +12,7 @@ import {
   AutomationPreview,
   AutomationRule,
   DailyStats,
+  DashboardConfig,
   DeviceClock,
   Diagnostics,
   GridEvent,
@@ -321,5 +322,26 @@ export class ApiService {
   /** Update forecast config (partial). Returns the full, merged config. */
   putForecastConfig(body: Partial<ForecastConfig>): Observable<ForecastConfig> {
     return this.http.put<ForecastConfig>('/api/forecast/config', body);
+  }
+
+  // --- Dashboards (plan.md §8 / L06) ---
+
+  /** All dashboards — builtins (Now, History) first, then user dashboards. */
+  getDashboards(): Observable<{ dashboards: DashboardConfig[] }> {
+    return this.http.get<{ dashboards: DashboardConfig[] }>('/api/dashboards');
+  }
+
+  getDashboard(id: string): Observable<DashboardConfig> {
+    return this.http.get<DashboardConfig>(`/api/dashboards/${encodeURIComponent(id)}`);
+  }
+
+  /** Create/replace a user dashboard (403 server-side for builtin ids). The body JSON is also
+   *  the export/import wire format. */
+  putDashboard(id: string, body: Partial<DashboardConfig>): Observable<DashboardConfig> {
+    return this.http.put<DashboardConfig>(`/api/dashboards/${encodeURIComponent(id)}`, body);
+  }
+
+  deleteDashboard(id: string): Observable<void> {
+    return this.http.delete<void>(`/api/dashboards/${encodeURIComponent(id)}`);
   }
 }

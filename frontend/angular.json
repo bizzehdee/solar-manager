@@ -36,6 +36,7 @@
               }
             ],
             "styles": [
+              "node_modules/gridstack/dist/gridstack.min.css",
               "src/styles.scss"
             ]
           },

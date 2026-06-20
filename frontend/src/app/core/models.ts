@@ -504,3 +504,22 @@ export interface AuditEntry {
   changes: Record<string, { old: unknown; new: unknown }>;
   result: 'ok' | 'mismatch' | 'error';
 }
+
+/** One widget on a dashboard grid: a registry `type`, a 12-column grid position/size, and an
+ *  opaque (widget-defined) config blob. Mirrors the backend `DashboardConfig` wire shape (L06). */
+export interface DashboardWidget {
+  type: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  config: Record<string, unknown>;
+}
+
+/** A named 12-column dashboard. `builtin` dashboards (Now, History) are read-only server-side. */
+export interface DashboardConfig {
+  id: string;
+  name: string;
+  builtin: boolean;
+  widgets: DashboardWidget[];
+}
