@@ -57,9 +57,9 @@ metrics:
 
   # ── load / inverter output ──
   load_power_w:             { addr: 178, type: s16 }
-  inverter_power_w:         { addr: 175, type: s16 }
-  inverter_voltage_v:       { addr: 154, type: u16, scale: 0.1 }
-  inverter_current_a:       { addr: 164, type: u16, scale: 0.01 }
+  inverter_power_w:         { addr: 175, type: s16 }                # load-test confirmed 423 W (2026-06-20)
+  inverter_voltage_v:       { addr: 154, type: u16, scale: 0.1 }    # load-test confirmed 249.8 V (2026-06-20)
+  inverter_current_a:       { addr: 164, type: u16, scale: 0.01 }   # load-test confirmed 1.80 A (≈1.7-2.0 A screen, 2026-06-20)
   inverter_frequency_hz:    { addr: 193, type: u16, scale: 0.01 }
   inverter_temp_c:          { addr: 91,  type: u16, scale: 0.1, offset: -100 }   # radiator/heatsink
   dc_transformer_temp_c:    { addr: 90,  type: u16, scale: 0.1, offset: -100 }
