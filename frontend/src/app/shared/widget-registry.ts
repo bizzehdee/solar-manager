@@ -1,7 +1,9 @@
 import { Type } from '@angular/core';
 
 import { DashboardData, MetricValue } from '../core/models';
+import { DailyKpis } from './daily-kpis';
 import { EnergyFlow } from './energy-flow';
+import { HistoryChart } from './history-chart';
 import { MetricCard } from './metric-card';
 import { PowerGauge } from './power-gauge';
 import { StatCard } from './stat-card';
@@ -136,6 +138,32 @@ export const WIDGET_REGISTRY: Record<string, WidgetDef> = {
       label: str(config['label'], metricOf(config)),
       unit: str(config['unit']),
     }),
+  },
+  // Container widgets for the History dashboard (T_DB5): self-contained (fetch their own data),
+  // so their `inputs` adapters only pass config — the host provides no live data to them.
+  'daily-kpis': {
+    component: DailyKpis,
+    label: 'Daily KPIs',
+    minW: 6,
+    minH: 2,
+    defaultW: 12,
+    defaultH: 2,
+    configSchema: [],
+    inputs: () => ({}),
+  },
+  'history-chart': {
+    component: HistoryChart,
+    label: 'History chart',
+    minW: 6,
+    minH: 4,
+    defaultW: 12,
+    defaultH: 6,
+    configSchema: [
+      { key: 'metric', label: 'Metric', type: 'metric' },
+      { key: 'resolution', label: 'Resolution', type: 'text' },
+      { key: 'range', label: 'Range (days)', type: 'number' },
+    ],
+    inputs: (config) => ({ config }),
   },
 };
 

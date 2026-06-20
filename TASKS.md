@@ -749,12 +749,23 @@ versioned releases.*
     grid-host assertion and retargets the SoC check to the metric-gauge. Frontend 158 green, e2e 17
     green, build + no-CDN gate green.
 
-- [ ] **T_DB5 · "History" built-in dashboard** · Deps: T_DB3 · Required by: T_DB6
+- [x] **T_DB5 · "History" built-in dashboard** · Deps: T_DB3 · Required by: T_DB6
   - Seed the History built-in with the existing History page layout (time-series chart + stat
     cards). `/history` route renders `DashboardHostComponent` with the History config. The
     time-series-chart widget wraps the existing `<app-time-series-chart>` component; the metric
     selector, resolution picker, and date range controls move into the widget's own config panel.
     E2E: History dashboard renders, chart visible, metric selector works.
+  - **Done:** two **container widgets** (a deliberate, task-authorised exception to dumb widgets —
+    History is interactive exploration, not a live snapshot): `shared/daily-kpis.ts` (the today's-KPI
+    stat-card row, fetches `/api/stats/daily`) and `shared/history-chart.ts` (metric/resolution/range
+    selectors + CSV export, fetches `/api/history`, seeds initial selection from widget `config`,
+    wraps the dumb `<app-time-series-chart>`). Both registered in `WIDGET_REGISTRY` (7 types now); their
+    `inputs` adapters pass only `config` since they self-fetch. History builtin (`dashboards.py`) =
+    `daily-kpis` (12×2) over `history-chart` (12×6). `pages/history/history.ts` is now a thin host
+    container (loads the `history` built-in + Reset to default), mirroring Now. Tests: `daily-kpis.spec.ts`
+    (2), `history-chart.spec.ts` (5 — metric load, config seed, CSV href, no-data, switch metric),
+    rewritten `history.spec.ts` (2 — host render + reset), backend `test_get_builtin_history_layout`;
+    new E2E `history.spec.ts` (2). Frontend 161 green, backend 374 green, e2e 19 green, build + no-CDN green.
 
 - [ ] **T_DB6 · Dashboard switcher + management** · Deps: T_DB4, T_DB5 · Required by: T_DB7
   - Nav sidebar lists Now → History → (separator) → user dashboards (in creation order) → "+ New".

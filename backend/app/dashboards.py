@@ -43,17 +43,16 @@ _NOW: dict[str, Any] = {
     ],
 }
 
-# "History" — the existing History page as a layout: a metric selector + time-series chart, with
-# stat cards alongside. T_DB5 refines the exact widget set; this seeds a usable default.
+# "History" — the existing History page as a layout: today's derived-KPI row (daily-kpis) above an
+# interactive metric/resolution/range time-series chart (history-chart). Both are container widgets
+# that fetch their own data (stats/daily, history).
 _HISTORY: dict[str, Any] = {
     "id": "history",
     "name": "History",
     "builtin": True,
     "widgets": [
-        _widget("time-series-chart", 0, 0, 8, 6, {"metric": "pv_power_w", "range": "24h", "resolution": "5m"}),
-        _widget("stat-card", 8, 0, 4, 2, {"metric": "today_pv_wh", "label": "Today solar", "unit": "kWh"}),
-        _widget("stat-card", 8, 2, 4, 2, {"metric": "today_load_wh", "label": "Today load", "unit": "kWh"}),
-        _widget("stat-card", 8, 4, 4, 2, {"metric": "battery_soc_pct", "label": "Battery SoC", "unit": "%"}),
+        _widget("daily-kpis", 0, 0, 12, 2),
+        _widget("history-chart", 0, 2, 12, 6, {"metric": "pv_power_w", "resolution": "1h", "range": 1}),
     ],
 }
 

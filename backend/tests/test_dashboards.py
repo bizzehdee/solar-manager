@@ -40,6 +40,14 @@ def test_get_builtin_now_has_expected_layout():
         assert soc["config"]["unit"] == "%" and soc["config"]["max"] == 100
 
 
+def test_get_builtin_history_layout():
+    with _client() as client:
+        hist = client.get("/api/dashboards/history").json()
+        assert hist["builtin"] is True
+        types = [w["type"] for w in hist["widgets"]]
+        assert types == ["daily-kpis", "history-chart"]
+
+
 def test_get_unknown_is_404():
     with _client() as client:
         assert client.get("/api/dashboards/nope").status_code == 404
