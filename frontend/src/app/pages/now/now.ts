@@ -3,7 +3,7 @@ import { DatePipe } from '@angular/common';
 
 import { ApiService } from '../../core/api.service';
 import { DashboardDataService } from '../../core/dashboard-data.service';
-import { DashboardConfig, DeviceClock, MetricValue } from '../../core/models';
+import { DashboardConfig, DeviceClock } from '../../core/models';
 import { DashboardHost } from '../../shared/dashboard-host';
 
 // "Now" view (plan.md §8): the live energy snapshot, now driven by the L06 dashboard system (T_DB4).
@@ -43,7 +43,7 @@ import { DashboardHost } from '../../shared/dashboard-host';
       <div class="text-secondary"><span class="spinner-border spinner-border-sm"></span> Loading dashboard…</div>
     }
 
-    @if (metrics(); as m) {
+    @if (metrics()) {
       <!-- Inverter clock drift (T097): shown when the device exposes an RTC; Sync gated. -->
       @if (clock(); as c) {
         @if (c.supported) {
@@ -66,33 +66,6 @@ import { DashboardHost } from '../../shared/dashboard-host';
           </div>
         }
       }
-
-      <!-- Battery health panel (T055): capability-gated — shown only when SoH or cycles report. -->
-      @if (hasBatteryHealth()) {
-        <div class="card mt-3">
-          <div class="card-header"><i class="bi bi-battery-charging"></i> Battery health</div>
-          <div class="card-body">
-            <div class="row g-3">
-              <div class="col-6 col-md-3">
-                <div class="small text-secondary">State of Health</div>
-                <div class="fs-5 fw-semibold">{{ fmt(num(m['battery_soh_pct']), '%') }}</div>
-              </div>
-              <div class="col-6 col-md-3">
-                <div class="small text-secondary">Cycles</div>
-                <div class="fs-5 fw-semibold">{{ fmt(num(m['battery_cycles']), '') }}</div>
-              </div>
-              <div class="col-6 col-md-3">
-                <div class="small text-secondary">Temperature</div>
-                <div class="fs-5 fw-semibold">{{ fmt(num(m['battery_temp_c']), '°C') }}</div>
-              </div>
-              <div class="col-6 col-md-3">
-                <div class="small text-secondary">Voltage</div>
-                <div class="fs-5 fw-semibold">{{ fmt(num(m['battery_voltage_v']), 'V') }}</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      }
     }
   `,
 })
@@ -103,14 +76,11 @@ export class NowPage implements OnInit {
   /** The "now" built-in dashboard layout, loaded from the API. */
   readonly dashboard = signal<DashboardConfig | null>(null);
 
-  // Chrome (faults / run-state / battery health) reads live data from the shared service.
+  // Chrome (faults / run-state) reads live data from the shared service. Battery-health stats are
+  // now metric-card widgets in the Now layout, not a bespoke panel.
   readonly metrics = this.data.metrics;
   readonly faultCodes = this.data.faultCodes;
   readonly runState = computed(() => this.data.runState()?.replace(/_/g, ' '));
-  readonly hasBatteryHealth = computed(() => {
-    const m = this.metrics();
-    return this.num(m?.['battery_soh_pct']) !== undefined || this.num(m?.['battery_cycles']) !== undefined;
-  });
 
   // Inverter clock drift (T097), polled with the device fetch.
   readonly clock = signal<DeviceClock | null>(null);
@@ -163,14 +133,5 @@ export class NowPage implements OnInit {
         }),
       error: () => this.syncingClock.set(false),
     });
-  }
-
-  num(v: MetricValue | undefined): number | undefined {
-    return typeof v === 'number' ? v : undefined;
-  }
-  /** Render a number with an optional unit, or "—" when missing (missing ≠ zero). */
-  fmt(v: number | undefined, unit: string): string {
-    if (v === undefined) return '—';
-    return unit ? `${v} ${unit}` : `${v}`;
   }
 }

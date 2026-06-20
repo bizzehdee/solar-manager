@@ -40,6 +40,11 @@ _NOW: dict[str, Any] = {
         _widget("metric-card", 6, 4, 2, 1, {"metric": "grid_voltage_v", "label": "Grid V", "unit": "V", "icon": "bi-lightning", "role": "info"}),
         _widget("metric-card", 8, 4, 2, 1, {"metric": "grid_frequency_hz", "label": "Grid Hz", "unit": "Hz", "icon": "bi-activity", "role": "info"}),
         _widget("metric-card", 10, 4, 2, 1, {"metric": "today_pv_wh", "label": "Today solar", "unit": "kWh", "icon": "bi-graph-up", "role": "warning"}),
+        # Battery-health strip (each an individual metric-card; "—" when the metric isn't reported).
+        _widget("metric-card", 0, 6, 3, 1, {"metric": "battery_soh_pct", "label": "State of Health", "unit": "%", "icon": "bi-heart-pulse", "role": "success"}),
+        _widget("metric-card", 3, 6, 3, 1, {"metric": "battery_cycles", "label": "Cycles", "unit": "", "icon": "bi-arrow-repeat", "role": "secondary"}),
+        _widget("metric-card", 6, 6, 3, 1, {"metric": "battery_temp_c", "label": "Battery temp", "unit": "°C", "icon": "bi-thermometer-half", "role": "danger"}),
+        _widget("metric-card", 9, 6, 3, 1, {"metric": "battery_voltage_v", "label": "Battery voltage", "unit": "V", "icon": "bi-battery-half", "role": "info"}),
     ],
 }
 

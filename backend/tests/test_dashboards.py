@@ -84,6 +84,9 @@ def test_get_builtin_now_has_expected_layout():
         soc = next(w for w in now["widgets"] if w["config"].get("metric") == "battery_soc_pct")
         assert soc["type"] == "metric-gauge"
         assert soc["config"]["unit"] == "%" and soc["config"]["max"] == 100
+        # Battery-health stats are individual metric-cards.
+        soh = next(w for w in now["widgets"] if w["config"].get("metric") == "battery_soh_pct")
+        assert soh["type"] == "metric-card" and (soh["w"], soh["h"]) == (3, 1)
 
 
 def test_get_builtin_history_layout():

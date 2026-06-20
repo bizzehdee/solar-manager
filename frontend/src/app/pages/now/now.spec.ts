@@ -97,25 +97,6 @@ describe('NowPage', () => {
     expect(el.textContent).toContain('6500 W'); // solar gauge — true watts
   });
 
-  it('renders the battery health panel when battery_soh_pct is present (T055)', () => {
-    const fixture = TestBed.createComponent(NowPage);
-    live.set({ battery_soc_pct: 50, battery_soh_pct: 98, battery_cycles: 120, battery_temp_c: 25 });
-    fixture.detectChanges();
-    expect(fixture.componentInstance.hasBatteryHealth()).toBe(true);
-    const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
-    expect(text).toContain('Battery health');
-    expect(text).toContain('98 %');
-    expect(text).toContain('120');
-  });
-
-  it('hides the battery health panel when neither soh nor cycles present (T055)', () => {
-    const fixture = TestBed.createComponent(NowPage);
-    live.set({ battery_soc_pct: 50 });
-    fixture.detectChanges();
-    expect(fixture.componentInstance.hasBatteryHealth()).toBe(false);
-    expect((fixture.nativeElement as HTMLElement).textContent).not.toContain('Battery health');
-  });
-
   it('shows inverter clock drift and syncs to system time', () => {
     clockResponse = {
       device_id: 'd1', supported: true, device_time: '2026-06-21T12:01:35',
