@@ -89,12 +89,15 @@ metrics:
   bms_battery_temp_c:        { addr: 319, type: u16, scale: 0.1, offset: -100 }  # BMS temp (confirmed 25.0°C, 2026-06-20)
 
   # ── daily energy counters (raw is kWh ×0.1; ×100 -> Wh per canonical keys) ──
-  today_pv_wh:              { addr: 108, type: u16, scale: 100 }
-  today_load_wh:            { addr: 84,  type: u16, scale: 100 }
-  today_grid_import_wh:     { addr: 76,  type: u16, scale: 100 }
-  today_grid_export_wh:     { addr: 77,  type: u16, scale: 100 }
-  today_batt_charge_wh:     { addr: 70,  type: u16, scale: 100 }
-  today_batt_discharge_wh:  { addr: 71,  type: u16, scale: 100 }
+  # All six screen-confirmed 2026-06-20 against the inverter's own daily totals: PV 22.3,
+  # load 7.9, purchased 1.8, sold 5.5, charge 12.8, discharge 3.2 kWh (load/discharge still
+  # climbing in the evening, so they read slightly higher than the 19:45 scan).
+  today_pv_wh:              { addr: 108, type: u16, scale: 100 }   # "PV generation" 22.3 kWh
+  today_load_wh:            { addr: 84,  type: u16, scale: 100 }   # "Load consumption" 7.9 kWh
+  today_grid_import_wh:     { addr: 76,  type: u16, scale: 100 }   # "Purchased electricity" 1.8 kWh (inverter port)
+  today_grid_export_wh:     { addr: 77,  type: u16, scale: 100 }   # "Sold electricity" 5.5 kWh (inverter port)
+  today_batt_charge_wh:     { addr: 70,  type: u16, scale: 100 }   # "Charge energy" 12.8 kWh
+  today_batt_discharge_wh:  { addr: 71,  type: u16, scale: 100 }   # "Discharge energy" 3.2 kWh
 
   # ── lifetime energy totals (32-bit, low word first; kWh ×0.1 -> Wh) ──
   total_pv_wh:              { addr: [96, 97], type: u32, scale: 100 }
