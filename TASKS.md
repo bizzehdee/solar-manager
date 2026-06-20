@@ -729,12 +729,25 @@ versioned releases.*
     `DashboardData` model. Tests: `widget-registry.spec.ts` (7: completeness + per-type adapter incl.
     SoC-via-metric-gauge) + host render/fallback; frontend 158 green, build + no-CDN gate green.
 
-- [ ] **T_DB4 · "Now" built-in dashboard** · Deps: T_DB3 · Required by: T_DB6
+- [x] **T_DB4 · "Now" built-in dashboard** · Deps: T_DB3 · Required by: T_DB6
   - Seed the Now built-in with the specified layout (see L06 spec above). The Now page route
     (`/now`) renders `DashboardHostComponent` with the Now config; the existing WS subscription
     moves to a `DashboardDataService` that feeds live metrics to whichever widgets need them.
     Built-in cannot be deleted; a "Reset to default" action restores the seed layout.
     E2E: Now dashboard renders, energy-flow visible, battery SoC gauge visible.
+  - **Done:** `core/dashboard-data.service.ts` (`DashboardDataService`) — single WS-backed source:
+    derives `metrics`/`faultCodes`/`runState`/`inverterOnline` from `LiveService` and exposes the
+    `DashboardData` bag (`data()`) the host feeds widgets. `pages/now/now.ts` now loads the `now`
+    built-in (`api.getDashboard('now')`) and renders `<app-dashboard-host [dashboard] [data]>` (view
+    mode) for the grid, keeping the non-widget device chrome — fault banner, run-state badge,
+    inverter clock drift/sync, battery-health panel — sourced from the service. A **Reset to default**
+    button re-fetches the server-seeded layout. The dynamic per-install gauge auto-scaling and the
+    battery/grid direction sublabels are dropped in favour of the generic `metric-gauge` (static
+    `max`/unit from config) — consistent with the new widget model. Removed the now-unused
+    `shared/soc-gauge.ts` (battery SoC is a `metric-gauge`). Tests: `now.spec.ts` rewritten (8 — chrome
+    + host render + reset) reading from a faked `LiveService` via the service; E2E `now.spec.ts` adds a
+    grid-host assertion and retargets the SoC check to the metric-gauge. Frontend 158 green, e2e 17
+    green, build + no-CDN gate green.
 
 - [ ] **T_DB5 · "History" built-in dashboard** · Deps: T_DB3 · Required by: T_DB6
   - Seed the History built-in with the existing History page layout (time-series chart + stat

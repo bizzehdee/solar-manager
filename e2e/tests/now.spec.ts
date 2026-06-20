@@ -9,10 +9,16 @@ test.describe('Now dashboard (live, on the dummy)', () => {
     await expect(page.locator('.app-sidebar .nav-link')).toHaveCount(7);
   });
 
+  test('renders inside the dashboard grid host', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.locator('app-dashboard-host .grid-stack')).toBeVisible();
+  });
+
   test('battery gauge updates from a live WebSocket reading', async ({ page }) => {
     await page.goto('/');
-    // The SoC gauge text only appears once a snapshot has arrived over the socket.
-    await expect(page.locator('app-soc-gauge text').first()).toContainText('%');
+    // SoC is now a generic metric-gauge (a power-gauge with unit "%"); its value text appears
+    // once a snapshot has arrived over the socket.
+    await expect(page.locator('app-power-gauge text', { hasText: '%' }).first()).toBeVisible();
     // Scoped to the power gauges — "Solar" also labels a node in the energy-flow widget (L14).
     await expect(page.locator('app-power-gauge text', { hasText: 'Solar' })).toBeVisible();
     await expect(page.locator('app-power-gauge text', { hasText: 'Load' })).toBeVisible();

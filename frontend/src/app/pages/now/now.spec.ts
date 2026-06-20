@@ -5,9 +5,9 @@ import { of } from 'rxjs';
 import { NowPage } from './now';
 import { ApiService } from '../../core/api.service';
 import { LiveService } from '../../core/live.service';
-import { MetricValue, Snapshot } from '../../core/models';
+import { DashboardConfig, MetricValue, Snapshot } from '../../core/models';
 
-// Minimal LiveService stub exposing the `snapshot` signal NowPage consumes.
+// Minimal LiveService stub exposing the `snapshot` signal DashboardDataService consumes.
 class FakeLiveService {
   readonly snapshot = signal<Snapshot | null>(null);
   set(metrics: Record<string, MetricValue>): void {
@@ -15,7 +15,18 @@ class FakeLiveService {
   }
 }
 
-// ApiService stub: NowPage fetches device ratings + forecast config on init for gauge scales.
+// The "now" built-in layout the page loads via the API (energy-flow + two metric-gauges).
+const nowConfig: DashboardConfig = {
+  id: 'now',
+  name: 'Now',
+  builtin: true,
+  widgets: [
+    { type: 'energy-flow', x: 0, y: 0, w: 6, h: 6, config: {} },
+    { type: 'metric-gauge', x: 6, y: 0, w: 2, h: 2, config: { metric: 'pv_power_w', label: 'Solar', unit: 'W', max: 8000 } },
+    { type: 'metric-gauge', x: 6, y: 2, w: 2, h: 2, config: { metric: 'battery_soc_pct', label: 'Battery SoC', unit: '%', max: 100 } },
+  ],
+};
+
 let clockResponse = {
   device_id: 'd1', supported: true, device_time: '2026-06-21T12:01:35',
   system_time: '2026-06-21T12:00:00', drift_s: 95, syncable: true,
@@ -23,6 +34,7 @@ let clockResponse = {
 const syncCalls: string[] = [];
 
 const fakeApi = {
+  getDashboard: () => of(nowConfig),
   getDevices: () => of({ devices: [{ id: 'd1', ratings: { ac_power_w: 5000 } }] }),
   getDeviceClock: () => of(clockResponse),
   syncDeviceClock: (id: string) => {
@@ -30,14 +42,6 @@ const fakeApi = {
     clockResponse = { ...clockResponse, drift_s: 0 };
     return of({ ok: true, drift_s: 0 });
   },
-  getDeviceSettings: () =>
-    of({ device_id: 'd1', supported: true, values: { battery_charging: { max_charge_current_a: 140 } } }),
-  getForecastConfig: () =>
-    of({
-      site: { lat: 0, lon: 0, performance_ratio: 0.85 },
-      arrays: [{ name: 'A', kwp: 6.5, tilt: 30, azimuth: 180 }],
-      battery: { capacity_wh: 16000, min_soc_pct: 10, max_soc_pct: 100, max_charge_w: 4000, max_discharge_w: 4000 },
-    }),
 } as unknown as ApiService;
 
 describe('NowPage', () => {
@@ -78,6 +82,19 @@ describe('NowPage', () => {
     expect((badge as HTMLElement).textContent?.trim()).toBe('on grid');
   });
 
+  it('renders the dashboard host with the now layout (energy-flow + gauges)', () => {
+    const fixture = TestBed.createComponent(NowPage);
+    live.set({ battery_soc_pct: 60, pv_power_w: 6500 });
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('app-dashboard-host')).toBeTruthy();
+    expect(el.querySelector('app-energy-flow')).toBeTruthy();
+    // Two metric-gauges → PowerGauge components; the SoC one renders its '%' unit and value.
+    expect(el.querySelectorAll('app-power-gauge svg').length).toBe(2);
+    expect(el.textContent).toContain('60 %'); // SoC gauge value + overridden unit
+    expect(el.textContent).toContain('6500 W'); // solar gauge — true watts
+  });
+
   it('renders the battery health panel when battery_soh_pct is present (T055)', () => {
     const fixture = TestBed.createComponent(NowPage);
     live.set({ battery_soc_pct: 50, battery_soh_pct: 98, battery_cycles: 120, battery_temp_c: 25 });
@@ -89,24 +106,12 @@ describe('NowPage', () => {
     expect(text).toContain('120');
   });
 
-  it('renders circular gauges for SoC + the four power flows with directions', () => {
+  it('hides the battery health panel when neither soh nor cycles present (T055)', () => {
     const fixture = TestBed.createComponent(NowPage);
-    live.set({
-      battery_soc_pct: 60, pv_power_w: 6500, load_power_w: 1200,
-      battery_power_w: 3000, grid_power_w: -2000, // battery charging, grid exporting
-    });
+    live.set({ battery_soc_pct: 50 });
     fixture.detectChanges();
-
-    const el = fixture.nativeElement as HTMLElement;
-    // 5 gauge SVGs: 1 SoC + 4 power.
-    expect(el.querySelectorAll('app-soc-gauge svg').length).toBe(1);
-    expect(el.querySelectorAll('app-power-gauge svg').length).toBe(4);
-    // Directions derived from sign.
-    expect(fixture.componentInstance.batteryDir()).toBe('charging');
-    expect(fixture.componentInstance.gridDir()).toBe('exporting');
-    expect(fixture.componentInstance.batteryAbs()).toBe(3000);
-    expect(fixture.componentInstance.gridAbs()).toBe(2000);
-    expect(el.textContent).toContain('6500 W'); // solar gauge — real watts, not "6.5 kW"
+    expect(fixture.componentInstance.hasBatteryHealth()).toBe(false);
+    expect((fixture.nativeElement as HTMLElement).textContent).not.toContain('Battery health');
   });
 
   it('shows inverter clock drift and syncs to system time', () => {
@@ -129,24 +134,12 @@ describe('NowPage', () => {
     expect(fixture.componentInstance.clock()?.drift_s).toBe(0);
   });
 
-  it('scales gauges to the actual installation (AC rating, installed PV, battery charge limit)', () => {
+  it('reloads the layout on reset to default', () => {
     const fixture = TestBed.createComponent(NowPage);
-    // Provide a live battery voltage so the battery scale is deterministic.
-    live.set({ battery_soc_pct: 60, battery_voltage_v: 50 });
-    fixture.detectChanges(); // triggers ngOnInit → fetches ratings + settings + forecast config
-    const c = fixture.componentInstance;
-    expect(c.acRatedW()).toBe(5000); // inverter rated AC (load/grid scale)
-    expect(c.solarMax()).toBe(6500); // Σ array kWp × 1000
-    // Battery ring = max_charge_current_a (140) × battery voltage (50) — takes precedence
-    // over the forecast max_charge_w.
-    expect(c.batteryMax()).toBe(7000);
-  });
-
-  it('hides the battery health panel when neither soh nor cycles present (T055)', () => {
-    const fixture = TestBed.createComponent(NowPage);
-    live.set({ battery_soc_pct: 50 });
     fixture.detectChanges();
-    expect(fixture.componentInstance.hasBatteryHealth()).toBe(false);
-    expect((fixture.nativeElement as HTMLElement).textContent).not.toContain('Battery health');
+    expect(fixture.componentInstance.dashboard()?.id).toBe('now');
+    fixture.componentInstance.dashboard.set(null);
+    fixture.componentInstance.reset();
+    expect(fixture.componentInstance.dashboard()?.id).toBe('now');
   });
 });
