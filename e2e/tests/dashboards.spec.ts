@@ -12,17 +12,21 @@ test.describe('Dashboard management', () => {
     await expect(card.getByText('Now')).toBeVisible();
     await expect(card.getByText('History')).toBeVisible();
 
-    // "New" prompts for a name.
-    page.once('dialog', (d) => d.accept('E2E Test Dash'));
+    // "New" opens a Bootstrap modal asking for the name.
     await card.getByRole('button', { name: /New/ }).click();
+    const modal = page.locator('.modal');
+    await expect(modal).toBeVisible();
+    await modal.locator('#dlg-input').fill('E2E Test Dash');
+    await modal.getByRole('button', { name: 'Create' }).click();
+
     await expect(card.getByRole('cell', { name: 'E2E Test Dash' })).toBeVisible();
     // It also shows up in the sidebar switcher.
     await expect(page.locator('.app-sidebar .nav-link', { hasText: 'E2E Test Dash' })).toBeVisible();
 
-    // Delete it (confirm dialog). The delete control is the red icon button in the row.
+    // Delete it via the confirm modal. The delete control is the red icon button in the row.
     const row = card.locator('tr', { hasText: 'E2E Test Dash' });
-    page.once('dialog', (d) => d.accept());
     await row.locator('button.btn-outline-danger').click();
+    await page.locator('.modal').getByRole('button', { name: 'Delete' }).click();
     await expect(card.getByRole('cell', { name: 'E2E Test Dash' })).toHaveCount(0);
   });
 

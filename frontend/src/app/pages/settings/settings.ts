@@ -3,6 +3,7 @@ import { FormsModule } from '@angular/forms';
 
 import { ApiService } from '../../core/api.service';
 import { DashboardsService } from '../../core/dashboards.service';
+import { DialogService } from '../../core/dialog.service';
 import { downloadDashboard, parseDashboard } from '../../core/dashboard-file';
 import { PreferencesService } from '../../core/preferences.service';
 import { TranslatePipe } from '../../core/translate.pipe';
@@ -684,6 +685,7 @@ type SettingsTab = 'devices' | 'solar' | 'tariff' | 'notifications' | 'dashboard
 export class SettingsPage implements OnInit {
   private readonly api = inject(ApiService);
   readonly dashboards = inject(DashboardsService);
+  private readonly dialog = inject(DialogService);
   readonly dashboardsMsg = signal<{ cls: string; text: string } | null>(null);
 
   // Tabbed layout: each tab groups one concern. Diagnostics is embedded here (T092) rather than
@@ -788,8 +790,8 @@ export class SettingsPage implements OnInit {
   }
 
   // --- Dashboards management (L06 / T_DB6) ---
-  createDashboard(): void {
-    const name = this.askName('New dashboard name', '');
+  async createDashboard(): Promise<void> {
+    const name = await this.dialog.prompt({ title: 'New dashboard', label: 'Name', confirmText: 'Create' });
     if (!name) return;
     this.dashboards.create(name).subscribe({
       next: () => this.flashDashboards('success', `Created "${name}".`),
@@ -797,8 +799,8 @@ export class SettingsPage implements OnInit {
     });
   }
 
-  renameDashboard(d: DashboardConfig): void {
-    const name = this.askName('Rename dashboard', d.name);
+  async renameDashboard(d: DashboardConfig): Promise<void> {
+    const name = await this.dialog.prompt({ title: 'Rename dashboard', label: 'Name', value: d.name, confirmText: 'Rename' });
     if (!name || name === d.name) return;
     this.dashboards.rename(d, name).subscribe({
       next: () => this.flashDashboards('success', 'Renamed.'),
@@ -806,8 +808,14 @@ export class SettingsPage implements OnInit {
     });
   }
 
-  deleteDashboard(d: DashboardConfig): void {
-    if (!this.confirmDelete(d.name)) return;
+  async deleteDashboard(d: DashboardConfig): Promise<void> {
+    const ok = await this.dialog.confirm({
+      title: 'Delete dashboard',
+      message: `Delete dashboard "${d.name}"? This can't be undone.`,
+      confirmText: 'Delete',
+      danger: true,
+    });
+    if (!ok) return;
     this.dashboards.remove(d.id).subscribe({
       next: () => this.flashDashboards('success', `Deleted "${d.name}".`),
       error: () => this.flashDashboards('danger', 'Could not delete (built-ins are protected).'),
@@ -842,14 +850,6 @@ export class SettingsPage implements OnInit {
     });
   }
 
-  /** Prompt/confirm seams (overridable in tests). */
-  askName(message: string, initial: string): string | null {
-    const v = typeof prompt === 'function' ? prompt(message, initial) : null;
-    return v && v.trim() ? v.trim() : null;
-  }
-  confirmDelete(name: string): boolean {
-    return typeof confirm === 'function' ? confirm(`Delete dashboard "${name}"?`) : false;
-  }
   private flashDashboards(cls: string, text: string): void {
     this.dashboardsMsg.set({ cls, text });
     setTimeout(() => this.dashboardsMsg.set(null), 4000);

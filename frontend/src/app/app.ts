@@ -9,13 +9,15 @@ import { DashboardsService } from './core/dashboards.service';
 import { PreferencesService } from './core/preferences.service';
 import { DashboardConfig } from './core/models';
 import { downloadDashboard } from './core/dashboard-file';
+import { DialogService } from './core/dialog.service';
+import { DialogHost } from './shared/dialog';
 import { StatusPill } from './shared/status-pill';
 
 // Fixed admin shell (plan.md §8): header / sidebar / footer; content is the only
 // scroll region. Only this container subscribes to live data (smart/dumb split).
 @Component({
   selector: 'app-root',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, StatusPill, DatePipe],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, StatusPill, DatePipe, DialogHost],
   template: `
     <div [class.sidebar-collapsed]="!sidebarOpen()" [class.sidebar-open]="sidebarOpen()">
       <header class="app-header navbar navbar-expand bg-body-tertiary border-bottom fixed-top px-3">
@@ -94,6 +96,8 @@ import { StatusPill } from './shared/status-pill';
         <router-outlet />
       </main>
 
+      <app-dialog />
+
       <footer class="app-footer d-flex align-items-center justify-content-between px-3 bg-body-tertiary border-top fixed-bottom text-secondary">
         <span>v{{ version() || '—' }}</span>
         <span>{{ now() | date: 'mediumTime' }}</span>
@@ -108,6 +112,7 @@ export class App implements OnInit, OnDestroy {
   private readonly api = inject(ApiService);
   private readonly prefs = inject(PreferencesService);
   private readonly router = inject(Router);
+  private readonly dialog = inject(DialogService);
 
   // Open by default on desktop, closed on mobile (where the sidebar is an off-canvas
   // overlay). The hamburger toggles it; on mobile it slides in over a backdrop.
@@ -167,8 +172,8 @@ export class App implements OnInit, OnDestroy {
     this.openMenuId.set(null);
   }
 
-  newDashboard(): void {
-    const name = this.askName('New dashboard name', '');
+  async newDashboard(): Promise<void> {
+    const name = await this.dialog.prompt({ title: 'New dashboard', label: 'Name', confirmText: 'Create' });
     if (!name) return;
     this.dashboards.create(name).subscribe((d) => {
       this.router.navigate(['dashboard', d.id]);
@@ -176,8 +181,8 @@ export class App implements OnInit, OnDestroy {
     });
   }
 
-  rename(d: DashboardConfig): void {
-    const name = this.askName('Rename dashboard', d.name);
+  async rename(d: DashboardConfig): Promise<void> {
+    const name = await this.dialog.prompt({ title: 'Rename dashboard', label: 'Name', value: d.name, confirmText: 'Rename' });
     if (!name || name === d.name) return;
     this.dashboards.rename(d, name).subscribe();
   }
@@ -186,18 +191,15 @@ export class App implements OnInit, OnDestroy {
     this.api.getDashboard(d.id).subscribe((cfg) => downloadDashboard(cfg));
   }
 
-  remove(d: DashboardConfig): void {
-    if (!this.confirmDelete(d.name)) return;
+  async remove(d: DashboardConfig): Promise<void> {
+    const ok = await this.dialog.confirm({
+      title: 'Delete dashboard',
+      message: `Delete dashboard "${d.name}"? This can't be undone.`,
+      confirmText: 'Delete',
+      danger: true,
+    });
+    if (!ok) return;
     this.dashboards.remove(d.id).subscribe(() => this.router.navigate(['now']));
-  }
-
-  // --- prompt/confirm seams (overridable in tests) ---
-  askName(message: string, initial: string): string | null {
-    const v = typeof prompt === 'function' ? prompt(message, initial) : null;
-    return v && v.trim() ? v.trim() : null;
-  }
-  confirmDelete(name: string): boolean {
-    return typeof confirm === 'function' ? confirm(`Delete dashboard "${name}"?`) : false;
   }
 
   private refreshAlertCount(): void {
