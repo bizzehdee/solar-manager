@@ -229,7 +229,7 @@ clock:
 
 # Device identity.
 info:
-  serial:      { addr: [3, 4, 5, 6, 7], type: ascii }   # 5 regs, 2 ASCII chars each
+  serial:      { addr: [3, 4, 5, 6, 7], type: ascii }   # 5 regs, 2 ASCII chars each; screen shows "2409026066" (decode unconfirmed — regs 3-7 not yet scanned)
   device_type: { addr: 0, type: u16 }
   protocol:    { addr: 2, type: version_be }   # 0x0201 -> "2.1" (high.low bytes)
   rated_power_w: { addr: [16, 17], type: u32, scale: 0.1 }   # validated: 8000 W
