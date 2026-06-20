@@ -684,6 +684,14 @@ type SettingsTab = 'devices' | 'solar' | 'tariff' | 'notifications' | 'dashboard
                 <label class="form-label small text-secondary" [attr.for]="'seg-az-' + $index">Azimuth (°)</label>
                 <input [id]="'seg-az-' + $index" type="number" step="any" class="form-control" [(ngModel)]="seg.azimuth" [name]="'segAz' + $index" />
               </div>
+              <div class="col-6 col-md-2">
+                <label class="form-label small text-secondary" [attr.for]="'seg-gamma-' + $index">Temp coeff (%/°C)</label>
+                <input [id]="'seg-gamma-' + $index" type="number" step="any" class="form-control" [(ngModel)]="seg.gamma_pmax" [name]="'segGamma' + $index" placeholder="−0.26" />
+              </div>
+              <div class="col-6 col-md-2">
+                <label class="form-label small text-secondary" [attr.for]="'seg-noct-' + $index">NOCT (°C)</label>
+                <input [id]="'seg-noct-' + $index" type="number" step="any" class="form-control" [(ngModel)]="seg.nmot" [name]="'segNoct' + $index" placeholder="41" />
+              </div>
               <div class="col-12 col-md-3">
                 <button type="button" class="btn btn-outline-danger" (click)="removeSegment($index)">
                   <i class="bi bi-trash"></i> Remove

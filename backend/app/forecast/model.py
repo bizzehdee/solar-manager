@@ -44,13 +44,18 @@ class ArraySegment:
 
     @classmethod
     def from_dict(cls, d: dict) -> "ArraySegment":
+        # A blank/omitted optional (UI sends null when the box is empty) falls back to the default.
+        def opt(key: str, default: float) -> float:
+            v = d.get(key)
+            return default if v is None or v == "" else float(v)
+
         return cls(
             name=str(d.get("name", "array")),
             kwp=float(d["kwp"]),
             tilt=float(d.get("tilt", 30.0)),
             azimuth=float(d.get("azimuth", 180.0)),
-            gamma_pmax=float(d.get("gamma_pmax", DEFAULT_GAMMA_PMAX)),
-            nmot=float(d.get("nmot", DEFAULT_NMOT)),
+            gamma_pmax=opt("gamma_pmax", DEFAULT_GAMMA_PMAX),
+            nmot=opt("nmot", DEFAULT_NMOT),
         )
 
 
