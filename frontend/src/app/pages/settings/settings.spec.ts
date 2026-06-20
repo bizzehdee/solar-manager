@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { provideRouter, Router } from '@angular/router';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting, HttpTestingController } from '@angular/common/http/testing';
 
@@ -384,6 +384,27 @@ describe('SettingsPage', () => {
     // The default (Devices) tab content is rendered; the tariff card is not.
     expect((fixture.nativeElement as HTMLElement).textContent).toContain('My Inverter');
     expect((fixture.nativeElement as HTMLElement).textContent).not.toContain('Import pricing');
+  });
+
+  it('reflects the active tab in the URL and restores it from a query param', async () => {
+    const router = TestBed.inject(Router);
+    const fixture = TestBed.createComponent(SettingsPage);
+    fixture.detectChanges();
+    http.expectOne('/api/devices').flush({ devices: [] });
+    flushConfig();
+
+    // Clicking a tab pushes it to the URL.
+    fixture.componentInstance.selectTab('tariff');
+    await fixture.whenStable();
+    expect(router.url).toContain('tab=tariff');
+
+    // A refresh/back landing on ?tab=solar restores that tab.
+    await router.navigate([], { queryParams: { tab: 'solar' } });
+    expect(fixture.componentInstance.tab()).toBe('solar');
+
+    // An unknown tab falls back to devices.
+    await router.navigate([], { queryParams: { tab: 'bogus' } });
+    expect(fixture.componentInstance.tab()).toBe('devices');
   });
 
   it('switches tabs — selecting Tariff reveals its card', () => {

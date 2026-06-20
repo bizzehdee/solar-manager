@@ -1,6 +1,6 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 
 import { ApiService } from '../../core/api.service';
 import { DashboardsService } from '../../core/dashboards.service';
@@ -38,7 +38,7 @@ type SettingsTab = 'devices' | 'solar' | 'tariff' | 'notifications' | 'dashboard
         <li class="nav-item" role="presentation">
           <button class="nav-link" type="button" role="tab"
                   [class.active]="tab() === t.id" [attr.aria-selected]="tab() === t.id"
-                  (click)="tab.set(t.id)">
+                  (click)="selectTab(t.id)">
             <i class="bi {{ t.icon }}"></i> {{ t.labelKey | translate }}
           </button>
         </li>
@@ -723,6 +723,7 @@ export class SettingsPage implements OnInit {
   readonly dashboards = inject(DashboardsService);
   private readonly dialog = inject(DialogService);
   private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
   readonly dashboardsMsg = signal<{ cls: string; text: string } | null>(null);
 
   // Tabbed layout: each tab groups one concern. Diagnostics is embedded here (T092) rather than
@@ -829,6 +830,17 @@ export class SettingsPage implements OnInit {
     this.loadMqtt();
     this.loadChannels();
     this.dashboards.refresh();
+    // Drive the active tab from the URL (`?tab=`) so refresh keeps the tab and browser
+    // back/forward steps through tab history.
+    this.route.queryParamMap.subscribe((p) => {
+      const t = p.get('tab');
+      this.tab.set(this.tabs.some((x) => x.id === t) ? (t as SettingsTab) : 'devices');
+    });
+  }
+
+  /** Switch tab via the router so it's reflected in the URL (and the history stack). */
+  selectTab(id: SettingsTab): void {
+    this.router.navigate([], { relativeTo: this.route, queryParams: { tab: id }, queryParamsHandling: 'merge' });
   }
 
   // --- Dashboards management (L06 / T_DB6) ---
