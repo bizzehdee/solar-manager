@@ -3,10 +3,14 @@ import { test, expect } from '@playwright/test';
 // The live path is the canonical thing unit tests can't span (plan.md §21): a Reading
 // produced by the backend poller, pushed over the WebSocket, rendered into the DOM.
 test.describe('Now dashboard (live, on the dummy)', () => {
-  test('shell renders with brand and full sidebar nav', async ({ page }) => {
+  test('shell renders with brand and sidebar nav', async ({ page }) => {
     await page.goto('/');
     await expect(page.locator('.navbar-brand')).toContainText('SolarVolt');
-    await expect(page.locator('.app-sidebar .nav-link')).toHaveCount(7);
+    // Dashboards group (Now, History built-ins) + tools group + the "New dashboard" action.
+    await expect(page.locator('.app-sidebar .nav-link', { hasText: 'Now' })).toBeVisible();
+    await expect(page.locator('.app-sidebar .nav-link', { hasText: 'History' })).toBeVisible();
+    await expect(page.locator('.app-sidebar .nav-link', { hasText: 'Settings' })).toBeVisible();
+    await expect(page.locator('.app-sidebar .nav-link', { hasText: 'New dashboard' })).toBeVisible();
   });
 
   test('renders inside the dashboard grid host', async ({ page }) => {

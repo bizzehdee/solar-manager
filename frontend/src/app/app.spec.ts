@@ -14,16 +14,29 @@ describe('App shell', () => {
     }).compileComponents();
   });
 
-  it('creates the shell with brand + nav', () => {
+  it('creates the shell with brand + dashboards group + tools', () => {
     const fixture = TestBed.createComponent(App);
     fixture.detectChanges();
+    const http = TestBed.inject(HttpTestingController);
+    http.match('/api/health').forEach((r) =>
+      r.flush({ version: '9.9', devices: [], poll_interval_s: 3, status: 'ok', control_enabled: false }),
+    );
+    // The sidebar lists the dashboards (built-ins first) it fetched on init.
+    http.match('/api/dashboards').forEach((r) =>
+      r.flush({ dashboards: [
+        { id: 'now', name: 'Now', builtin: true, widgets: [] },
+        { id: 'history', name: 'History', builtin: true, widgets: [] },
+      ] }),
+    );
+    fixture.detectChanges();
+
     const el = fixture.nativeElement as HTMLElement;
-    // health request fired by ngOnInit
-    TestBed.inject(HttpTestingController)
-      .match('/api/health')
-      .forEach((r) => r.flush({ version: '9.9', devices: [], poll_interval_s: 3, status: 'ok', control_enabled: false }));
     expect(el.querySelector('.navbar-brand')?.textContent).toContain('SolarVolt');
-    // Diagnostics moved into Settings (now a tab), so the sidebar has 7 entries.
-    expect(el.querySelectorAll('.app-sidebar .nav-link').length).toBe(7);
+    const links = el.querySelectorAll('.app-sidebar .nav-link');
+    const labels = Array.from(links).map((l) => l.textContent?.trim());
+    expect(labels).toContain('Now');
+    expect(labels).toContain('History');
+    expect(labels).toContain('Settings');
+    expect(labels.some((l) => l?.includes('New dashboard'))).toBe(true);
   });
 });

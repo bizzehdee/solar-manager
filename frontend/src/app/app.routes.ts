@@ -10,6 +10,8 @@ export const routes: Routes = [
   { path: 'automation', loadComponent: () => import('./pages/automation/automation').then((m) => m.AutomationPage), title: 'Automation' },
   { path: 'alerts', loadComponent: () => import('./pages/alerts/alerts').then((m) => m.AlertsPage), title: 'Alerts' },
   { path: 'settings', loadComponent: () => import('./pages/settings/settings').then((m) => m.SettingsPage), title: 'Settings' },
+  // User dashboards (L06): the Now/History built-ins keep dedicated routes; everything else is generic.
+  { path: 'dashboard/:id', loadComponent: () => import('./pages/dashboard/dashboard').then((m) => m.DashboardPage), title: 'Dashboard' },
   // Diagnostics moved into Settings (its own tab); keep the old path as a redirect for bookmarks.
   { path: 'diagnostics', redirectTo: 'settings' },
   { path: '**', redirectTo: 'now' },

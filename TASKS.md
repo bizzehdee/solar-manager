@@ -767,13 +767,25 @@ versioned releases.*
     rewritten `history.spec.ts` (2 — host render + reset), backend `test_get_builtin_history_layout`;
     new E2E `history.spec.ts` (2). Frontend 161 green, backend 374 green, e2e 19 green, build + no-CDN green.
 
-- [ ] **T_DB6 · Dashboard switcher + management** · Deps: T_DB4, T_DB5 · Required by: T_DB7
+- [x] **T_DB6 · Dashboard switcher + management** · Deps: T_DB4, T_DB5 · Required by: T_DB7
   - Nav sidebar lists Now → History → (separator) → user dashboards (in creation order) → "+ New".
     "New" prompts for a name, creates a blank 12-col dashboard via `PUT /api/dashboards/{id}`,
     navigates to it. Dashboard item context menu (⋯): Rename, Export JSON (triggers download),
     Delete (user only; confirm dialog). Settings › Dashboards page lists all dashboards with the
     same actions plus an Import button (file picker → `PUT`). Tests: create/rename/delete
     round-trip; builtin delete attempt shows error not 500.
+  - **Done:** `core/dashboards.service.ts` (`DashboardsService`) — shared `dashboards` signal +
+    builtins/user split + `create/rename/remove` (slugified unique ids) feeding both views.
+    `core/dashboard-file.ts` — `downloadDashboard()` / `parseDashboard()`. Sidebar (`app.ts`)
+    restructured into a **dashboards group** (built-ins → user dashboards → "New dashboard") with a
+    per-user-dashboard ⋯ menu (Rename / Export JSON / Delete, document-click to dismiss) above the
+    tools group; built-ins route to `/now`+`/history`, user dashboards to the new generic
+    `/dashboard/:id` page (`pages/dashboard/dashboard.ts`, reacts to param changes). **Settings ›
+    Dashboards** tab lists all with Export/Rename/Delete + New + **Import** (file → `parseDashboard`
+    → `PUT` under a unique slug). Also fixed a latent shell timer leak (`ngOnDestroy` clears the
+    intervals). Tests: `dashboards.service.spec.ts` (5: slugify/uniqueId/CRUD), updated `app.spec.ts`
+    + settings tab count; E2E `dashboards.spec.ts` (2: create→sidebar→delete; builtin has no delete)
+    + retargeted `now.spec.ts` nav assertions. Frontend 166 green, e2e 21 green, build + no-CDN green.
 
 - [ ] **T_DB7 · Dashboard editor (drag-drop + widget management)** · Deps: T_DB6 · Required by: T_DB8
   - Edit-mode toggle button in the dashboard header (pencil icon). In edit mode:

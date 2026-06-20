@@ -2,11 +2,14 @@ import { Component, inject, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 
 import { ApiService } from '../../core/api.service';
+import { DashboardsService } from '../../core/dashboards.service';
+import { downloadDashboard, parseDashboard } from '../../core/dashboard-file';
 import { PreferencesService } from '../../core/preferences.service';
 import { TranslatePipe } from '../../core/translate.pipe';
 import { DiagnosticsPage } from '../diagnostics/diagnostics';
 import {
   ArraySpec,
+  DashboardConfig,
   DeviceConfig,
   DeviceProfileOption,
   DeviceTestResult,
@@ -19,7 +22,7 @@ import {
 
 // Settings › Devices (plan.md §6, §11): the device registry. Lists configured devices and
 // offers an inline add/edit/delete form. Single-house deployment, no auth (CLAUDE.md).
-type SettingsTab = 'devices' | 'solar' | 'tariff' | 'notifications' | 'system' | 'diagnostics';
+type SettingsTab = 'devices' | 'solar' | 'tariff' | 'notifications' | 'dashboards' | 'system' | 'diagnostics';
 
 @Component({
   selector: 'app-settings',
@@ -287,6 +290,59 @@ type SettingsTab = 'devices' | 'solar' | 'tariff' | 'notifications' | 'system' |
             <button type="submit" class="btn btn-primary"><i class="bi bi-save"></i> Save tariff</button>
           </div>
         </form>
+      </div>
+    </div>
+    }
+
+    <!-- Dashboards management (L06 / T_DB6): list all dashboards with rename/export/delete, plus
+         import from a JSON file. Built-ins (Now, History) can be exported but not renamed/deleted. -->
+    @if (tab() === 'dashboards') {
+    <div class="card">
+      <div class="card-header d-flex align-items-center justify-content-between">
+        <span><i class="bi bi-grid-1x2"></i> Dashboards</span>
+        <div class="d-flex gap-2">
+          <button class="btn btn-sm btn-outline-secondary" (click)="createDashboard()">
+            <i class="bi bi-plus-lg"></i> New
+          </button>
+          <input #importFile type="file" accept=".json,application/json" class="d-none" (change)="importDashboard(importFile)" />
+          <button class="btn btn-sm btn-outline-secondary" (click)="importFile.click()">
+            <i class="bi bi-upload"></i> Import
+          </button>
+        </div>
+      </div>
+      <div class="card-body p-0">
+        @if (dashboardsMsg(); as msg) { <div class="alert alert-{{ msg.cls }} m-3 mb-0 py-2">{{ msg.text }}</div> }
+        <table class="table align-middle mb-0">
+          <thead>
+            <tr><th>Name</th><th>Type</th><th>Widgets</th><th class="text-end">Actions</th></tr>
+          </thead>
+          <tbody>
+            @for (d of dashboards.dashboards(); track d.id) {
+              <tr>
+                <td class="fw-semibold">{{ d.name }}</td>
+                <td>
+                  <span class="badge" [class]="d.builtin ? 'text-bg-secondary' : 'text-bg-info'">
+                    {{ d.builtin ? 'built-in' : 'custom' }}
+                  </span>
+                </td>
+                <td>{{ d.widgets.length }}</td>
+                <td class="text-end text-nowrap">
+                  <button class="btn btn-sm btn-outline-secondary me-1" (click)="exportDashboard(d)" title="Export JSON">
+                    <i class="bi bi-download"></i>
+                  </button>
+                  @if (!d.builtin) {
+                    <button class="btn btn-sm btn-outline-secondary me-1" (click)="renameDashboard(d)" title="Rename">
+                      <i class="bi bi-pencil"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger" (click)="deleteDashboard(d)" title="Delete">
+                      <i class="bi bi-trash"></i>
+                    </button>
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
       </div>
     </div>
     }
@@ -627,6 +683,8 @@ type SettingsTab = 'devices' | 'solar' | 'tariff' | 'notifications' | 'system' |
 })
 export class SettingsPage implements OnInit {
   private readonly api = inject(ApiService);
+  readonly dashboards = inject(DashboardsService);
+  readonly dashboardsMsg = signal<{ cls: string; text: string } | null>(null);
 
   // Tabbed layout: each tab groups one concern. Diagnostics is embedded here (T092) rather than
   // being its own sidebar entry. Devices is the default landing tab.
@@ -636,6 +694,7 @@ export class SettingsPage implements OnInit {
     { id: 'solar', labelKey: 'settings.tab.solar', icon: 'bi-sun' },
     { id: 'tariff', labelKey: 'settings.tab.tariff', icon: 'bi-cash-coin' },
     { id: 'notifications', labelKey: 'settings.tab.notifications', icon: 'bi-send' },
+    { id: 'dashboards', labelKey: 'settings.tab.dashboards', icon: 'bi-grid-1x2' },
     { id: 'system', labelKey: 'settings.tab.system', icon: 'bi-sliders' },
     { id: 'diagnostics', labelKey: 'settings.tab.diagnostics', icon: 'bi-clipboard-pulse' },
   ];
@@ -725,6 +784,75 @@ export class SettingsPage implements OnInit {
     this.loadWebhook();
     this.loadMqtt();
     this.loadChannels();
+    this.dashboards.refresh();
+  }
+
+  // --- Dashboards management (L06 / T_DB6) ---
+  createDashboard(): void {
+    const name = this.askName('New dashboard name', '');
+    if (!name) return;
+    this.dashboards.create(name).subscribe({
+      next: () => this.flashDashboards('success', `Created "${name}".`),
+      error: () => this.flashDashboards('danger', 'Could not create the dashboard.'),
+    });
+  }
+
+  renameDashboard(d: DashboardConfig): void {
+    const name = this.askName('Rename dashboard', d.name);
+    if (!name || name === d.name) return;
+    this.dashboards.rename(d, name).subscribe({
+      next: () => this.flashDashboards('success', 'Renamed.'),
+      error: () => this.flashDashboards('danger', 'Could not rename.'),
+    });
+  }
+
+  deleteDashboard(d: DashboardConfig): void {
+    if (!this.confirmDelete(d.name)) return;
+    this.dashboards.remove(d.id).subscribe({
+      next: () => this.flashDashboards('success', `Deleted "${d.name}".`),
+      error: () => this.flashDashboards('danger', 'Could not delete (built-ins are protected).'),
+    });
+  }
+
+  exportDashboard(d: DashboardConfig): void {
+    this.api.getDashboard(d.id).subscribe((cfg) => downloadDashboard(cfg));
+  }
+
+  importDashboard(input: HTMLInputElement): void {
+    const file = input.files?.[0];
+    if (!file) return;
+    file.text().then((text) => {
+      let parsed: { name: string; widgets: DashboardConfig['widgets'] };
+      try {
+        parsed = parseDashboard(text);
+      } catch (e) {
+        this.flashDashboards('danger', (e as Error).message || 'Invalid dashboard file.');
+        input.value = '';
+        return;
+      }
+      const id = this.dashboards.uniqueId(parsed.name);
+      this.api.putDashboard(id, { name: parsed.name, widgets: parsed.widgets }).subscribe({
+        next: () => {
+          this.dashboards.refresh();
+          this.flashDashboards('success', `Imported "${parsed.name}".`);
+        },
+        error: () => this.flashDashboards('danger', 'Could not import the dashboard.'),
+      });
+      input.value = '';
+    });
+  }
+
+  /** Prompt/confirm seams (overridable in tests). */
+  askName(message: string, initial: string): string | null {
+    const v = typeof prompt === 'function' ? prompt(message, initial) : null;
+    return v && v.trim() ? v.trim() : null;
+  }
+  confirmDelete(name: string): boolean {
+    return typeof confirm === 'function' ? confirm(`Delete dashboard "${name}"?`) : false;
+  }
+  private flashDashboards(cls: string, text: string): void {
+    this.dashboardsMsg.set({ cls, text });
+    setTimeout(() => this.dashboardsMsg.set(null), 4000);
   }
 
   // --- MQTT publisher + HA discovery (L07) ---

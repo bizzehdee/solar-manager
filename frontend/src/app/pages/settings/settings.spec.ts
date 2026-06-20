@@ -370,7 +370,7 @@ describe('SettingsPage', () => {
     expect(fixture.componentInstance.testing()).toBe(false);
   });
 
-  it('defaults to the Devices tab and renders six tabs', () => {
+  it('defaults to the Devices tab and renders the tab bar', () => {
     const fixture = TestBed.createComponent(SettingsPage);
     fixture.detectChanges();
     http.expectOne('/api/devices').flush({ devices: [device({ name: 'My Inverter' })] });
@@ -379,7 +379,7 @@ describe('SettingsPage', () => {
 
     expect(fixture.componentInstance.tab()).toBe('devices');
     const tabs = (fixture.nativeElement as HTMLElement).querySelectorAll('.nav-tabs .nav-link');
-    expect(tabs.length).toBe(6);
+    expect(tabs.length).toBe(7); // + Dashboards tab (T_DB6)
     // The default (Devices) tab content is rendered; the tariff card is not.
     expect((fixture.nativeElement as HTMLElement).textContent).toContain('My Inverter');
     expect((fixture.nativeElement as HTMLElement).textContent).not.toContain('Import pricing');
