@@ -259,6 +259,28 @@ class AppConfigRepository:
 
         await self._db.run(_set)
 
+    async def delete(self, key: str) -> bool:
+        """Remove a config key. Returns True if a row was deleted."""
+
+        def _delete():
+            cur = self._conn.execute("DELETE FROM app_config WHERE key=?", (key,))
+            self._conn.commit()
+            return cur.rowcount > 0
+
+        return await self._db.run(_delete)
+
+    async def list_prefix(self, prefix: str) -> dict:
+        """All {key: value} pairs whose key starts with `prefix` (LIKE wildcards escaped)."""
+        like = prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+
+        def _list():
+            rows = self._conn.execute(
+                "SELECT key, value FROM app_config WHERE key LIKE ? ESCAPE '\\'", (like,)
+            ).fetchall()
+            return {row["key"]: json.loads(row["value"]) for row in rows}
+
+        return await self._db.run(_list)
+
 
 class SqliteHistoryRepository:
     """Time-series persistence + rollups + retention."""

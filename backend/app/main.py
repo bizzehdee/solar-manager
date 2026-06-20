@@ -27,6 +27,11 @@ from . import control
 from .alerts.channels import SUPPORTED_CHANNELS, build_channels
 from .automation.service import AutomationService
 from .config import Settings
+from .dashboards import (
+    BuiltinProtected,
+    DashboardNotFound,
+    DashboardStore,
+)
 from .grid_events import GridEventService
 from .integrations import ReadingsWebhookService, MqttService
 from .devices.base import TransportError, system_clock
@@ -97,6 +102,7 @@ async def lifespan(app: FastAPI):
     app.state.app_config = app_config
     app.state.audit_repo = audit_repo
     app.state.alert_repo = alert_repo
+    app.state.dashboards = DashboardStore(app_config)
     app.state.stats = StatsService(history_repo, app_config)
     weather = app.state.weather or OpenMeteoClient()
     app.state.weather = weather
@@ -406,6 +412,43 @@ def create_app(
         prefs = {k: body[k] for k in ("locale", "currency", "timezone") if k in body}
         await cfg.set("preferences", prefs)
         return JSONResponse(prefs)
+
+    # ---- dashboards (Later / L06, T_DB1) --------------------------------------
+    # Builtins (Now, History) are seeded from code; user dashboards live one-per-key in app_config.
+    # The single-dashboard JSON is also the export/import wire format.
+    @app.get("/api/dashboards")
+    async def list_dashboards() -> JSONResponse:
+        store: DashboardStore = app.state.dashboards
+        return JSONResponse({"dashboards": await store.list()})
+
+    @app.get("/api/dashboards/{dashboard_id}")
+    async def get_dashboard(dashboard_id: str) -> JSONResponse:
+        store: DashboardStore = app.state.dashboards
+        try:
+            return JSONResponse(await store.get(dashboard_id))
+        except DashboardNotFound:
+            raise HTTPException(status_code=404, detail="no such dashboard") from None
+
+    @app.put("/api/dashboards/{dashboard_id}")
+    async def put_dashboard(dashboard_id: str, body: dict = Body(...)) -> JSONResponse:
+        store: DashboardStore = app.state.dashboards
+        try:
+            return JSONResponse(await store.put(dashboard_id, body))
+        except BuiltinProtected:
+            raise HTTPException(status_code=403, detail="builtin dashboards are read-only") from None
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.delete("/api/dashboards/{dashboard_id}")
+    async def delete_dashboard(dashboard_id: str) -> Response:
+        store: DashboardStore = app.state.dashboards
+        try:
+            await store.delete(dashboard_id)
+        except BuiltinProtected:
+            raise HTTPException(status_code=403, detail="builtin dashboards cannot be deleted") from None
+        except DashboardNotFound:
+            raise HTTPException(status_code=404, detail="no such dashboard") from None
+        return Response(status_code=204)
 
     @app.get("/api/forecast/calibrate")
     async def calibrate_forecast(device_id: str | None = None) -> JSONResponse:

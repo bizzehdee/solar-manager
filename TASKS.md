@@ -603,16 +603,28 @@ versioned releases.*
     so a fresh install reaches a useful state without hand-editing config. Settings already
     expose every piece (devices/forecast/tariff); this is the guided-flow wrapper. *Refs: §19.*
 
-- [-] **L06 · Customisable dashboards (incl. the home/Now dashboard)** · Deps: T018, T045, T047
-  - **Deliverable:** a widget-based dashboard the user can arrange — pick which cards / gauges /
-    charts appear, reorder/resize them, and **edit the home (Now) view itself**; optionally
-    multiple named dashboards. Layout persists in the config DB (`app_config`) — single
-    household, no auth, so one layout set per install (§3).
-  - **Done when:** a user can add/remove/rearrange widgets on the Now page and the layout
-    survives reload; widgets are driven by the canonical metrics + existing reusable components
-    (`metric-card`, `soc-gauge`, `time-series-chart`, `stat-card`) via a small widget registry.
-  - *Notes:* larger UX effort (edit mode + layout model + a drag/grid lib, self-hosted per §8 —
-    no CDN). Keep presentational widgets dumb; the dashboard config is just data. *Refs: §8.*
+- [-] **L06 · Dynamic dashboards** · Deps: T018, T045, T047
+  - **Deliverable:** a 12-column widget grid (powered by `gridstack`, self-hosted via npm — no CDN)
+    with two built-in dashboards (**Now** and **History**) and unlimited user-created dashboards.
+    Edit mode exposes drag-and-drop repositioning (snap-to-grid), resize handles, add/remove widgets,
+    and per-widget config. Layouts persist server-side in `app_config`. Dashboards are exportable and
+    importable as JSON files (download/upload in the UI).
+  - **Grid spec:** 12 columns; gauge/card widgets default to 2×2; energy-flow widget is 6×6.
+  - **Widget registry:** `energy-flow`, `soc-gauge`, `power-gauge`, `metric-card`, `time-series-chart`
+    (and `stat-card`). Each type declares its minimum size, default size, and a config schema (which
+    metric to display, label, unit overrides). Widgets remain dumb presentational components — the
+    dashboard host provides data.
+  - **Now built-in layout (col×row, all 2×2 except energy-flow):**
+    `energy-flow` 0×0 (6×6) · `solar` 6×0 · `load` 10×0 · `battery-soc` 6×2 · `battery-power` 8×2
+    · `grid-power` 10×2 · `grid-v` 6×4 · `grid-hz` 8×4 · `today-solar` 10×4.
+  - **History built-in layout:** current History page (metric selector + time-series chart + stat cards)
+    expressed as a dashboard layout; the `/history` route becomes an alias.
+  - **User dashboards:** create/rename/delete via a management UI; appear in the nav sidebar below the
+    built-ins. Built-in dashboards cannot be deleted (but can be personalised and reset to default).
+  - **Done when:** both built-ins render correctly on the dummy, a user can create a custom dashboard,
+    drag widgets to new positions that persist across reload, export it as JSON and re-import it on a
+    fresh install. No-CDN gate must stay green. *Refs: §8.*
+  - **Sub-tasks:** T_DB1–T_DB8 (see below).
 
 - [x] **L14 · `<energy-flow>` widget — animated topology diagram on the Now page** · Deps: T018
   - **Deliverable:** the five-node energy-flow widget specified in §8 (Componentisation): inverter
@@ -651,6 +663,85 @@ versioned releases.*
     five nodes, four wires, a green inverter ring and an active flow on the dummy; e2e 15 green.
     *Gotcha logged:* Angular's per-property style bindings (`[style.offset-path]`, `[style.--ep]`)
     silently no-op on these SVG `<path>` nodes — the offset-path must be written via `[attr.style]`.
+
+### L06 sub-tasks
+
+- [x] **T_DB1 · Dashboard model + backend API** · Required by: T_DB2
+  - `DashboardConfig` type: `{ id, name, builtin, widgets: [{ type, x, y, w, h, config }] }`.
+    Stored as JSON blobs under `app_config` keys `dashboard:<id>`. Endpoints:
+    `GET /api/dashboards` (list all, builtin flag included), `GET /api/dashboards/{id}`,
+    `PUT /api/dashboards/{id}` (create/update user dashboards; 403 on builtin writes),
+    `DELETE /api/dashboards/{id}` (user only). Builtins are seeded from code, not the DB.
+    Export = `GET /api/dashboards/{id}` (the JSON is the wire format); import = `PUT` with a
+    user-chosen id. Tests: CRUD round-trip, builtin protection, unknown-id 404.
+  - **Done:** `app/dashboards.py` — `BUILTINS` (Now + History) seeded from code with the L06
+    layout; `DashboardStore` over `app_config` (one `dashboard:<id>` blob per user dashboard).
+    `_validate()` coerces/validates the wire shape (name required, widgets list, each widget typed,
+    config an object) and stamps `builtin: false` so imports always land as user dashboards. Added
+    `AppConfigRepository.delete()` + `.list_prefix()` (LIKE-escaped) for per-id storage/enumeration.
+    Routes in `main.py` (`/api/dashboards[/{id}]`, GET/PUT/DELETE) map `BuiltinProtected`→403,
+    `DashboardNotFound`→404, `ValueError`→422. Tests: `test_dashboards.py` (10) — CRUD round-trip,
+    export→import under a new id, builtin write/delete 403, unknown 404, validation 422; module 100%.
+
+- [ ] **T_DB2 · Frontend grid engine** · Deps: T_DB1 · Required by: T_DB3
+  - Install `gridstack` via npm (self-hosted, no CDN — verify no-CDN gate still green).
+    `DashboardHostComponent` loads a `DashboardConfig`, initialises a GridStack instance
+    (12 columns, `cellHeight` = a rem-based unit consistent with Bootstrap spacing), and renders
+    each widget into a `<div class="grid-stack-item">` with `gs-x/gs-y/gs-w/gs-h` from the config.
+    In **view mode** GridStack is static (no drag, no resize). In **edit mode** drag + resize are
+    enabled; on `change` events the component emits the updated layout for persistence.
+    No widget logic here — host is purely layout.
+
+- [ ] **T_DB3 · Widget registry** · Deps: T_DB2 · Required by: T_DB4, T_DB5
+  - A `WIDGET_REGISTRY` map: `type → { component, label, minW, minH, defaultW, defaultH, configSchema }`.
+    Initial entries: `energy-flow` (6×6, no config), `soc-gauge` (2×2, metric fixed to
+    `battery_soc_pct`), `power-gauge` (2×2, config: metric key + label + maxW setting),
+    `metric-card` (2×2, config: metric key + label + unit + icon + role), `time-series-chart`
+    (4×4 min, config: metric key + resolution + range). The host resolves type → component via the
+    registry and passes `config` + live data as inputs. Tests: registry completeness, unknown-type
+    fallback renders a placeholder not a crash.
+
+- [ ] **T_DB4 · "Now" built-in dashboard** · Deps: T_DB3 · Required by: T_DB6
+  - Seed the Now built-in with the specified layout (see L06 spec above). The Now page route
+    (`/now`) renders `DashboardHostComponent` with the Now config; the existing WS subscription
+    moves to a `DashboardDataService` that feeds live metrics to whichever widgets need them.
+    Built-in cannot be deleted; a "Reset to default" action restores the seed layout.
+    E2E: Now dashboard renders, energy-flow visible, battery SoC gauge visible.
+
+- [ ] **T_DB5 · "History" built-in dashboard** · Deps: T_DB3 · Required by: T_DB6
+  - Seed the History built-in with the existing History page layout (time-series chart + stat
+    cards). `/history` route renders `DashboardHostComponent` with the History config. The
+    time-series-chart widget wraps the existing `<app-time-series-chart>` component; the metric
+    selector, resolution picker, and date range controls move into the widget's own config panel.
+    E2E: History dashboard renders, chart visible, metric selector works.
+
+- [ ] **T_DB6 · Dashboard switcher + management** · Deps: T_DB4, T_DB5 · Required by: T_DB7
+  - Nav sidebar lists Now → History → (separator) → user dashboards (in creation order) → "+ New".
+    "New" prompts for a name, creates a blank 12-col dashboard via `PUT /api/dashboards/{id}`,
+    navigates to it. Dashboard item context menu (⋯): Rename, Export JSON (triggers download),
+    Delete (user only; confirm dialog). Settings › Dashboards page lists all dashboards with the
+    same actions plus an Import button (file picker → `PUT`). Tests: create/rename/delete
+    round-trip; builtin delete attempt shows error not 500.
+
+- [ ] **T_DB7 · Dashboard editor (drag-drop + widget management)** · Deps: T_DB6 · Required by: T_DB8
+  - Edit-mode toggle button in the dashboard header (pencil icon). In edit mode:
+    GridStack enables drag-and-drop + resize (snap to 12-col grid); a widget toolbar appears at
+    top with "+ Add widget" (opens a picker: widget type → places it at the first free slot at
+    default size); each widget gets a remove button (×) and a configure button (⚙) that opens a
+    sidebar/modal with the widget's config fields (metric key, label, etc. from the registry schema).
+    "Save" persists the updated layout via `PUT /api/dashboards/{id}`; "Discard" reverts.
+    Editing a built-in creates a personalised copy (stored in `app_config`) — the seed layout is
+    preserved as the reset target. Tests: edit → save → reload preserves layout; discard reverts;
+    add/remove widget round-trip.
+
+- [ ] **T_DB8 · Export / import JSON** · Deps: T_DB7
+  - Export: the "Export JSON" action downloads `dashboard-<name>.json` (the raw `DashboardConfig`
+    wire format from `GET /api/dashboards/{id}`). Import: the "Import" button in Settings ›
+    Dashboards accepts a `.json` file, validates it client-side against the widget registry
+    (unknown types → warning, not hard error), then `PUT`s it as a new user dashboard (name taken
+    from the JSON; disambiguated with a suffix if it collides). A successfully imported dashboard
+    is navigated to immediately. Tests: export → re-import produces identical layout; invalid JSON
+    shows error; unknown widget type in import file shows warning but succeeds.
 
 ## Later — Integrations & notifications (deferred from Phase 7, on request)
 
