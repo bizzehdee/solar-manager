@@ -398,6 +398,24 @@ describe('SettingsPage', () => {
     expect((fixture.nativeElement as HTMLElement).textContent).toContain('Import pricing');
   });
 
+  it('builds SolarmanV5 device params + gates Test on host/serial (L01)', () => {
+    const fixture = TestBed.createComponent(SettingsPage);
+    fixture.detectChanges();
+    http.expectOne('/api/devices').flush({ devices: [] });
+    flushConfig();
+
+    const c = fixture.componentInstance;
+    c.form.transport = 'solarman_v5';
+    c.form.profile = 'sunsynk-8k-sg05lp1';
+    expect(c.canTest()).toBe(false); // no host/serial yet
+    c.form.host = '192.168.1.50';
+    c.form.serial = '1234567890';
+    expect(c.canTest()).toBe(true);
+    expect((c as unknown as { deviceParams(): Record<string, unknown> }).deviceParams()).toEqual({
+      host: '192.168.1.50', serial: '1234567890', port: 8899, slave_id: 1,
+    });
+  });
+
   it('embeds the Diagnostics page on the Diagnostics tab (loads its own data)', () => {
     const fixture = TestBed.createComponent(SettingsPage);
     fixture.detectChanges();

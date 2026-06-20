@@ -966,13 +966,21 @@ def _validate_device_body(body: dict, *, require_id: bool) -> None:
     if require_id and not body.get("id"):
         raise HTTPException(status_code=422, detail="device 'id' is required")
     transport = body.get("transport", "dummy")
-    if transport not in ("dummy", "modbus_rtu"):
+    if transport not in ("dummy", "modbus_rtu", "solarman_v5"):
         raise HTTPException(status_code=422, detail=f"unknown transport {transport!r}")
     if transport == "modbus_rtu":
         if not body.get("profile"):
             raise HTTPException(status_code=422, detail="modbus_rtu device needs a 'profile'")
         if not (body.get("params") or {}).get("port"):
             raise HTTPException(status_code=422, detail="modbus_rtu device needs params.port")
+    if transport == "solarman_v5":
+        if not body.get("profile"):
+            raise HTTPException(status_code=422, detail="solarman_v5 device needs a 'profile'")
+        params = body.get("params") or {}
+        if not params.get("host"):
+            raise HTTPException(status_code=422, detail="solarman_v5 device needs params.host")
+        if not params.get("serial"):
+            raise HTTPException(status_code=422, detail="solarman_v5 device needs params.serial (logger serial)")
 
 
 async def _add_to_registry(registry: DeviceRegistry, row: dict, clock) -> None:

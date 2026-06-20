@@ -88,6 +88,17 @@ def test_build_device_from_config_dummy_and_modbus():
     assert modbus.profile.vendor == "sunsynk"
 
 
+def test_build_device_from_config_solarman_pairs_logger_transport_with_profile():
+    from app.devices.solarman_v5 import SolarmanV5Source
+
+    dev = build_device_from_config(
+        {"id": "logger", "transport": "solarman_v5", "profile": "sunsynk-8k-sg05lp1",
+         "params": {"host": "10.0.0.5", "serial": "1234567890", "slave_id": 1}}
+    )
+    assert isinstance(dev.transport, SolarmanV5Source)
+    assert dev.profile.vendor == "sunsynk"  # reuses the exact same Modbus profile
+
+
 def test_build_device_from_config_disabled_or_unknown_returns_none():
     assert build_device_from_config({"id": "d", "transport": "dummy", "enabled": False}) is None
     assert build_device_from_config({"id": "d", "transport": "carrier-pigeon"}) is None

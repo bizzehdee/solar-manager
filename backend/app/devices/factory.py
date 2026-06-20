@@ -13,6 +13,7 @@ from .base import Device, system_clock
 from .dummy import DummyProfile, NullTransport
 from .modbus_rtu import ModbusRtuConfig, ModbusRtuSource
 from .registry import DeviceRegistry
+from .solarman_v5 import SolarmanV5Config, SolarmanV5Source
 from .yaml_profile import ModbusYamlProfile
 
 
@@ -25,6 +26,20 @@ def build_modbus_device(
 ) -> Device:
     """A Modbus-RTU device = RTU transport + a YAML register-map profile."""
     transport = ModbusRtuSource(config)
+    profile = ModbusYamlProfile.from_name(profile_name)
+    return Device(device_id, transport, profile, clock=clock)
+
+
+def build_solarman_device(
+    device_id: str,
+    profile_name: str,
+    config: SolarmanV5Config,
+    *,
+    clock=system_clock,
+) -> Device:
+    """A SolarmanV5 device = logger-TCP transport + a YAML register-map profile (same profiles as
+    RTU — only the wire differs)."""
+    transport = SolarmanV5Source(config)
     profile = ModbusYamlProfile.from_name(profile_name)
     return Device(device_id, transport, profile, clock=clock)
 
@@ -97,6 +112,15 @@ def build_device_from_config(row: dict, *, clock=system_clock) -> Device | None:
             slave_id=int(params.get("slave_id", 1)),
         )
         return build_modbus_device(device_id, row["profile"], cfg, clock=clock)
+    if transport == "solarman_v5":
+        params = row.get("params") or {}
+        cfg = SolarmanV5Config(
+            host=params["host"],
+            serial=int(params["serial"]),
+            port=int(params.get("port", 8899)),
+            slave_id=int(params.get("slave_id", 1)),
+        )
+        return build_solarman_device(device_id, row["profile"], cfg, clock=clock)
     return None
 
 

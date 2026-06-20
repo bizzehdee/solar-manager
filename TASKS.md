@@ -406,8 +406,18 @@ versioned releases.*
 
 ## Later — More vendors, transports & automation (on demand)
 
-- [-] **L01 · `SolarmanV5Source` transport** — `pysolarmanv5` TCP to the logger; reuses the
+- [x] **L01 · `SolarmanV5Source` transport** — `pysolarmanv5` TCP to the logger; reuses the
   exact same profiles (SolarmanV5 wraps the identical Modbus payload). *Refs: §4, §20.*
+  - **Done:** `devices/solarman_v5.py` (`SolarmanV5Source` + `SolarmanV5Config{host, serial, port,
+    slave_id}`) implements the `Transport` protocol behind the same seam as `modbus_rtu` — bounded
+    retries/backoff, `comms_stats`, lazy `pysolarmanv5` import, injectable client factory (fully
+    unit-testable, no hardware). `factory.py` gains `build_solarman_device` + a `solarman_v5` branch;
+    `main.py` validation accepts the transport (needs `params.host` + `params.serial`). Settings ›
+    Devices add-form: a `solarman_v5` option with host / logger-serial / port fields (profile + Test
+    shared across real transports). `pysolarmanv5>=3.0` added to requirements. Tests:
+    `test_solarman_v5.py` (16, module 100%), factory + settings-form specs. Backend 391, frontend 182,
+    e2e 24 green. *Hardware handshake validation pending (no logger on hand) — the protocol layer is
+    fully faked/tested, same as `modbus_rtu` shipped before the RS485 bus arrived.*
 - [-] **L02 · Sol-Ark & Deye profiles** — thin `extends: deye-base` profiles, near-free once
   the base map is validated in Phase 1. *Refs: §4, §20.*
 - **L03 · Smart automation & scheduling** — tariff+forecast-driven auto-scheduling of the

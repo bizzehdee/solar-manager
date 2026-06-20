@@ -141,9 +141,11 @@ type SettingsTab = 'devices' | 'solar' | 'tariff' | 'notifications' | 'dashboard
               <select id="dev-transport" class="form-select" [(ngModel)]="form.transport" name="transport">
                 <option value="dummy">dummy</option>
                 <option value="modbus_rtu">modbus_rtu</option>
+                <option value="solarman_v5">solarman_v5</option>
               </select>
             </div>
-            @if (form.transport === 'modbus_rtu') {
+            <!-- A profile is needed for any real transport (the same map serves RTU + SolarmanV5). -->
+            @if (form.transport !== 'dummy') {
               <div class="col-12 col-md-4">
                 <label class="form-label small text-secondary" for="dev-profile">{{ 'field.profile' | translate }}</label>
                 <select id="dev-profile" class="form-select" [(ngModel)]="form.profile" name="profile">
@@ -153,6 +155,26 @@ type SettingsTab = 'devices' | 'solar' | 'tariff' | 'notifications' | 'dashboard
                   }
                 </select>
               </div>
+            }
+            @if (form.transport === 'solarman_v5') {
+              <div class="col-12 col-md-4">
+                <label class="form-label small text-secondary" for="dev-host">Logger host / IP</label>
+                <input id="dev-host" class="form-control" [(ngModel)]="form.host" name="host" placeholder="e.g. 192.168.1.50" />
+              </div>
+              <div class="col-12 col-md-4">
+                <label class="form-label small text-secondary" for="dev-serial">Logger serial</label>
+                <input id="dev-serial" type="number" class="form-control" [(ngModel)]="form.serial" name="serial" placeholder="from the stick / Solarman app" />
+              </div>
+              <div class="col-6 col-md-4">
+                <label class="form-label small text-secondary" for="dev-sport">Port</label>
+                <input id="dev-sport" type="number" class="form-control" [(ngModel)]="form.solarmanPort" name="solarmanPort" />
+              </div>
+              <div class="col-6 col-md-4">
+                <label class="form-label small text-secondary" for="dev-sslave">{{ 'field.slaveId' | translate }}</label>
+                <input id="dev-sslave" type="number" class="form-control" [(ngModel)]="form.slaveId" name="solarmanSlaveId" />
+              </div>
+            }
+            @if (form.transport === 'modbus_rtu') {
               <div class="col-12 col-md-4">
                 <label class="form-label small text-secondary" for="dev-port">{{ 'field.serialPort' | translate }}</label>
                 <div class="input-group">
@@ -188,9 +210,9 @@ type SettingsTab = 'devices' | 'solar' | 'tariff' | 'notifications' | 'dashboard
             <button type="submit" class="btn btn-primary" [disabled]="!form.id">
               <i class="bi bi-plus-lg"></i> {{ 'settings.devices.add' | translate }}
             </button>
-            @if (form.transport === 'modbus_rtu') {
+            @if (form.transport !== 'dummy') {
               <button type="button" class="btn btn-outline-secondary"
-                      [disabled]="testing() || !form.profile || !form.port" (click)="testConnection()">
+                      [disabled]="testing() || !canTest()" (click)="testConnection()">
                 @if (testing()) {
                   <span class="spinner-border spinner-border-sm me-1"></span> {{ 'settings.devices.testing' | translate }}
                 } @else {
@@ -722,6 +744,10 @@ export class SettingsPage implements OnInit {
     profile: '',
     port: '',
     slaveId: 1,
+    // SolarmanV5 (L01): TCP to a data-logger stick.
+    host: '',
+    serial: '',
+    solarmanPort: 8899,
   };
 
   // Tariff form (T051/T052): standing charge + flat-or-TOU import + flat export. Import
@@ -976,6 +1002,27 @@ export class SettingsPage implements OnInit {
   }
 
   /** Probe the connection for the values currently in the Add-device form. */
+  /** Build the transport-specific params block for create/test. */
+  private deviceParams(): Record<string, unknown> {
+    if (this.form.transport === 'solarman_v5') {
+      return {
+        host: this.form.host,
+        serial: this.form.serial,
+        port: Number(this.form.solarmanPort),
+        slave_id: this.form.slaveId,
+      };
+    }
+    return { port: this.form.port, slave_id: this.form.slaveId };
+  }
+
+  /** Whether the Test-connection button has enough to probe (per transport). */
+  canTest(): boolean {
+    if (!this.form.profile) return false;
+    return this.form.transport === 'solarman_v5'
+      ? !!(this.form.host && this.form.serial)
+      : !!this.form.port;
+  }
+
   testConnection(): void {
     this.testing.set(true);
     this.testResult.set(null);
@@ -983,7 +1030,7 @@ export class SettingsPage implements OnInit {
       .testDevice({
         transport: this.form.transport,
         profile: this.form.profile,
-        params: { port: this.form.port, slave_id: this.form.slaveId },
+        params: this.deviceParams(),
       })
       .subscribe({
         next: (r) => {
@@ -1166,13 +1213,13 @@ export class SettingsPage implements OnInit {
       transport: this.form.transport,
     };
     if (this.form.name) body['name'] = this.form.name;
-    if (this.form.transport === 'modbus_rtu') {
+    if (this.form.transport !== 'dummy') {
       body['profile'] = this.form.profile;
-      body['params'] = { port: this.form.port, slave_id: this.form.slaveId };
+      body['params'] = this.deviceParams();
     }
     this.api.createDevice(body).subscribe({
       next: () => {
-        this.form = { id: '', name: '', transport: 'dummy', profile: '', port: '', slaveId: 1 };
+        this.form = { id: '', name: '', transport: 'dummy', profile: '', port: '', slaveId: 1, host: '', serial: '', solarmanPort: 8899 };
         this.testResult.set(null);
         this.refresh();
       },
