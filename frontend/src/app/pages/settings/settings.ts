@@ -195,7 +195,11 @@ type SettingsTab = 'devices' | 'solar' | 'tariff' | 'notifications' | 'dashboard
                   <div class="form-text">{{ 'settings.devices.noPorts' | translate }}</div>
                 }
               </div>
-              <div class="col-12 col-md-4">
+              <div class="col-6 col-md-4">
+                <label class="form-label small text-secondary" for="dev-baud">Baud rate</label>
+                <input id="dev-baud" type="number" class="form-control" [(ngModel)]="form.baud" name="baud" />
+              </div>
+              <div class="col-6 col-md-4">
                 <label class="form-label small text-secondary" for="dev-slave">{{ 'field.slaveId' | translate }}</label>
                 <input id="dev-slave" type="number" class="form-control" [(ngModel)]="form.slaveId" name="slaveId" />
               </div>
@@ -743,6 +747,7 @@ export class SettingsPage implements OnInit {
     transport: 'dummy',
     profile: '',
     port: '',
+    baud: 9600,
     slaveId: 1,
     // SolarmanV5 (L01): TCP to a data-logger stick.
     host: '',
@@ -1012,7 +1017,7 @@ export class SettingsPage implements OnInit {
         slave_id: this.form.slaveId,
       };
     }
-    return { port: this.form.port, slave_id: this.form.slaveId };
+    return { port: this.form.port, baudrate: Number(this.form.baud), slave_id: this.form.slaveId };
   }
 
   /** Whether the Test-connection button has enough to probe (per transport). */
@@ -1219,7 +1224,7 @@ export class SettingsPage implements OnInit {
     }
     this.api.createDevice(body).subscribe({
       next: () => {
-        this.form = { id: '', name: '', transport: 'dummy', profile: '', port: '', slaveId: 1, host: '', serial: '', solarmanPort: 8899 };
+        this.form = { id: '', name: '', transport: 'dummy', profile: '', port: '', baud: 9600, slaveId: 1, host: '', serial: '', solarmanPort: 8899 };
         this.testResult.set(null);
         this.refresh();
       },

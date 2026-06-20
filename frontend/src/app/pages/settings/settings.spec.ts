@@ -364,7 +364,7 @@ describe('SettingsPage', () => {
     expect(post.request.body).toEqual({
       transport: 'modbus_rtu',
       profile: 'sunsynk-8k-sg05lp1',
-      params: { port: '/dev/ttyUSB0', slave_id: 1 },
+      params: { port: '/dev/ttyUSB0', baudrate: 9600, slave_id: 1 },
     });
     post.flush({ ok: true, message: 'Connected — read 12 metric(s).', metric_count: 12 });
     expect(fixture.componentInstance.testResult()?.ok).toBe(true);
