@@ -28,7 +28,7 @@ from .alerts.channels import SUPPORTED_CHANNELS, build_channels
 from .automation.service import AutomationService
 from .config import Settings
 from .grid_events import GridEventService
-from .integrations import ReadingsWebhookService
+from .integrations import ReadingsWebhookService, MqttService
 from .devices.base import TransportError, system_clock
 from .devices.factory import (
     build_device_from_config,
@@ -132,6 +132,10 @@ async def lifespan(app: FastAPI):
     app.state.readings_webhook = readings_webhook
     await readings_webhook.start()
 
+    mqtt = MqttService(poller, registry, app_config)
+    app.state.mqtt = mqtt
+    await mqtt.start()
+
     automation = AutomationService(
         app_config, poller, registry, clock=clock,
         audit_repo=audit_repo, alert_repo=alert_repo,
@@ -145,6 +149,7 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         await automation.stop()
+        await mqtt.stop()
         await readings_webhook.stop()
         await grid_events.stop()
         await persistence.stop()
@@ -624,6 +629,60 @@ def create_app(
         except Exception as exc:  # surface the failure to the manual caller
             raise HTTPException(status_code=502, detail=f"webhook POST failed: {exc}") from exc
         return JSONResponse({"ok": True, "sent": sent})
+
+    # ---- MQTT publisher + Home Assistant discovery (Later / L07) ---------------
+    def _mqtt_view(cfg: dict) -> dict:
+        return {
+            "enabled": bool(cfg.get("enabled", False)),
+            "host": cfg.get("host"),
+            "port": int(cfg.get("port") or 1883),
+            "username": cfg.get("username"),
+            "password": cfg.get("password"),
+            "tls": bool(cfg.get("tls", False)),
+            "base_topic": cfg.get("base_topic") or "solarvolt",
+            "interval_s": max(float(cfg.get("interval_s") or 30.0), 5.0),
+            "discovery": bool(cfg.get("discovery", True)),
+            "discovery_prefix": cfg.get("discovery_prefix") or "homeassistant",
+        }
+
+    @app.get("/api/integrations/mqtt")
+    async def get_mqtt() -> JSONResponse:
+        cfg = await app.state.app_config.get("mqtt", {}) or {}
+        return JSONResponse(_mqtt_view(cfg))
+
+    @app.put("/api/integrations/mqtt")
+    async def put_mqtt(body: dict = Body(...)) -> JSONResponse:
+        cfg = {
+            "enabled": bool(body.get("enabled", False)),
+            "host": (str(body.get("host") or "").strip()) or None,
+            "port": int(body.get("port") or 1883),
+            "username": (str(body.get("username") or "").strip()) or None,
+            "password": (body.get("password") or None),
+            "tls": bool(body.get("tls", False)),
+            "base_topic": (str(body.get("base_topic") or "").strip()) or "solarvolt",
+            "interval_s": max(float(body.get("interval_s", 30.0)), 5.0),
+            "discovery": bool(body.get("discovery", True)),
+            "discovery_prefix": (str(body.get("discovery_prefix") or "").strip()) or "homeassistant",
+        }
+        await app.state.app_config.set("mqtt", cfg)
+        # Re-emit discovery on the next publish so HA picks up any topic/unit changes immediately.
+        app.state.mqtt.force_discovery()
+        return JSONResponse(_mqtt_view(cfg))
+
+    @app.post("/api/integrations/mqtt/test")
+    async def test_mqtt() -> JSONResponse:
+        """Publish state + discovery once now and report the message count, so the user can verify
+        the broker without waiting for the next tick."""
+        cfg = await app.state.app_config.get("mqtt", {}) or {}
+        if not cfg.get("host"):
+            raise HTTPException(status_code=400, detail="no MQTT broker host configured")
+        svc: MqttService = app.state.mqtt
+        svc.force_discovery()  # a manual test always (re)publishes discovery
+        try:
+            published = await svc.publish_once(cfg)
+        except Exception as exc:  # surface the failure to the manual caller
+            raise HTTPException(status_code=502, detail=f"MQTT publish failed: {exc}") from exc
+        return JSONResponse({"ok": True, "published": published})
 
     # ---- rule-based automation (Later / L03e) ---------------------------------
     # Always available (rules/preview/options need no flag). Only *applying* to the inverter

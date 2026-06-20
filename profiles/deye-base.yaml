@@ -80,13 +80,13 @@ metrics:
   # 211→195 raw (21.1→19.5A, ×0.1) over ~1 hr of charging as the pack fills —
   # classic BMS CC→CV taper (scan 2026-06-18). 312 is definitively unresponsive
   # on this unit (single-register read failed; addressed twice). Others are untested.
-  bms_charge_voltage_v:      { addr: 312, type: u16, scale: 0.01, absent_ok: true }   # NOT present on CAN BMS (SG05LP1 scan 2026-06-18)
-  bms_charge_current_limit_a: { addr: 314, type: u16, scale: 0.1 }   # CONFIRMED: tapers as battery fills (CAN BMS, 2026-06-18)
-  bms_discharge_current_limit_a: { addr: 315, type: u16, scale: 0.1, absent_ok: true }  # BMS max discharge current
-  bms_soc_pct:               { addr: 316, type: u16, absent_ok: true }                 # BMS reported SOC
-  bms_battery_voltage_v:     { addr: 317, type: u16, scale: 0.01, absent_ok: true }   # BMS reported pack voltage
-  bms_battery_current_a:     { addr: 318, type: s16, scale: 0.1, absent_ok: true }    # BMS reported current (sign TBC)
-  bms_battery_temp_c:        { addr: 319, type: u16, scale: 0.1, offset: -100, absent_ok: true }  # BMS temp
+  bms_charge_voltage_v:      { addr: 312, type: u16, scale: 0.01 }   # confirmed 58.40 V (16s LiFePO4 full charge, 2026-06-20)
+  bms_charge_current_limit_a: { addr: 314, type: u16, scale: 0.1 }   # confirmed: tapers as battery fills (CAN BMS, 2026-06-18)
+  bms_discharge_current_limit_a: { addr: 315, type: u16 }              # confirmed 300 A (scale 1, not 0.1 — 3× 100 A batteries in parallel, 2026-06-20)
+  bms_soc_pct:               { addr: 316, type: u16 }                 # BMS reported SOC (confirmed 100%, 2026-06-20)
+  bms_battery_voltage_v:     { addr: 317, type: u16, scale: 0.01 }   # BMS reported pack voltage (confirmed 54.60 V, 2026-06-20)
+  bms_battery_current_a:     { addr: 318, type: s16, scale: 0.1 }    # BMS reported current (sign TBC — read 0 A while idle)
+  bms_battery_temp_c:        { addr: 319, type: u16, scale: 0.1, offset: -100 }  # BMS temp (confirmed 25.0°C, 2026-06-20)
 
   # ── daily energy counters (raw is kWh ×0.1; ×100 -> Wh per canonical keys) ──
   today_pv_wh:              { addr: 108, type: u16, scale: 100 }

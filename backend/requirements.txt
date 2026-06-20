@@ -6,3 +6,4 @@ pymodbus>=3.6          # async Modbus RTU/TCP client (Phase 1 real-hardware tran
 pyserial>=3.5          # serial backend for pymodbus's RTU client (RS485 over /dev/ttyUSB*)
 httpx>=0.27            # async HTTP client for the Open-Meteo forecast fetch (Phase 4)
 python-multipart>=0.0.9  # multipart form parsing for the backup-restore upload (Phase 8 / T091)
+paho-mqtt>=2.0         # MQTT publish to the user's broker + HA discovery (Later / L07); pure-Python, no broker bundled

@@ -32,32 +32,3 @@ firmware:
 
 # No metric/setting overrides yet — the base map matched this unit as-is.
 overrides: {}
-
-validation:
-  source_scan: "regscan-report.md (labels '11pm' idle + 'grid-charging-battery', 2026-06-17/18)"
-  confirmed:
-    - battery_soc_pct, battery_voltage_v, battery_current_a (P=V×I)
-    - battery_temp_c, inverter_temp_c, dc_transformer_temp_c (×0.1 − 100 offset)
-    - grid_frequency_hz, grid_voltage_v, inverter_voltage_v, inverter_current_a
-    - load_power_w, inverter_power_w, daily + lifetime energy counters
-    - rated_power 8000 W and 32-bit low-word-first order
-    - protocol register [2] = 0x0201 -> "2.1" (confirms firmware pin)
-    # Signs resolved by the grid-charging capture:
-    - battery_power_w sign = discharge-positive -> negated to canonical +charge/-discharge
-    - battery_current_a is s16 (read -73.43 A while charging) -> negated, was wrongly u16
-    - grid_power_w = import-positive (+4794 W importing) -> matches canonical, no flip
-    # Settings map validated against the inverter's own screen (2026-06-18 config read-out).
-    - work_mode [244] = 2 = "Zero export to CT"; energy_pattern [243] = 1 = "Load first"
-    - grid_charge [232]=on, solar_export [247]=off, max_sell 8kW [245], max_solar 4.8kW [53]
-    - battery volts — float 53.6 [203], absorption/equalization 56.0 [202/201]
-    - SoC thresholds — shutdown 5 [217], stop-discharge 10 [219], start-discharge 25 [218], start-grid-charge 30 [229]
-    - currents — charge 140 [210], discharge 180 [211], grid-charge 80 [230], gen-charge 40 [227]
-    - BMS protocol [325]=0 (CAN); battery capacity [204] = 312 Ah (~16 kWh @ 51.2 V)
-    - all 6 work-mode timer slots confirmed — start_time [250-255], power [256-261], target_soc [268-273], charge_from_grid [274-279] bit0 (no end-time reg; cyclic)
-    # Daytime PV capture (pv-gen + enabled-export, 2026-06-18 morning):
-    - pv1_voltage_v [109] = 265.1 V under load (×0.1 confirmed; earlier night residual was 79 V)
-    - pv1_current_a [110] = 1.7 A, pv1_power_w [186] = 441 W (V×I ✓); pv_power_w derived = 441 W
-    - solar_export [247] TOGGLE-CONFIRMED 0→1 when "solar export when battery full" enabled
-  unconfirmed:
-    - grid_power_w EXPORT polarity — still assumed s16-negative; the daytime scan had PV but the
-      battery was at 61% (not full) so it did not export. Needs a battery-full + PV-surplus scan.

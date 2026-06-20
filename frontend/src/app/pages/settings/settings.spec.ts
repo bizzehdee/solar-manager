@@ -419,6 +419,36 @@ describe('SettingsPage', () => {
     expect((fixture.nativeElement as HTMLElement).querySelector('app-diagnostics')).toBeTruthy();
   });
 
+  it('saveMqtt() PUTs the broker config to /api/integrations/mqtt (L07)', () => {
+    const fixture = TestBed.createComponent(SettingsPage);
+    fixture.detectChanges();
+    http.expectOne('/api/devices').flush({ devices: [] });
+    flushConfig();
+
+    fixture.componentInstance.mqtt = {
+      enabled: true, host: 'broker.lan', port: 1883, username: 'u', password: 'p', tls: false,
+      base_topic: 'solarvolt', interval_s: 30, discovery: true, discovery_prefix: 'homeassistant',
+    };
+    fixture.componentInstance.saveMqtt();
+
+    const put = http.expectOne((r) => r.method === 'PUT' && r.url === '/api/integrations/mqtt');
+    expect(put.request.body).toMatchObject({ enabled: true, host: 'broker.lan', discovery: true });
+    put.flush(fixture.componentInstance.mqtt);
+    expect(fixture.componentInstance.mqttMsg()?.cls).toBe('success');
+  });
+
+  it('testMqtt() POSTs to the test endpoint and reports the published count (L07)', () => {
+    const fixture = TestBed.createComponent(SettingsPage);
+    fixture.detectChanges();
+    http.expectOne('/api/devices').flush({ devices: [] });
+    flushConfig();
+
+    fixture.componentInstance.testMqtt();
+    const post = http.expectOne((r) => r.method === 'POST' && r.url === '/api/integrations/mqtt/test');
+    post.flush({ ok: true, published: 8 });
+    expect(fixture.componentInstance.mqttMsg()?.text).toContain('8');
+  });
+
   it('saveForecast() PUTs site/arrays/battery to /api/forecast/config (T064)', () => {
     const fixture = TestBed.createComponent(SettingsPage);
     fixture.detectChanges();

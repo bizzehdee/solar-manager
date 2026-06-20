@@ -592,15 +592,47 @@ This class of app is judged heavily on how well it plays with the rest of a home
   - **Home Assistant MQTT auto-discovery** — emit HA discovery configs so every metric appears as an HA sensor with **zero manual YAML** (dashboards, automations, HA Energy panel). Makes the system a first-class HA citizen.
 - **PVOutput.org** — optional periodic upload (generation, consumption, SoC, temperature) to the popular community comparison service. API key + system id in Settings.
 - **Prometheus `/metrics` endpoint** — expose live metrics for users already running Grafana, so they can build their own dashboards/alerts.
-- **Generic outbound webhook** — POST readings/events to a user URL (Node-RED, IFTTT, custom).
+- **Generic outbound webhooks** — POST readings/events to user URLs (Node-RED, IFTTT, custom). **Any
+  number of endpoints, each with a user-defined payload** — see *Custom webhooks* below.
 - The read-only **REST + WebSocket API (§7) is already the inbound/public surface**; these add *push*-style egress.
+
+### Custom webhooks (multiple endpoints + templated payloads)
+Both webhook egress paths — **alert/notification** webhooks (§15) and **outbound readings** webhooks —
+started as a *single* configurable URL each. They become **lists of user-defined endpoints**, and the
+**payload is user-definable**, so the app can speak whatever shape a downstream service expects (Slack,
+Discord, Home Assistant REST, a custom collector) without code changes.
+
+- **A webhook endpoint is data, not code.** Each entry: a stable `id` (slug) + user `label`, `url`,
+  `method` (POST default), optional **`headers`** (auth tokens etc.; secret, stored in `app_config`
+  like other channel secrets), `content_type` (default `application/json`), an **optional
+  `payload_template`**, and `enabled`. **Readings** endpoints additionally carry their **own
+  `interval_s`** (each fires on its own cadence); **alert** endpoints are event-driven (no interval).
+- **Payload templating.** A `payload_template` is a string with `{placeholder}` substitution; an empty
+  template keeps today's **default body** (the raw alert dict / the full readings snapshot) so existing
+  setups are unchanged. Reuse the automation message renderer (`_render_message`, §18) — **promote it to
+  a shared `app/templating.py`** (`render_template(template, context)`) used by automation messages *and*
+  both webhook types. Context: for **alerts**, the alert fields (`name`, `message`, `severity`, `metric`,
+  `value`, `device_id`, `fired_at`) plus current metrics; for **readings**, the snapshot (`ts` + flattened
+  per-device metric keys). Values substituted into a JSON template are **JSON-escaped** so the body stays
+  valid JSON; malformed templates fall back safely (never crash egress). Ship a couple of **presets**
+  (Slack/Discord/plain) as starting points in the UI.
+- **Each alert webhook is its own selectable channel.** With N webhooks, the per-rule channel picker
+  (§15) lists them by label as `webhook:<id>`, so a rule can target specific endpoints (e.g. critical →
+  Slack + ntfy, info → a logging collector). The other channel types (Telegram/ntfy/Gotify/Pushover/
+  Email) are unchanged — still one config each.
+- **No migration needed.** The single-webhook config was never used in practice, so the list shape
+  simply replaces it — the old single `webhook` (inside `alert_channels`) and single `readings_webhook`
+  config are dropped, not migrated.
+- **Same §14 invariants.** Off the hot path, per-endpoint `enabled`, a dead endpoint is logged and never
+  blocks polling/persistence/alerting, readings intervals clamp to ≥ 5 s each, and no external URL ships
+  in the bundle (endpoints are user data — the no-CDN gate is unaffected).
 
 ## 15. Alerts & Notifications
 
 A rule-driven alerting subsystem (the original Phase-6 one-liner, fleshed out — alerting is table-stakes for unattended power systems):
 
 - **Rule engine** — user-defined conditions on any canonical metric or system state: `battery_soc_pct < 20`, sustained high grid import, **device offline / stale data**, **inverter fault/alarm raised** (§16), forecast predicts depletion, over-temperature. With thresholds, hysteresis, debounce, and **quiet hours**.
-- **Notification channels** (pluggable, like transports): email (SMTP), **Telegram**, **ntfy**, **Pushover/Gotify**, webhook, and in-app toast/inbox. Selectable per rule.
+- **Notification channels** (pluggable, like transports): email (SMTP), **Telegram**, **ntfy**, **Pushover/Gotify**, **any number of custom webhooks** (each with a user-defined payload — see §14 *Custom webhooks*; selectable individually per rule), and in-app toast/inbox. Selectable per rule.
 - **Alert inbox & history** — active + acknowledged alerts, past-firing log, snooze/ack; surfaced via a header bell badge.
 - **Sensible defaults shipped on** — low-SoC, source-offline/stale-data, inverter-fault — all editable.
 

@@ -4,6 +4,7 @@ or crashes polling/persistence (CLAUDE.md). The alert-notification channels live
 this in `app.alerts.channels`; this package is the *readings/events* egress.
 """
 
+from .mqtt import MqttService
 from .readings_webhook import ReadingsWebhookService
 
-__all__ = ["ReadingsWebhookService"]
+__all__ = ["ReadingsWebhookService", "MqttService"]

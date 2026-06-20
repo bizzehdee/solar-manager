@@ -372,6 +372,20 @@ export interface ReadingsWebhookConfig {
   enabled: boolean;
 }
 
+/** MQTT publisher + Home Assistant discovery config (L07). */
+export interface MqttConfig {
+  enabled: boolean;
+  host: string | null;
+  port: number;
+  username: string | null;
+  password: string | null;
+  tls: boolean;
+  base_topic: string;
+  interval_s: number;
+  discovery: boolean;
+  discovery_prefix: string;
+}
+
 /** Notification-channel config (L10). `channels` is keyed by channel name (webhook/email/…). */
 export interface AlertChannelsResponse {
   channels: Record<string, Record<string, unknown>>;

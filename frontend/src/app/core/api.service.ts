@@ -28,6 +28,7 @@ import {
   HistoryResponse,
   Preferences,
   ReadingsWebhookConfig,
+  MqttConfig,
   SettingsSchemaResponse,
   Snapshot,
   StatsConfig,
@@ -246,6 +247,21 @@ export class ApiService {
   /** Send one snapshot POST now to verify the configured URL. */
   testReadingsWebhook(): Observable<{ ok: boolean; sent: boolean }> {
     return this.http.post<{ ok: boolean; sent: boolean }>('/api/integrations/readings-webhook/test', {});
+  }
+
+  // --- MQTT publisher + Home Assistant discovery (L07) ---
+
+  getMqtt(): Observable<MqttConfig> {
+    return this.http.get<MqttConfig>('/api/integrations/mqtt');
+  }
+
+  putMqtt(body: MqttConfig): Observable<MqttConfig> {
+    return this.http.put<MqttConfig>('/api/integrations/mqtt', body);
+  }
+
+  /** Publish state + discovery once now to verify the broker. */
+  testMqtt(): Observable<{ ok: boolean; published: number }> {
+    return this.http.post<{ ok: boolean; published: number }>('/api/integrations/mqtt/test', {});
   }
 
   // --- Inverter clock (plan.md §19 / T097) ---

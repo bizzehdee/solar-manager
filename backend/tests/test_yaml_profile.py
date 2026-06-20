@@ -226,6 +226,61 @@ def test_decodes_real_grid_charging_capture_signs():
     assert 0 < losses < 600
 
 
+# --- addr: -1 disabled metrics (child override suppresses base metric) ---------------
+def _profile_with_disabled() -> ModbusYamlProfile:
+    return ModbusYamlProfile({
+        "vendor": "test",
+        "register_table": "holding",
+        "word_order": "low_first",
+        "metrics": {
+            "battery_soc_pct": {"addr": 184, "type": "u16"},
+            "bms_charge_voltage_v": {"addr": -1, "type": "u16", "scale": 0.01},
+        },
+    })
+
+
+def test_disabled_metric_absent_from_capabilities():
+    p = _profile_with_disabled()
+    assert "battery_soc_pct" in p.capabilities()
+    assert "bms_charge_voltage_v" not in p.capabilities()
+
+
+def test_disabled_metric_absent_from_decode():
+    p = _profile_with_disabled()
+    out = p.decode({184: 80, 312: 5840})  # supply both registers
+    assert out["battery_soc_pct"] == 80
+    assert "bms_charge_voltage_v" not in out
+
+
+def test_disabled_metric_not_polled():
+    p = _profile_with_disabled()
+    covered = {a for b in p.register_blocks() for a in range(b.start, b.start + b.count)}
+    assert 184 in covered   # active metric is polled
+    assert 312 not in covered  # disabled metric's register is not
+
+
+def test_disabled_metric_via_override_merge():
+    # Simulate a child profile disabling a base metric via overrides:.
+    base = ModbusYamlProfile({
+        "vendor": "base",
+        "register_table": "holding",
+        "word_order": "low_first",
+        "metrics": {
+            "battery_soc_pct": {"addr": 184, "type": "u16"},
+            "bms_charge_voltage_v": {"addr": 312, "type": "u16", "scale": 0.01},
+        },
+    })
+    child_spec = {
+        "extends": "base",
+        "vendor": "child",
+        "overrides": {"bms_charge_voltage_v": {"addr": -1}},
+    }
+    merged = ModbusYamlProfile._merge(base._spec, child_spec)
+    p = ModbusYamlProfile(merged)
+    assert "bms_charge_voltage_v" not in p.capabilities()
+    assert "bms_charge_voltage_v" not in p.decode({184: 80, 312: 5840})
+
+
 def test_decodes_real_daytime_pv_capture():
     """The 'enabled-export' daytime capture (2026-06-18) — first real PV generation.
     Confirms pv1_voltage ×0.1 under load (265.1 V, not the night residual), PV producing,

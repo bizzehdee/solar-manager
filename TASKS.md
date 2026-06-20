@@ -411,9 +411,17 @@ versioned releases.*
 - [-] **L02 · Sol-Ark & Deye profiles** — thin `extends: deye-base` profiles, near-free once
   the base map is validated in Phase 1. *Refs: §4, §20.*
 - **L03 · Smart automation & scheduling** — tariff+forecast-driven auto-scheduling of the
-  work-mode timer; opt-in, separate automation flag, **dry-run/suggest-only first**; built
-  entirely on the §12 safeguards. *Refs: §18.* Split into deliverables, risk-increasing
-  (suggest-only before any write), each shippable on its own:
+  work-mode timer; opt-in, **dry-run/suggest-only first**; built entirely on the §12 safeguards.
+  *Refs: §18.*
+  - **Status (largely delivered via the rule-based path).** The automation feature shipped through
+    **L03e** (user-authored condition→action rules): the engine, persistence, API, the opt-in
+    scheduler + apply + write path, the Automation page with live preview, and the absorption of
+    alerts are all **done**. The originally-planned **cost-arbitrage auto-planner** (L03a–d) has a
+    pure engine (L03a, done + tested) but was **never surfaced**, and its dedicated apply path (L03d)
+    is now **redundant** — L03e-3 built a shared scheduler/apply/write path. What remains is purely
+    optional: exposing the planner's auto-proposed daily plan on top of the existing infra (L03b/c,
+    on-demand). The `SOLARVOLT_ENABLE_AUTOMATION` flag in the original split was dropped — automation
+    is always available and only register *writes* are gated, by `SOLARVOLT_ENABLE_CONTROL`.
   - [x] **L03a · Automation planning engine (pure, suggest-only core)** · Deps: T051, T060
     - **Deliverable:** `backend/app/automation/planner.py` — a pure function that, given the
       import `RateSchedule` (§5 tariff), `BatterySpec`, current SoC, current timer slots, and
@@ -425,17 +433,22 @@ versioned releases.*
       paths covered: flat tariff, spread below threshold, solar-covers-load, already-optimal.
       `test_automation_planner.py` (13 tests) incl. midnight-wrap window + saving math; module
       **100%** coverage; full backend suite green (278 passed). *Refs: §18, §5, §6.*
-  - [ ] **L03b · Suggest-only plan API** · Deps: L03a, T047, T060
-    - `GET /api/automation/plan` wires the engine to the live forecast/tariff/device and returns the
-      proposed plan + current→proposed diff. **Never writes** — always available, no flag.
+    - *Note:* the module exists and is tested but is **not yet wired** to any API/UI — the shipped
+      automation surface is the rule engine (L03e), not this strategy. Surfacing it is L03b/c.
+  - [-] **L03b · Suggest-only plan API** *(on-demand — planner not yet surfaced)* · Deps: L03a, T047, T060
+    - `GET /api/automation/plan` would wire `plan_timer()` to the live forecast/tariff/device and
+      return the proposed plan + current→proposed diff. **Never writes.** Not built; the rule-based
+      automation (L03e) covers the day-to-day need, so this auto-planner exposure is optional future
+      work. If built, it applies through the existing L03e-3 path — no new write/scheduler plumbing.
       *Refs: §18, §12.*
-  - [ ] **L03c · Automation UI (suggest-only)** · Deps: L03b
-    - A page/panel showing the proposed daily plan, per-slot current→proposed diff, projected
-      saving and rationale — "what it would do," read-only. *Refs: §18, §8.*
-  - [ ] **L03d · Opt-in auto-apply (scheduler + write)** · Deps: L03c, T076
-    - Only when `ENABLE_CONTROL` is on (the single gate on register writes): a scheduler (+ manual
-      "apply now") that applies the plan through the §12 path (`control.apply_settings`:
-      validate→write→read-back→audit). Playwright E2E of the full round-trip on the dummy.
+  - [-] **L03c · Automation UI (suggest-only)** *(on-demand — would surface on the existing Automation page)* · Deps: L03b
+    - The proposed daily plan + per-slot diff + projected saving/rationale. **Superseded as a separate
+      page** by the Automation page (L03e-4), which already shows a live "what it would do now"
+      preview; the planner output would surface there rather than a new view. *Refs: §18, §8.*
+  - [-] **L03d · Opt-in auto-apply (scheduler + write)** *(irrelevant — superseded by L03e-3)* · Deps: L03c, T076
+    - **Made redundant.** The opt-in scheduler + "apply now" + §12 write path (validate→write→
+      read-back→audit, gated by `ENABLE_CONTROL`) was built generically in **L03e-3** and is shared by
+      any automation output — there is no planner-specific apply to build. Kept for history only.
       *Refs: §18, §12.*
   - **L03e · User-authored rule-based automation** — condition→action rules that set inverter
     settings (e.g. "on weekends set work-mode slot 1 target SoC to 80%"); rules are **combinable**
@@ -492,39 +505,44 @@ versioned releases.*
     - [x] **L03e-4 · Rule-editor UI + live preview** · Deps: L03e-2
       - Build/edit/prioritise rules; per-rule and per-action enable; a live "what it would do now"
         panel; current→proposed diff with the safe/at-risk/blocked badge. *Refs: §18, §8.*
-    - [ ] **L03e-5 · Absorb alerts into automation (notify + alert action types; retire AlertService)** · Deps: L03e-3, L10
+      - **Done:** the **Automation page** (`pages/automation/automation.ts`) — rule list with
+        per-rule arm switch + priority, an inline editor (conditions: day-of-week/time-window/
+        date-range/metric/tariff-window; actions with target picker + slot + value + per-action arm),
+        and a live **"what it would do now"** card driven by `GET /api/automation/preview`
+        (settings changes + would-apply/preview state with the ok/at-risk/blocked badge). "Apply now"
+        shows only under `automation_can_write`. Frontend unit tests + Playwright E2E
+        (create→list→preview→apply on the dummy).
+    - [x] **L03e-5 · Absorb alerts into automation (notify + alert action types; retire AlertService)** · Deps: L03e-3, L10
       - The standalone `AlertRule`/`AlertEngine`/`AlertService` is replaced by automation rules that
         carry `notify` and `alert` action types alongside the existing `set_setting` type. One rule
         engine, one editor, all output types. *Refs: §18, §15.*
-      - Sub-tasks (implement in order, ask before each):
-        - [ ] **L03e-5a · Engine: add action types** — Extend `Action` in `rules.py` with `action_type`
-          (`"set_setting"` | `"notify"` | `"alert"`), `channels: list[str]`, `message: str`,
-          `severity: str`, `debounce_s: float`. `settings_to_apply()` filters to `set_setting` only.
-          Add `notify_actions()` + `alert_actions()` on `AutomationDecision`. Move the `compare`
-          helper into `rules.py` (was imported from `alerts.engine`). Add `__stale_s__` /
-          `__fault_count__` as resolved-by-service synthetic keys documented in `EvalContext`.
-        - [ ] **L03e-5b · Service: wire dispatch + debounce** — `AutomationService` resolves
-          `__stale_s__` and `__fault_count__` into `EvalContext.metrics`. After each evaluation, for
-          every armed `notify` action: check debounce, dispatch via `channels.dispatch()`, swallow
-          failures. For every armed `alert` action: check debounce, insert inbox row via
-          `AlertRepository`. Track per-(rule-id, action-index) last-fire epoch in service state.
-          Seed default automation rules (low-SoC, device-stale, inverter-fault) as `notify`+`alert`
-          actions on first start (replacing `AlertService.seed_rules`).
-        - [ ] **L03e-5c · API: remove alert-rules CRUD; keep inbox + channels** — Delete
-          `GET/PUT/DELETE /api/alert-rules` and `GET /api/alert-rules/options` endpoints. Keep all
-          `/api/alerts` inbox endpoints (ack/snooze) and all `/api/alert-channels` endpoints.
-          Update `/api/automation/options` to return available notification channels + severity list.
-          Remove `AlertService` from `lifespan`; `AutomationService` handles evaluation.
-        - [ ] **L03e-5d · Frontend: automation editor gets notify/alert actions; Alerts page = inbox only** —
-          Action-type picker in the rule editor ("Set setting" / "Send notification" / "Create in-app alert").
-          For `notify`: channel multi-select, message, severity, debounce field. For `alert`: severity,
-          message, debounce. Remove the Rules tab from the Alerts page (rule authoring is in Automation);
-          Alerts page becomes inbox-only (active/history, ack/snooze, bell badge unchanged). Remove
-          alert-rules API calls from `api.service.ts`.
-        - [ ] **L03e-5e · Remove alerts engine + service** — Delete `backend/app/alerts/engine.py`
-          and `backend/app/alerts/service.py`. Update `alerts/__init__.py`. Delete or fold
-          `test_alert_engine.py` and `test_alert_api.py` alert-rules tests (inbox + channel tests stay).
-          Update `main.py` imports. `compare` now lives in `automation/rules.py`.
+      - **Done (all five sub-steps below shipped).** Automation rules now drive notifications and
+        in-app alerts; the standalone alert engine/service are deleted (the `alerts` package is
+        channels-only). The `/api/alert-rules` CRUD is gone; the inbox (`/api/alerts` ack/snooze) and
+        channels (`/api/alert-channels`) endpoints remain. Rule authoring lives only on the Automation
+        page; the Alerts page is inbox-only. This is also recorded in `plan.md` §15 ("Architecture
+        revision (L03e-5)"). A later commit added **message-template rendering** for notify/alert
+        action messages (`{metric:.1f}` placeholders) — the shared renderer L15 will reuse.
+        - [x] **L03e-5a · Engine: add action types** — `Action` in `rules.py` carries `action_type`
+          (`"set_setting"` | `"notify"` | `"alert"`), `channels`, `message`, `severity`, `debounce_s`;
+          `settings_to_apply()` filters to `set_setting`; `notify_actions()`/`alert_actions()` on the
+          decision; `compare` moved into `rules.py`; `__stale_s__` / `__fault_count__` documented as
+          service-resolved synthetic keys.
+        - [x] **L03e-5b · Service: wire dispatch + debounce** — `AutomationService` resolves
+          `__stale_s__`/`__fault_count__` into the metrics context, dispatches armed `notify` actions
+          via `channels.dispatch()` (failures swallowed) and inserts armed `alert` actions into the
+          inbox via `AlertRepository`, with per-(rule-id, action) debounce. Default rules (low-SoC,
+          device-stale, inverter-fault) seeded as notify+alert actions on first start.
+        - [x] **L03e-5c · API: remove alert-rules CRUD; keep inbox + channels** — `/api/alert-rules`
+          (+ options) removed; `/api/alerts` inbox + `/api/alert-channels` kept; `/api/automation/
+          options` returns available channels + severities; `AlertService` removed from `lifespan`.
+        - [x] **L03e-5d · Frontend: automation editor gets notify/alert actions; Alerts page = inbox only** —
+          action-type picker in the rule editor (set-setting / notify / alert) with channel multi-select,
+          message, severity, debounce; the Alerts page is inbox-only (Rules tab removed); alert-rules
+          API calls dropped from `api.service.ts`. *(commit `5209c84`)*
+        - [x] **L03e-5e · Remove alerts engine + service** — `alerts/engine.py` and `alerts/service.py`
+          deleted; `alerts/__init__.py` + `main.py` imports updated; `compare` now lives in
+          `automation/rules.py`; the `alerts` package is channels-only. *(commit `c3ae97e`)*
 - [-] **L04 · More vendors / protocol families** — Growatt/Solis/Sungrow/… (new YAML each);
   generic SunSpec profile; text-command family (Voltronic/Must) + Victron family each carry a
   one-time transport+profile-contract cost, then siblings are cheap. *Refs: §20.*
@@ -639,9 +657,31 @@ versioned releases.*
 *The alerting core (engine + inbox + Prometheus) shipped in Phase 7; these are the remaining,
 self-contained egress/notification pieces — each additive, off the hot path, brand-independent.*
 
-- [-] **L07 · MQTT publisher + Home Assistant auto-discovery** *(was T083)* · Deps: T016
+- [x] **L07 · MQTT publisher + Home Assistant auto-discovery** *(was T083)* · Deps: T016
   - Publish each normalized `Reading` + per-device status to a broker; emit HA MQTT discovery
     configs so every metric appears as an HA sensor with zero manual YAML. *Refs: §14.*
+  - **Done:** `app/integrations/mqtt.py` `MqttService` — own background cadence like the readings
+    webhook, re-reads the `mqtt` app-config blob each tick (host/auth/tls/base_topic/interval/
+    discovery, live), **off the hot path** (an unreachable broker is logged and swallowed, never
+    blocks polling). Publishes **one compact JSON state message per device** to
+    `{base_topic}/{device_id}/state`, and **retained HA discovery** configs to
+    `{discovery_prefix}/sensor/solarvolt_{device}/{metric}/config` (one per scalar metric, grouped
+    under a single HA `device`, referencing the state topic via `value_template`). Sensor
+    metadata (unit / device_class / state_class) is **inferred from the canonical key suffix**
+    (`_w`→power/W, `_wh`→energy/total_increasing, `_v`/`_a`/`_hz`/`_c`/`_pct`…) so it's brand-
+    independent and covers the whole vocabulary; list-valued metrics (fault/warning codes) ride the
+    state JSON only. Discovery is re-emitted only when the device/metric shape changes (or on a
+    config change / manual test). Broker publish is via **`paho-mqtt`** (`publish.multiple`, run off
+    the loop in a thread) and **injectable** ⇒ network-free tests. `GET/PUT /api/integrations/mqtt`
+    (+ interval clamp ≥5s, defaults) and `POST …/test` (publish once now, surface failures as 502).
+    Settings › Notifications gains an **MQTT + Home Assistant** card (host/port/auth/tls/base topic/
+    interval/discovery + Save + Publish test). New runtime dep `paho-mqtt>=2.0` (pure-Python, no
+    broker bundled). Tests: `test_mqtt.py` (pure suffix→sensor mapping, discovery/state message
+    shapes, dedup-until-shape-changes, enabled/disabled tick, interval clamp + failure swallow, API
+    round-trip + test endpoint) — module 94% (only the real-paho glue uncovered); backend suite
+    green (360 passed, 95% cov). Frontend: `MqttConfig` + API methods + 2 settings unit tests; suite
+    146 green. E2E `mqtt.spec.ts` (card saves + persists on the dummy); e2e green. *No `mqtt://` or
+    broker URL ships in the bundle — config is user data (no-CDN gate green).*
 - [-] **L08 · PVOutput.org upload** *(was T084)* · Deps: T050
   - Optional periodic upload (generation, consumption, SoC, temperature); API key + system id
     in Settings. *Refs: §14.*
@@ -686,3 +726,42 @@ self-contained egress/notification pieces — each additive, off the hot path, b
 - [-] **L12 · Fault-event history log** *(deferred from T054)* · Deps: T042
   - An events table logging inverter fault / run-state transitions so intermittent faults are
     catchable after the fact (today faults are surfaced live only). *Refs: §16.*
+
+- [ ] **L15 · Multiple custom webhooks + user-defined payloads** · Deps: L09, L10, L11
+  - **Deliverable:** lift the single-webhook limit on **both** egress paths — alert/notification
+    webhooks (L10) and outbound readings webhooks (L09) — to **any number of user-defined endpoints**,
+    each with a **user-definable payload** (§14 *Custom webhooks*). The app should be able to POST
+    whatever shape a downstream service expects (Slack/Discord/HA REST/custom) without code changes.
+  - **Endpoint model (data, not code):** each webhook is a config entry — stable `id` (slug) + `label`,
+    `url`, `method` (POST default), optional **`headers`** (auth; secret, stored in `app_config` like
+    other channel secrets), `content_type` (default `application/json`), optional **`payload_template`**,
+    `enabled`. **Readings** endpoints also carry their **own `interval_s`** (per-endpoint cadence, clamp
+    ≥ 5 s); **alert** endpoints are event-driven.
+  - **Payload templating:** promote the automation message renderer (`_render_message`, `automation/
+    service.py`) to a shared **`app/templating.py`** `render_template(template, context)`, used by
+    automation messages *and* both webhook types. Empty template ⇒ today's default body (raw alert dict /
+    full readings snapshot) so existing setups are unchanged. Context = alert fields + metrics (alerts) /
+    `ts` + flattened per-device metrics (readings). **JSON-escape** substituted values so the body stays
+    valid JSON; malformed templates fall back to the default (never crash egress). Ship Slack/Discord/
+    plain **presets** in the UI.
+  - **Per-rule selection:** each alert webhook becomes its own channel `webhook:<id>`; `build_channels`
+    (`alerts/channels.py`) iterates the endpoint list, and `/api/automation/options` lists them by label
+    so a rule can target specific endpoints. Other channel types (Telegram/ntfy/Gotify/Pushover/Email)
+    stay single-config.
+  - **No migration:** the single-webhook config was never used, so the list shape simply replaces it —
+    drop the old single `webhook` (in `alert_channels`) and single `readings_webhook` config; no
+    compatibility shim or alias needed.
+  - **API:** evolve `GET/PUT /api/alert-channels` + `/api/integrations/readings-webhook` to the list
+    shape (or add list-aware endpoints), keep the per-endpoint **test** action (send a sample through one
+    endpoint, surface failures).
+  - **Frontend (Settings › Notifications):** replace the two single-webhook forms with **dynamic
+    add/edit/remove lists** — per endpoint: label, URL, headers, content-type, a **payload-template editor**
+    (textarea + an "available placeholders" hint + preset buttons), `enabled`, and (readings) `interval_s`,
+    each with a **Test** button. Alert webhooks appear by label in the per-rule channel picker.
+  - **Done when:** a user can add several webhooks of each type, give each a custom payload, and target
+    specific alert webhooks per rule. All §14 invariants hold (off the hot path, per-endpoint enable,
+    dead endpoint logged not fatal, secrets server-side, interval clamp, no-CDN gate green). Tests:
+    extend `test_alert_channels.py` / `test_readings_webhook.py` / `test_alert_api.py` for the list shape
+    and template rendering (incl. JSON-escaping + malformed-template fallback) — the templating module is
+    critical-logic (§21, ≥ 90%); frontend unit tests for the dynamic list + an E2E that adds/tests a
+    webhook on the dummy. *Refs: §14 (Custom webhooks), §15, §21.*

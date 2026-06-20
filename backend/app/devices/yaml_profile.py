@@ -133,7 +133,7 @@ class ModbusYamlProfile:
 
     # --- DeviceProfile protocol -------------------------------------------------
     def capabilities(self) -> set[str]:
-        caps = set(self._metrics.keys())
+        caps = {k for k, spec in self._metrics.items() if not self._is_disabled(spec)}
         # `pv_power_w` (sum of MPPTs, plan.md §4) is derived, not a raw register —
         # advertise it whenever the per-MPPT powers are present.
         if any(k.startswith("pv") and k.endswith("_power_w") and k != "pv_power_w" for k in caps):
@@ -448,9 +448,19 @@ class ModbusYamlProfile:
         return self._addresses_of(self._metrics)
 
     @staticmethod
+    def _is_disabled(spec: dict[str, Any]) -> bool:
+        """addr: -1 in a metric spec (or child override) marks it as not present on this model."""
+        addr = spec.get("addr")
+        if isinstance(addr, list):
+            return any(a == -1 for a in addr)
+        return addr == -1
+
+    @staticmethod
     def _addresses_of(specs: Mapping[str, dict[str, Any]]) -> set[int]:
         addrs: set[int] = set()
         for spec in specs.values():
+            if ModbusYamlProfile._is_disabled(spec):
+                continue
             addr = spec.get("addr")
             if isinstance(addr, list):
                 addrs.update(int(a) for a in addr)
@@ -462,6 +472,8 @@ class ModbusYamlProfile:
         return addrs
 
     def _decode_one(self, spec: dict[str, Any], raw: Mapping[int, int]) -> MetricValue | None:
+        if self._is_disabled(spec):
+            return None
         t = spec.get("type", "u16")
         addr = spec.get("addr")
         scale = spec.get("scale", 1)

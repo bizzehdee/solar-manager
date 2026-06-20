@@ -61,9 +61,10 @@ and watch your panels, battery and grid in real time.
   button and a background scheduler write the changes to the inverter — but only if you've enabled
   control (the same `SOLARVOLT_ENABLE_CONTROL` switch that guards all write-back). Without it,
   automation stays preview-only.
-- **Integrations** — a **Prometheus `/metrics`** endpoint exposes live readings for Grafana users,
-  and an **outbound readings webhook** posts each snapshot as JSON to a URL of your choice
-  (Node-RED / IFTTT / custom). (MQTT / Home-Assistant discovery and PVOutput are on the roadmap.)
+- **Integrations** — an **MQTT publisher with Home Assistant auto-discovery** (every metric shows up
+  as an HA sensor with no manual YAML), a **Prometheus `/metrics`** endpoint for Grafana users, and an
+  **outbound readings webhook** that posts each snapshot as JSON to a URL of your choice
+  (Node-RED / IFTTT / custom). (PVOutput is on the roadmap.)
 - **Operational niceties** — **backup / restore** the database and **export any metric to CSV**;
   a **Diagnostics** tab in Settings (DB size, rollup lag, per-device Modbus comms health, grid-outage log);
   **inverter clock drift** with one-click sync; a **performance-ratio calibration** that tunes the

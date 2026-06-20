@@ -11,6 +11,7 @@ import {
   DeviceProfileOption,
   DeviceTestResult,
   ForecastConfig,
+  MqttConfig,
   ReadingsWebhookConfig,
   SerialPort,
   StatsConfig,
@@ -420,6 +421,75 @@ type SettingsTab = 'devices' | 'solar' | 'tariff' | 'notifications' | 'system' |
         </p>
       </div>
     </div>
+
+    <!-- MQTT publisher + Home Assistant discovery (L07): publish each snapshot to a broker and
+         emit HA discovery configs so every metric becomes an HA sensor with no manual YAML. Off the
+         hot path — an unreachable broker is logged and never disrupts monitoring. -->
+    <div class="card mt-3">
+      <div class="card-header"><i class="bi bi-broadcast-pin"></i> MQTT + Home Assistant</div>
+      <div class="card-body">
+        @if (mqttMsg(); as msg) { <div class="alert alert-{{ msg.cls }} py-2">{{ msg.text }}</div> }
+        <div class="row g-3 align-items-end">
+          <div class="col-12 col-md-5">
+            <label class="form-label small text-secondary" for="mq-host">Broker host</label>
+            <input id="mq-host" class="form-control" [(ngModel)]="mqtt.host" name="mqHost" placeholder="e.g. 192.168.1.10 or mqtt.lan" />
+          </div>
+          <div class="col-6 col-md-2">
+            <label class="form-label small text-secondary" for="mq-port">Port</label>
+            <input id="mq-port" type="number" class="form-control" [(ngModel)]="mqtt.port" name="mqPort" />
+          </div>
+          <div class="col-6 col-md-3">
+            <label class="form-label small text-secondary" for="mq-int">Interval (s)</label>
+            <input id="mq-int" type="number" min="5" class="form-control" [(ngModel)]="mqtt.interval_s" name="mqInterval" />
+          </div>
+          <div class="col-6 col-md-2">
+            <div class="form-check form-switch mt-md-4">
+              <input class="form-check-input" type="checkbox" role="switch" id="mq-en" [(ngModel)]="mqtt.enabled" name="mqEnabled" />
+              <label class="form-check-label" for="mq-en">Enabled</label>
+            </div>
+          </div>
+          <div class="col-6 col-md-4">
+            <label class="form-label small text-secondary" for="mq-user">Username (optional)</label>
+            <input id="mq-user" class="form-control" [(ngModel)]="mqtt.username" name="mqUser" autocomplete="off" />
+          </div>
+          <div class="col-6 col-md-4">
+            <label class="form-label small text-secondary" for="mq-pass">Password (optional)</label>
+            <input id="mq-pass" type="password" class="form-control" [(ngModel)]="mqtt.password" name="mqPass" autocomplete="off" />
+          </div>
+          <div class="col-6 col-md-2">
+            <div class="form-check form-switch mt-md-4">
+              <input class="form-check-input" type="checkbox" role="switch" id="mq-tls" [(ngModel)]="mqtt.tls" name="mqTls" />
+              <label class="form-check-label" for="mq-tls">TLS</label>
+            </div>
+          </div>
+          <div class="col-6 col-md-4">
+            <label class="form-label small text-secondary" for="mq-base">Base topic</label>
+            <input id="mq-base" class="form-control" [(ngModel)]="mqtt.base_topic" name="mqBase" />
+          </div>
+          <div class="col-12 col-md-5">
+            <label class="form-label small text-secondary" for="mq-dprefix">HA discovery prefix</label>
+            <input id="mq-dprefix" class="form-control" [(ngModel)]="mqtt.discovery_prefix" name="mqDPrefix" [disabled]="!mqtt.discovery" />
+          </div>
+          <div class="col-12 col-md-3">
+            <div class="form-check form-switch mt-md-4">
+              <input class="form-check-input" type="checkbox" role="switch" id="mq-disc" [(ngModel)]="mqtt.discovery" name="mqDisc" />
+              <label class="form-check-label" for="mq-disc">HA discovery</label>
+            </div>
+          </div>
+        </div>
+        <div class="mt-3 d-flex gap-2">
+          <button type="button" class="btn btn-primary" (click)="saveMqtt()"><i class="bi bi-save"></i> Save</button>
+          <button type="button" class="btn btn-outline-secondary" (click)="testMqtt()" [disabled]="!mqtt.host">
+            <i class="bi bi-broadcast"></i> Publish test
+          </button>
+        </div>
+        <p class="small text-secondary mt-2 mb-0">
+          Publishes one compact JSON state message per device to <code>{{ mqtt.base_topic || 'solarvolt' }}/&lt;device&gt;/state</code>.
+          With <strong>HA discovery</strong> on, every metric appears automatically as a Home Assistant sensor — no YAML.
+          Save before testing.
+        </p>
+      </div>
+    </div>
     }
 
     <!-- Formatting & locale (T093): drives date/number formatting (applied on reload). -->
@@ -612,6 +682,13 @@ export class SettingsPage implements OnInit {
   readonly webhookMsg = signal<{ cls: string; text: string } | null>(null);
   webhook: ReadingsWebhookConfig = { url: '', interval_s: 60, enabled: false };
 
+  // MQTT publisher + Home Assistant discovery (L07).
+  readonly mqttMsg = signal<{ cls: string; text: string } | null>(null);
+  mqtt: MqttConfig = {
+    enabled: false, host: '', port: 1883, username: '', password: '', tls: false,
+    base_topic: 'solarvolt', interval_s: 30, discovery: true, discovery_prefix: 'homeassistant',
+  };
+
   // Notification channels (L10). One form-model per provider; `configured` reflects which are
   // fully set up server-side (drives the Test buttons + the per-rule channel list on Alerts).
   readonly channelsMsg = signal<{ cls: string; text: string } | null>(null);
@@ -646,7 +723,32 @@ export class SettingsPage implements OnInit {
     this.loadTariff();
     this.loadForecast();
     this.loadWebhook();
+    this.loadMqtt();
     this.loadChannels();
+  }
+
+  // --- MQTT publisher + HA discovery (L07) ---
+  private loadMqtt(): void {
+    this.api.getMqtt().subscribe({ next: (c) => (this.mqtt = c) });
+  }
+
+  saveMqtt(): void {
+    this.api.putMqtt(this.mqtt).subscribe({
+      next: (c) => { this.mqtt = c; this.flashMqtt('success', 'Saved.'); },
+      error: () => this.flashMqtt('danger', 'Could not save the MQTT settings.'),
+    });
+  }
+
+  testMqtt(): void {
+    this.api.testMqtt().subscribe({
+      next: (r) => this.flashMqtt('success', `Published ${r.published} message(s) to the broker.`),
+      error: (err) => this.flashMqtt('danger', err?.error?.detail || 'MQTT publish failed.'),
+    });
+  }
+
+  private flashMqtt(cls: string, text: string): void {
+    this.mqttMsg.set({ cls, text });
+    setTimeout(() => this.mqttMsg.set(null), 4000);
   }
 
   // --- Notification channels (L10) ---
