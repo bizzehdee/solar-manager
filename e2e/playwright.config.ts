@@ -10,6 +10,9 @@ export default defineConfig({
   timeout: 30_000,
   expect: { timeout: 15_000 },
   fullyParallel: true,
+  // automation + control-edit both write timer_slots; concurrent execution races on the etag.
+  // Force sequential in CI (where GH Actions runners have 4 CPUs → 2 Playwright workers by default).
+  workers: process.env.CI ? 1 : undefined,
   forbidOnly: !!process.env.CI,
   reporter: process.env.CI ? 'github' : 'list',
   use: {
