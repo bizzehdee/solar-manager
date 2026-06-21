@@ -15,6 +15,9 @@ type ScopeKey = 'today' | 'tomorrow' | '3d' | '7d';
 @Component({
   selector: 'app-forecast',
   imports: [TimeSeriesChart, MetricCard, DatePipe, DecimalPipe],
+  // The chart fills its container's height (so it works in a dashboard grid cell); on this page it
+  // sits in normal flow, so give it an explicit height or it collapses to nothing.
+  styles: [`.fc-chart { height: 18rem; }`],
   template: `
     <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
       <h4 class="mb-0"><i class="bi bi-cloud-sun"></i> Forecast</h4>
@@ -65,35 +68,39 @@ type ScopeKey = 'today' | 'tomorrow' | '3d' | '7d';
         <div class="card mb-3">
           <div class="card-header"><i class="bi bi-sun"></i> Expected generation</div>
           <div class="card-body">
-            <app-time-series-chart
-              [points]="generationPoints()"
-              label="Expected PV"
-              unit="W"
-              kind="line"
-              [yMin]="0"
-              [ySuggestedMax]="installedWatts()"
-              [overlayPoints]="cloudPoints()"
-              overlayLabel="Cloud cover"
-              overlayUnit="%"
-              overlayColor="#6c757d"
-              [overlayMin]="0"
-              [overlayMax]="100"
-            />
+            <div class="fc-chart">
+              <app-time-series-chart
+                [points]="generationPoints()"
+                label="Expected PV"
+                unit="W"
+                kind="line"
+                [yMin]="0"
+                [ySuggestedMax]="installedWatts()"
+                [overlayPoints]="cloudPoints()"
+                overlayLabel="Cloud cover"
+                overlayUnit="%"
+                overlayColor="#6c757d"
+                [overlayMin]="0"
+                [overlayMax]="100"
+              />
+            </div>
           </div>
         </div>
 
         <div class="card mb-3">
           <div class="card-header"><i class="bi bi-battery-charging"></i> Projected battery SoC</div>
           <div class="card-body">
-            <app-time-series-chart
-              [points]="socPoints()"
-              label="Projected SoC"
-              unit="%"
-              kind="line"
-              color="#198754"
-              [yMin]="0"
-              [yMax]="100"
-            />
+            <div class="fc-chart">
+              <app-time-series-chart
+                [points]="socPoints()"
+                label="Projected SoC"
+                unit="%"
+                kind="line"
+                color="#198754"
+                [yMin]="0"
+                [yMax]="100"
+              />
+            </div>
           </div>
         </div>
 
