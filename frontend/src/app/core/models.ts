@@ -325,6 +325,13 @@ export interface Diagnostics {
     online: boolean;
     last_sample_age_s: number | null;
     comms: Record<string, unknown> | null;
+    // Inverter RTC drift (T097). null when the device has no clock or a read failed.
+    clock?: {
+      supported: boolean;
+      device_time: string | null;
+      drift_s: number | null;
+      syncable: boolean;
+    } | null;
   }[];
 }
 
@@ -539,8 +546,6 @@ export interface DashboardConfig {
  *  the right slice for each via the widget registry's `inputs(config, data)` mapping. */
 export interface DashboardData {
   metrics: Record<string, MetricValue>;
-  /** Per-metric history series, for time-series chart widgets. */
-  series?: Record<string, HistoryPoint[]>;
   /** Inverter health for the energy-flow widget (see the Now page's `inverterOnline`). */
   inverterOnline?: boolean;
 }

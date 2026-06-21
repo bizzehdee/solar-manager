@@ -15,7 +15,9 @@ import { FormsModule } from '@angular/forms';
 import { GridStack, GridStackNode } from 'gridstack';
 
 import { DashboardConfig, DashboardData, DashboardWidget } from '../core/models';
-import { WIDGET_REGISTRY, widgetDef } from './widget-registry';
+import { downloadDashboard, parseDashboard } from '../core/dashboard-file';
+import { metricUnit } from '../core/metric-units';
+import { WIDGET_REGISTRY, widgetDef, unknownWidgetTypes } from './widget-registry';
 
 // Layout host + editor for L06 dashboards (T_DB2 + T_DB7). Loads a DashboardConfig, lays its
 // widgets out on a 12-column GridStack, and — in edit mode — supports drag/resize, add/remove and
@@ -41,24 +43,46 @@ export function mergeLayout(widgets: DashboardWidget[], nodes: GridStackNode[]):
   selector: 'app-dashboard-host',
   imports: [NgComponentOutlet, FormsModule],
   template: `
-    <div class="d-flex flex-wrap gap-2 mb-2 align-items-center">
+    <!-- One toolbar row: the page's title (projected) on the left, all actions on the right —
+         so Edit / Reset / Export / Import sit together beside the title instead of stacking. -->
+    <div class="d-flex flex-wrap gap-2 mb-3 align-items-center">
+      <ng-content select="[dashTitle]" />
       @if (!editing()) {
-        <button class="btn btn-sm btn-outline-secondary ms-auto" (click)="enterEdit()">
-          <i class="bi bi-pencil"></i> Edit
-        </button>
-      } @else {
-        <div class="dropdown">
-          <select class="form-select form-select-sm" #addSel (change)="addWidget(addSel.value); addSel.value=''">
-            <option value="" selected>+ Add widget…</option>
-            @for (t of widgetTypes; track t.type) {
-              <option [value]="t.type">{{ t.label }}</option>
-            }
-          </select>
+        <div class="ms-auto d-flex flex-wrap gap-2">
+          <button class="btn btn-sm btn-outline-secondary" (click)="enterEdit()">
+            <i class="bi bi-pencil"></i> Edit
+          </button>
+          @if (canReset()) {
+            <button class="btn btn-sm btn-outline-secondary" (click)="reset.emit()" title="Reset to the default layout">
+              <i class="bi bi-arrow-counterclockwise"></i> Reset to default
+            </button>
+          }
+          <button class="btn btn-sm btn-outline-secondary" (click)="exportLayout()" title="Download this layout as JSON">
+            <i class="bi bi-download"></i> Export
+          </button>
+          <button class="btn btn-sm btn-outline-secondary" (click)="importInput.click()" title="Replace this layout from a JSON file">
+            <i class="bi bi-upload"></i> Import
+          </button>
+          <input #importInput type="file" accept=".json,application/json" class="d-none" (change)="onImportFile($event)" />
         </div>
+      } @else {
+        <select class="form-select form-select-sm w-auto" #addSel (change)="addWidget(addSel.value); addSel.value=''">
+          <option value="" selected>+ Add widget…</option>
+          @for (t of widgetTypes; track t.type) {
+            <option [value]="t.type">{{ t.label }}</option>
+          }
+        </select>
         <button class="btn btn-sm btn-primary ms-auto" (click)="save()"><i class="bi bi-save"></i> Save</button>
         <button class="btn btn-sm btn-outline-secondary" (click)="discard()">Discard</button>
       }
     </div>
+
+    @if (notice(); as n) {
+      <div class="alert alert-{{ n.cls }} py-2 d-flex justify-content-between align-items-center">
+        <span>{{ n.text }}</span>
+        <button class="btn-close" (click)="notice.set(null)" aria-label="Dismiss"></button>
+      </div>
+    }
 
     <div class="grid-stack" #grid>
       @for (w of items; track $index) {
@@ -93,35 +117,63 @@ export function mergeLayout(widgets: DashboardWidget[], nodes: GridStackNode[]):
       }
     </div>
 
-    <!-- Inline config panel for the selected widget (T_DB7). -->
+    <!-- Config dialog for the selected widget (T_DB7). A Bootstrap modal (CSS-only, matching
+         DialogHost) so it's centred over the page instead of stranded at the bottom. -->
     @if (editing() && configIndex() !== null && items[configIndex()!]; as w) {
-      <div class="card mt-3">
-        <div class="card-header d-flex justify-content-between align-items-center py-2">
-          <span><i class="bi bi-gear"></i> Configure {{ defFor(w.type)?.label || w.type }}</span>
-          <button class="btn btn-sm btn-outline-secondary" (click)="configIndex.set(null)">Done</button>
-        </div>
-        <div class="card-body">
-          <div class="row g-3">
-            @for (f of defFor(w.type)?.configSchema || []; track f.key) {
-              <div class="col-12 col-md-4">
-                <label class="form-label small text-secondary" [attr.for]="'cfg-' + f.key">{{ f.label }}</label>
-                @if (f.type === 'metric') {
-                  <select [id]="'cfg-' + f.key" class="form-select form-select-sm"
-                          [ngModel]="configValue(w, f.key)" (ngModelChange)="setConfig(f.key, $event)">
-                    @for (m of metricOptions(w, f.key); track m) { <option [value]="m">{{ m }}</option> }
-                  </select>
-                } @else if (f.type === 'number') {
-                  <input [id]="'cfg-' + f.key" type="number" class="form-control form-control-sm"
-                         [ngModel]="configValue(w, f.key)" (ngModelChange)="setConfig(f.key, $event)" />
-                } @else {
-                  <input [id]="'cfg-' + f.key" class="form-control form-control-sm"
-                         [ngModel]="configValue(w, f.key)" (ngModelChange)="setConfig(f.key, $event)" />
+      <div class="modal d-block" tabindex="-1" role="dialog" (keydown.escape)="configIndex.set(null)">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title"><i class="bi bi-gear"></i> Configure {{ defFor(w.type)?.label || w.type }}</h5>
+              <button type="button" class="btn-close" aria-label="Close" (click)="configIndex.set(null)"></button>
+            </div>
+            <div class="modal-body">
+              <div class="row g-3">
+                @for (f of defFor(w.type)?.configSchema || []; track f.key) {
+                  <div class="col-12 col-md-6">
+                    <label class="form-label small text-secondary" [attr.for]="'cfg-' + f.key">{{ f.label }}</label>
+                    @if (f.type === 'metric') {
+                      <select [id]="'cfg-' + f.key" class="form-select form-select-sm"
+                              [ngModel]="configValue(w, f.key)" (ngModelChange)="setConfig(f.key, $event)">
+                        @for (m of metricOptions(w, f.key); track m) { <option [value]="m">{{ m }}</option> }
+                      </select>
+                    } @else if (f.type === 'number') {
+                      <input [id]="'cfg-' + f.key" type="number" class="form-control form-control-sm"
+                             [ngModel]="configValue(w, f.key)" (ngModelChange)="setConfig(f.key, $event)" />
+                    } @else if (f.type === 'select') {
+                      <select [id]="'cfg-' + f.key" class="form-select form-select-sm"
+                              [ngModel]="configValue(w, f.key)" (ngModelChange)="setConfig(f.key, $event)">
+                        @for (o of f.options || []; track o.value) { <option [value]="o.value">{{ o.label }}</option> }
+                      </select>
+                    } @else if (f.type === 'role') {
+                      <div class="input-group input-group-sm">
+                        <span class="input-group-text p-1">
+                          <span class="d-inline-block rounded border" style="width:1.1rem;height:1.1rem"
+                                [style.background-color]="roleColor(configValue(w, f.key))"></span>
+                        </span>
+                        <select [id]="'cfg-' + f.key" class="form-select form-select-sm"
+                                [ngModel]="configValue(w, f.key)" (ngModelChange)="setConfig(f.key, $event)">
+                          @for (c of roleOptions; track c.value) {
+                            <option [value]="c.value" [style.color]="c.color">{{ c.label }}</option>
+                          }
+                        </select>
+                      </div>
+                    } @else {
+                      <input [id]="'cfg-' + f.key" class="form-control form-control-sm"
+                             [placeholder]="f.key === 'unit' ? unitHint(w) : ''"
+                             [ngModel]="configValue(w, f.key)" (ngModelChange)="setConfig(f.key, $event)" />
+                    }
+                  </div>
                 }
               </div>
-            }
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-primary" (click)="configIndex.set(null)">Done</button>
+            </div>
           </div>
         </div>
       </div>
+      <div class="modal-backdrop show"></div>
     }
   `,
 })
@@ -129,15 +181,45 @@ export class DashboardHost implements AfterViewInit, OnDestroy {
   readonly dashboard = input.required<DashboardConfig>();
   readonly cellHeight = input('5rem');
   readonly data = input<DashboardData>({ metrics: {} });
+  /** Show a "Reset to default" button (built-in dashboards only). */
+  readonly canReset = input(false);
 
-  /** Emitted on Save with the edited layout — the page persists it. */
+  /** Emitted on Save (or a successful Import) with the new layout — the page persists it. */
   readonly layoutSaved = output<DashboardWidget[]>();
+  /** Emitted when the user clicks "Reset to default" — the page drops its override. */
+  readonly reset = output<void>();
+
+  /** Transient import feedback (success / unknown-widget warning / parse error). */
+  readonly notice = signal<{ cls: string; text: string } | null>(null);
 
   private readonly gridEl = viewChild.required<ElementRef<HTMLElement>>('grid');
   private grid: GridStack | null = null;
 
   protected readonly defFor = widgetDef;
   protected readonly widgetTypes = Object.entries(WIDGET_REGISTRY).map(([type, def]) => ({ type, label: def.label }));
+  // Widget "Colour" (role) field options: labelled by the closest actual colour, each carrying the
+  // Bootstrap theme variable so the editor can paint a swatch / colour the option text.
+  protected readonly roleOptions = [
+    { value: 'primary', label: 'Blue', color: 'var(--bs-primary)' },
+    { value: 'info', label: 'Cyan', color: 'var(--bs-info)' },
+    { value: 'success', label: 'Green', color: 'var(--bs-success)' },
+    { value: 'warning', label: 'Amber', color: 'var(--bs-warning)' },
+    { value: 'danger', label: 'Red', color: 'var(--bs-danger)' },
+    { value: 'secondary', label: 'Grey', color: 'var(--bs-secondary)' },
+    { value: 'dark', label: 'Black', color: 'var(--bs-dark)' },
+    { value: 'light', label: 'White', color: 'var(--bs-light)' },
+    { value: 'body', label: 'Default', color: 'var(--bs-body-color)' },
+  ];
+
+  /** The swatch colour for a stored role value (defaults to blue/primary). */
+  roleColor(value: unknown): string {
+    return this.roleOptions.find((r) => r.value === value)?.color ?? 'var(--bs-primary)';
+  }
+
+  /** Suggested unit for the widget's chosen metric (shown as the unit field's placeholder). */
+  unitHint(w: DashboardWidget): string {
+    return metricUnit(typeof w.config['metric'] === 'string' ? (w.config['metric'] as string) : '');
+  }
   readonly editing = signal(false);
   readonly configIndex = signal<number | null>(null);
 
@@ -212,6 +294,42 @@ export class DashboardHost implements AfterViewInit, OnDestroy {
 
   configure(i: number): void {
     this.configIndex.set(this.configIndex() === i ? null : i);
+  }
+
+  // --- export / import (L06 / T_DB8) ---
+  /** Download the current layout as JSON (the DashboardConfig wire format). */
+  exportLayout(): void {
+    downloadDashboard(this.dashboard());
+  }
+
+  /** Replace the layout from a user-supplied JSON file, then persist it via layoutSaved. The
+   *  dashboard's own name/id are kept — import swaps the widgets, not the identity. */
+  onImportFile(event: Event): void | Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    return file.text().then((text) => {
+      input.value = '';
+      let parsed: { name: string; widgets: DashboardWidget[] };
+      try {
+        parsed = parseDashboard(text);
+      } catch {
+        this.notice.set({ cls: 'danger', text: "That file isn't a valid dashboard JSON." });
+        return;
+      }
+      // Unknown widget types are a warning, not a hard error — they render a placeholder.
+      const unknown = unknownWidgetTypes(parsed.widgets);
+      this.items = parsed.widgets.map((w) => ({ ...w, config: { ...w.config } }));
+      this.editing.set(false);
+      this.configIndex.set(null);
+      this.rebuild();
+      this.layoutSaved.emit(this.items.map((w) => ({ ...w, config: { ...w.config } })));
+      this.notice.set(
+        unknown.length
+          ? { cls: 'warning', text: `Imported — unknown widget type(s): ${unknown.join(', ')}.` }
+          : { cls: 'success', text: 'Layout imported.' },
+      );
+    });
   }
 
   // --- config form helpers ---

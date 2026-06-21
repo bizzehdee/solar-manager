@@ -103,6 +103,45 @@ describe('DiagnosticsPage', () => {
     expect(text).toContain('grid restored');
   });
 
+  it('shows inverter clock drift and syncs to system time', () => {
+    const fixture = TestBed.createComponent(DiagnosticsPage);
+    fixture.detectChanges();
+    http.expectOne('/api/diagnostics').flush(diag({
+      devices: [
+        { device_id: 'inv', vendor: 'sunsynk', model: 'SG05LP1', online: true, last_sample_age_s: 1,
+          comms: null, clock: { supported: true, device_time: '2026-06-21T12:01:35', drift_s: 95, syncable: true } },
+      ],
+    }));
+    http.expectOne((r) => r.url === '/api/grid-events').flush({ events: [] });
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.textContent).toContain('+95 s'); // drift under 2 min shown in seconds
+
+    // Click Sync → POST, then the component reloads the snapshot.
+    (el.querySelector('button.btn-link') as HTMLButtonElement).click();
+    http.expectOne((r) => r.url === '/api/devices/inv/clock/sync' && r.method === 'POST').flush({ ok: true, drift_s: 0 });
+    http.expectOne('/api/diagnostics').flush(diag({
+      devices: [
+        { device_id: 'inv', vendor: 'sunsynk', model: 'SG05LP1', online: true, last_sample_age_s: 1,
+          comms: null, clock: { supported: true, device_time: '2026-06-21T12:02:00', drift_s: 0, syncable: true } },
+      ],
+    }));
+    http.expectOne((r) => r.url === '/api/grid-events').flush({ events: [] });
+    fixture.detectChanges();
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain('in sync');
+  });
+
+  it('driftLabel humanises seconds, minutes, and the in-sync/unknown cases', () => {
+    const c = TestBed.createComponent(DiagnosticsPage).componentInstance;
+    expect(c.driftLabel(null)).toBe('—');
+    expect(c.driftLabel(0)).toBe('in sync');
+    expect(c.driftLabel(95)).toBe('+95 s');
+    expect(c.driftLabel(-180)).toBe('−3 min');
+    expect(c.driftWarn(95)).toBe(true);
+    expect(c.driftWarn(5)).toBe(false);
+  });
+
   it('humanBytes formats sizes', () => {
     const c = TestBed.createComponent(DiagnosticsPage).componentInstance;
     expect(c.humanBytes(512)).toBe('512 B');

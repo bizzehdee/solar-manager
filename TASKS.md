@@ -686,6 +686,40 @@ versioned releases.*
     *Gotcha logged:* Angular's per-property style bindings (`[style.offset-path]`, `[style.--ep]`)
     silently no-op on these SVG `<path>` nodes — the offset-path must be written via `[attr.style]`.
 
+- [ ] **L16 · Derived (calculated) metrics as first-class canonical metrics** · Deps: T043, T051
+  - **Why:** the daily KPIs (self-consumption %, self-sufficiency %, round-trip efficiency, savings,
+    CO₂ avoided, peak PV) should be usable *anywhere a metric is* — metric-cards, gauges, and
+    time-series charts — not locked inside the bespoke `daily-kpis` widget. The clean way (chosen over a
+    frontend-only fetch-merge, which can't feed the DB-backed charts) is to **compute them server-side
+    and treat them as canonical metrics**: add them to each poll's `Reading.metrics`, so they flow
+    through the live snapshot (cards/gauges) *and* get persisted to `samples`/rollups (charts) with zero
+    frontend special-casing. They're "running today" values that evolve through the day, so a chart shows
+    their intraday build-up. Missing ≠ zero — a derived metric is omitted when its inputs are absent or
+    the denominator is 0 (§4).
+  - **L16-1 · Engine: pure energy-ratio metrics** *(no new deps)* — `app/derived.py` `derive_metrics(metrics)`
+    pure function computing, from the existing `today_*_wh` counters: `self_consumption_pct`
+    (= self-consumed PV / PV), `self_sufficiency_pct` (= (load − import) / load), `round_trip_efficiency_pct`
+    (= discharge / charge). Reuse `economics.self_consumed_pv_wh`. Add the three keys to
+    `metrics.ALL_METRICS` (a new `DERIVED_METRICS` set). Hook into `Poller.poll_once` to merge the result
+    into each `Reading.metrics` before broadcast/persist. **Done when:** the dummy snapshot and
+    `/api/history/metrics` expose the three derived keys, charts plot them, and the pure function is
+    unit-tested (ratios, omitted-on-missing-input, zero-denominator). ≥ 90% coverage on `derived.py`.
+  - **L16-2 · Engine: economics + stateful metrics** · Deps: L16-1 — add `savings` and `co2_avoided_kg`
+    (via `economics.compute_economics` on today's energy + the `app_config` tariff/economics config — so
+    the poller/derive step gains access to that config) and `peak_pv_w` (running daily max of
+    `pv_power_w`, reset at local midnight — stateful, kept in the derive layer). **Done when:** these
+    appear as metrics, savings/CO₂ match `/api/stats/daily` for the same day, peak resets daily; tested.
+  - **L16-3 · Frontend: unit hints + retire the bespoke widget** · Deps: L16-1 — `core/metric-units.ts`
+    `metricUnit(key)` (suffix heuristic: `_w`→W, `_pct`→%, `_kg`→kg, …) used as the **default unit** in the
+    metric-card/gauge/stat-card registry adapters and as the **placeholder** in the editor's unit field, so
+    a picked metric carries a sensible unit without typing one (covers existing metrics too). Then **split
+    the History `daily-kpis` widget into individual metric-cards** (one per derived KPI) in the `_HISTORY`
+    seed and **remove the `daily-kpis` widget** (registry + component) now that the KPIs are ordinary
+    metrics. `savings` has no unit suffix (currency is locale/config-specific) → its card unit is set
+    explicitly. **Done when:** the History dashboard shows individual KPI cards fed by the derived metrics,
+    the KPIs are selectable in card/gauge/chart metric pickers with auto units, and `daily-kpis` is gone;
+    `test_dashboards` + frontend specs updated. *Refs: §4, §8, §10, §21.*
+
 ### L06 sub-tasks
 
 - [x] **T_DB1 · Dashboard model + backend API** · Required by: T_DB2

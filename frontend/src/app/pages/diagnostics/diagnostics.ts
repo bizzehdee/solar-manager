@@ -75,7 +75,7 @@ import { Diagnostics, GridEvent } from '../../core/models';
         <div class="table-responsive">
           <table class="table table-sm align-middle mb-0">
             <thead>
-              <tr><th>Device</th><th>Status</th><th>Last sample</th><th class="text-end">Comms (tx / fail / retry)</th><th>Last error</th></tr>
+              <tr><th>Device</th><th>Status</th><th>Last sample</th><th>Clock</th><th class="text-end">Comms (tx / fail / retry)</th><th>Last error</th></tr>
             </thead>
             <tbody>
               @for (dev of d.devices; track dev.device_id) {
@@ -83,6 +83,18 @@ import { Diagnostics, GridEvent } from '../../core/models';
                   <td><div class="fw-semibold">{{ dev.device_id }}</div><div class="small text-secondary">{{ dev.vendor }} {{ dev.model }}</div></td>
                   <td><span class="badge text-bg-{{ dev.online ? 'success' : 'danger' }}">{{ dev.online ? 'online' : 'offline' }}</span></td>
                   <td>{{ dev.last_sample_age_s === null ? '—' : (dev.last_sample_age_s | number: '1.0-0') + ' s ago' }}</td>
+                  <!-- Inverter clock drift + sync (T097), per device. -->
+                  <td class="small">
+                    @if (dev.clock?.supported) {
+                      <span [class.text-warning]="driftWarn(dev.clock!.drift_s)">{{ driftLabel(dev.clock!.drift_s) }}</span>
+                      @if (dev.clock!.syncable) {
+                        <button class="btn btn-link btn-sm p-0 ms-2 align-baseline" [disabled]="syncing() === dev.device_id"
+                                (click)="syncClock(dev.device_id)">
+                          <i class="bi bi-arrow-repeat"></i> Sync
+                        </button>
+                      }
+                    } @else { <span class="text-secondary">—</span> }
+                  </td>
                   <td class="text-end">
                     @if (dev.comms) {
                       {{ dev.comms['transactions'] }} / {{ dev.comms['failures'] }} / {{ dev.comms['retries'] }}
@@ -128,9 +140,33 @@ export class DiagnosticsPage implements OnInit {
   readonly diag = signal<Diagnostics | null>(null);
   readonly gridEvents = signal<GridEvent[]>([]);
   readonly loading = signal(true);
+  readonly syncing = signal<string | null>(null); // device id mid-sync
 
   ngOnInit(): void {
     this.refresh();
+  }
+
+  /** Human drift: "in sync" under 1 s, else signed seconds (or minutes when large). */
+  driftLabel(drift: number | null): string {
+    if (drift === null) return '—';
+    if (Math.abs(drift) < 1) return 'in sync';
+    const sign = drift > 0 ? '+' : '−';
+    const abs = Math.abs(drift);
+    return abs >= 120 ? `${sign}${Math.round(abs / 60)} min` : `${sign}${Math.round(abs)} s`;
+  }
+
+  /** Flag a clock that's drifted enough to be worth correcting (≥ 1 minute). */
+  driftWarn(drift: number | null): boolean {
+    return drift !== null && Math.abs(drift) >= 60;
+  }
+
+  /** Correct an inverter's clock to system time, then reload the snapshot. */
+  syncClock(deviceId: string): void {
+    this.syncing.set(deviceId);
+    this.api.syncDeviceClock(deviceId).subscribe({
+      next: () => (this.syncing.set(null), this.refresh()),
+      error: () => this.syncing.set(null),
+    });
   }
 
   refresh(): void {

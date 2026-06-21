@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timezone
 
+from .derived import derive_metrics
 from .devices.registry import DeviceRegistry
 from .models import Reading
 
@@ -44,6 +45,9 @@ class Poller:
     async def poll_once(self) -> list[Reading]:
         readings = await self._registry.read_all()
         for r in readings:
+            # Augment with derived (calculated) metrics so they flow to both the snapshot and
+            # persistence as ordinary canonical metrics (task L16).
+            r.metrics.update(derive_metrics(r.metrics))
             self._latest[r.device_id] = r
         self._broadcast()
         return readings

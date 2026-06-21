@@ -15,14 +15,16 @@ const historyConfig: DashboardConfig = {
   ],
 };
 
-// The host instantiates the real child widgets (daily-kpis, history-chart), so stub the API
-// calls they make on init too (empty metrics ⇒ no follow-up history fetch).
+// The host instantiates the real child widgets (daily-kpis, history-chart), so stub the API calls
+// they make. The history-chart is config-driven (its config has a metric), so it also fetches
+// history on init.
 const fakeApi = {
   getDashboard: () => of(historyConfig),
   putDashboard: () => of(historyConfig),
   deleteDashboard: () => of(undefined),
   getDailyStats: () => of(null),
-  getHistoryMetrics: () => of({ device_id: 'd1', metrics: [] }),
+  getHistoryMetrics: () => of({ device_id: 'd1', metrics: ['pv_power_w'] }),
+  getHistory: () => of({ device_id: 'd1', metric: 'pv_power_w', resolution: '1h', start: 0, end: 0, points: [] }),
 } as unknown as ApiService;
 
 describe('HistoryPage', () => {

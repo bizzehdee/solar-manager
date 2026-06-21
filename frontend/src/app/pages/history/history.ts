@@ -11,17 +11,10 @@ import { DashboardHost } from '../../shared/dashboard-host';
   selector: 'app-history',
   imports: [DashboardHost],
   template: `
-    <div class="d-flex align-items-center justify-content-between mb-3">
-      <h4 class="mb-0"><i class="bi bi-graph-up"></i> History</h4>
-      @if (dashboard()) {
-        <button class="btn btn-sm btn-outline-secondary" (click)="reset()" title="Reset to the default layout">
-          <i class="bi bi-arrow-counterclockwise"></i> Reset to default
-        </button>
-      }
-    </div>
-
     @if (dashboard(); as d) {
-      <app-dashboard-host [dashboard]="d" (layoutSaved)="onSaved(d, $event)" />
+      <app-dashboard-host [dashboard]="d" [canReset]="true" (reset)="reset()" (layoutSaved)="onSaved(d, $event)">
+        <h4 dashTitle class="mb-0"><i class="bi bi-graph-up"></i> History</h4>
+      </app-dashboard-host>
     } @else {
       <div class="text-secondary"><span class="spinner-border spinner-border-sm"></span> Loading dashboard…</div>
     }

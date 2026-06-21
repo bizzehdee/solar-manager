@@ -204,7 +204,8 @@ def create_app(
             db_size = os.path.getsize(settings.db_path)
 
         watermark = await history.rollup_watermark()
-        now_ts = app.state.clock().timestamp()
+        system = app.state.clock()
+        now_ts = system.timestamp()
         try:
             network = host_network()
         except Exception:  # never let a host-probe quirk break diagnostics
@@ -213,6 +214,20 @@ def create_app(
         devices = []
         for device in registry.devices:
             h = health.get(device.device_id, {})
+            # Inverter RTC drift (T097) — per-device operational health, so it lives in the
+            # diagnostics snapshot. A clock read must never break diagnostics.
+            clock = None
+            if device.has_clock:
+                try:
+                    dt = await device.read_clock()
+                    clock = {
+                        "supported": True,
+                        "device_time": dt.isoformat() if dt is not None else None,
+                        "drift_s": (dt.timestamp() - now_ts) if dt is not None else None,
+                        "syncable": settings.enable_control and device.clock_syncable,
+                    }
+                except Exception:
+                    clock = None
             devices.append({
                 "device_id": device.device_id,
                 "vendor": device.info.vendor,
@@ -220,6 +235,7 @@ def create_app(
                 "online": h.get("online", False),
                 "last_sample_age_s": h.get("last_sample_age_s"),
                 "comms": device.comms_stats(),
+                "clock": clock,
             })
         return JSONResponse({
             "version": __version__,
