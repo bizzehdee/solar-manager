@@ -13,6 +13,8 @@
     "settings.devices.configured": "Configured devices",
     "settings.devices.none": "No devices configured yet.",
     "settings.devices.add": "Add device",
+    "settings.devices.edit": "Edit device",
+    "settings.devices.save": "Save changes",
     "settings.devices.name": "Name",
     "settings.devices.profile": "Vendor / Profile",
     "settings.devices.transport": "Transport",
@@ -38,6 +40,7 @@
     "field.profile": "Profile",
     "field.serialPort": "Serial port",
     "field.slaveId": "Slave ID",
+    "action.cancel": "Cancel",
     "status.online": "online",
     "status.offline": "offline"
   }

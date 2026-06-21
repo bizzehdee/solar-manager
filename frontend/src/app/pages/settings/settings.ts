@@ -93,26 +93,15 @@ type SettingsTab = 'devices' | 'solar' | 'tariff' | 'notifications' | 'dashboard
                       </div>
                     </td>
                     <td class="text-end text-nowrap">
-                      <button class="btn btn-sm btn-outline-secondary me-1" (click)="startRename(d)">
+                      <button class="btn btn-sm btn-outline-secondary me-1" (click)="startEdit(d)"
+                              [class.active]="editingId() === d.id" aria-label="Edit device">
                         <i class="bi bi-pencil"></i>
                       </button>
-                      <button class="btn btn-sm btn-outline-danger" (click)="remove(d)">
+                      <button class="btn btn-sm btn-outline-danger" (click)="remove(d)" aria-label="Delete device">
                         <i class="bi bi-trash"></i>
                       </button>
                     </td>
                   </tr>
-                  @if (renameId() === d.id) {
-                    <tr>
-                      <td colspan="7">
-                        <div class="input-group input-group-sm">
-                          <span class="input-group-text">New name</span>
-                          <input class="form-control" [(ngModel)]="renameValue" name="rename" />
-                          <button class="btn btn-primary" (click)="saveRename(d)">Save</button>
-                          <button class="btn btn-outline-secondary" (click)="renameId.set(null)">Cancel</button>
-                        </div>
-                      </td>
-                    </tr>
-                  }
                 }
               </tbody>
             </table>
@@ -122,16 +111,20 @@ type SettingsTab = 'devices' | 'solar' | 'tariff' | 'notifications' | 'dashboard
     </div>
 
     <div class="card">
-      <div class="card-header">{{ 'settings.devices.add' | translate }}</div>
+      <div class="card-header">
+        {{ editingId() ? ('settings.devices.edit' | translate) : ('settings.devices.add' | translate) }}
+        @if (editingId()) { <span class="text-secondary">— {{ editingId() }}</span> }
+      </div>
       <div class="card-body">
         @if (error()) {
           <div class="alert alert-danger">{{ error() }}</div>
         }
-        <form (ngSubmit)="add()">
+        <form (ngSubmit)="submitDevice()">
           <div class="row g-3">
             <div class="col-12 col-md-4">
               <label class="form-label small text-secondary" for="dev-id">{{ 'field.id' | translate }}</label>
-              <input id="dev-id" class="form-control" [(ngModel)]="form.id" name="id" required />
+              <!-- The id is the device key — fixed once created. -->
+              <input id="dev-id" class="form-control" [(ngModel)]="form.id" name="id" required [disabled]="!!editingId()" />
             </div>
             <div class="col-12 col-md-4">
               <label class="form-label small text-secondary" for="dev-name">{{ 'field.name' | translate }}</label>
@@ -261,7 +254,11 @@ type SettingsTab = 'devices' | 'solar' | 'tariff' | 'notifications' | 'dashboard
           }
           <div class="mt-3 d-flex gap-2">
             <button type="submit" class="btn btn-primary" [disabled]="!form.id">
-              <i class="bi bi-plus-lg"></i> {{ 'settings.devices.add' | translate }}
+              @if (editingId()) {
+                <i class="bi bi-save"></i> {{ 'settings.devices.save' | translate }}
+              } @else {
+                <i class="bi bi-plus-lg"></i> {{ 'settings.devices.add' | translate }}
+              }
             </button>
             @if (form.transport !== 'dummy') {
               <button type="button" class="btn btn-outline-secondary"
@@ -271,6 +268,11 @@ type SettingsTab = 'devices' | 'solar' | 'tariff' | 'notifications' | 'dashboard
                 } @else {
                   <i class="bi bi-plug"></i> {{ 'settings.devices.testConnection' | translate }}
                 }
+              </button>
+            }
+            @if (editingId()) {
+              <button type="button" class="btn btn-outline-secondary" (click)="cancelEdit()">
+                {{ 'action.cancel' | translate }}
               </button>
             }
           </div>
@@ -779,8 +781,8 @@ export class SettingsPage implements OnInit {
 
   readonly devices = signal<DeviceConfig[]>([]);
   readonly error = signal<string | null>(null);
-  readonly renameId = signal<string | null>(null);
-  renameValue = '';
+  // When set, the add-device form is editing this existing device instead of creating a new one.
+  readonly editingId = signal<string | null>(null);
 
   // Add-device form helpers: enumerated ports/profiles + connection-test feedback.
   readonly serialPorts = signal<SerialPort[]>([]);
@@ -1287,55 +1289,75 @@ export class SettingsPage implements OnInit {
     });
   }
 
-  add(): void {
+  private resetForm(): void {
+    this.form = { id: '', name: '', transport: 'dummy', profile: '', port: '', baud: 9600, slaveId: 1,
+                  host: '', serial: '', solarmanPort: 8899, tcpPort: 502,
+                  mqttPort: 1883, mqttUser: '', mqttPass: '', mqttBaseTopic: 'solar_assistant',
+                  mqttIncludeAll: false };
+    this.editingId.set(null);
+    this.testResult.set(null);
     this.error.set(null);
-    const body: Record<string, unknown> = {
-      id: this.form.id,
-      transport: this.form.transport,
-    };
+  }
+
+  /** Create (or, when editing, update) a device from the form. One body shape serves both. */
+  submitDevice(): void {
+    this.error.set(null);
+    const body: Record<string, unknown> = { id: this.form.id, transport: this.form.transport };
     if (this.form.name) body['name'] = this.form.name;
     if (this.form.transport !== 'dummy') {
-      body['profile'] = this.form.profile;
+      if (this.form.transport !== 'sa_mqtt') body['profile'] = this.form.profile;
       body['params'] = this.deviceParams();
     }
-    this.api.createDevice(body).subscribe({
-      next: () => {
-        this.form = { id: '', name: '', transport: 'dummy', profile: '', port: '', baud: 9600, slaveId: 1,
-                      host: '', serial: '', solarmanPort: 8899, tcpPort: 502,
-                      mqttPort: 1883, mqttUser: '', mqttPass: '', mqttBaseTopic: 'solar_assistant',
-                      mqttIncludeAll: false };
-        this.testResult.set(null);
-        this.refresh();
-      },
+    const id = this.editingId();
+    const req = id ? this.api.updateDevice(id, body) : this.api.createDevice(body);
+    req.subscribe({
+      next: () => { this.resetForm(); this.refresh(); },
       error: (err) => {
-        if (err?.status === 409) {
-          this.error.set('A device with that ID already exists.');
-        } else if (err?.status === 422) {
-          this.error.set('Validation error — check the required fields for this transport.');
-        } else {
-          this.error.set('Could not create device.');
-        }
+        if (err?.status === 409) this.error.set('A device with that ID already exists.');
+        else if (err?.status === 422) this.error.set('Validation error — check the required fields for this transport.');
+        else this.error.set(id ? 'Could not update device.' : 'Could not create device.');
       },
     });
+  }
+
+  /** Load an existing device into the form for full editing (everything but the id). */
+  startEdit(d: DeviceConfig): void {
+    this.resetForm();
+    const p = d.params || {};
+    const num = (v: unknown, fallback: number) => (v === undefined || v === null ? fallback : Number(v));
+    const str = (v: unknown) => (v === undefined || v === null ? '' : String(v));
+    this.form.id = d.id;
+    this.form.name = d.name;
+    this.form.transport = d.transport;
+    this.form.profile = d.profile || '';
+    switch (d.transport) {
+      case 'modbus_rtu':
+        this.form.port = str(p['port']); this.form.baud = num(p['baudrate'], 9600); this.form.slaveId = num(p['slave_id'], 1);
+        break;
+      case 'modbus_tcp':
+        this.form.host = str(p['host']); this.form.tcpPort = num(p['port'], 502); this.form.slaveId = num(p['slave_id'], 1);
+        break;
+      case 'solarman_v5':
+        this.form.host = str(p['host']); this.form.serial = str(p['serial']);
+        this.form.solarmanPort = num(p['port'], 8899); this.form.slaveId = num(p['slave_id'], 1);
+        break;
+      case 'sa_mqtt':
+        this.form.host = str(p['host']); this.form.mqttPort = num(p['port'], 1883);
+        this.form.mqttUser = str(p['username']); this.form.mqttPass = str(p['password']);
+        this.form.mqttBaseTopic = str(p['base_topic']) || 'solar_assistant';
+        this.form.mqttIncludeAll = !!p['include_all'];
+        break;
+    }
+    this.editingId.set(d.id);
+  }
+
+  cancelEdit(): void {
+    this.resetForm();
   }
 
   toggleEnabled(d: DeviceConfig, e: Event): void {
     const enabled = (e.target as HTMLInputElement).checked;
     this.api.updateDevice(d.id, { enabled }).subscribe({ next: () => this.refresh() });
-  }
-
-  startRename(d: DeviceConfig): void {
-    this.renameValue = d.name;
-    this.renameId.set(d.id);
-  }
-
-  saveRename(d: DeviceConfig): void {
-    this.api.updateDevice(d.id, { name: this.renameValue }).subscribe({
-      next: () => {
-        this.renameId.set(null);
-        this.refresh();
-      },
-    });
   }
 
   remove(d: DeviceConfig): void {

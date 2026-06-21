@@ -159,7 +159,7 @@ describe('SettingsPage', () => {
 
     fixture.componentInstance.form.id = 'd2';
     fixture.componentInstance.form.transport = 'dummy';
-    fixture.componentInstance.add();
+    fixture.componentInstance.submitDevice();
 
     const post = http.expectOne((r) => r.method === 'POST' && r.url === '/api/devices');
     expect(post.request.body).toMatchObject({ id: 'd2', transport: 'dummy' });
@@ -171,6 +171,35 @@ describe('SettingsPage', () => {
     expect(fixture.componentInstance.devices().length).toBe(1);
   });
 
+  it('edits an existing device: loads all fields into the form and PUTs the changes', () => {
+    const fixture = TestBed.createComponent(SettingsPage);
+    fixture.detectChanges();
+    const existing = device({
+      id: 'inv', name: 'Inverter', transport: 'modbus_tcp', profile: 'sunsynk-8k-sg05lp1',
+      params: { host: '192.168.1.50', port: 502, slave_id: 3 },
+    });
+    http.expectOne('/api/devices').flush({ devices: [existing] });
+    flushConfig();
+
+    const c = fixture.componentInstance;
+    c.startEdit(existing);
+    expect(c.editingId()).toBe('inv');
+    // Every field is populated from the stored config (not just the name).
+    expect(c.form).toMatchObject({ id: 'inv', name: 'Inverter', transport: 'modbus_tcp',
+      profile: 'sunsynk-8k-sg05lp1', host: '192.168.1.50', tcpPort: 502, slaveId: 3 });
+
+    c.form.host = '192.168.1.99'; // change a non-name field
+    c.submitDevice();
+    const put = http.expectOne((r) => r.method === 'PUT' && r.url === '/api/devices/inv');
+    expect(put.request.body).toMatchObject({
+      transport: 'modbus_tcp', profile: 'sunsynk-8k-sg05lp1',
+      params: { host: '192.168.1.99', port: 502, slave_id: 3 },
+    });
+    put.flush(existing);
+    http.expectOne((r) => r.method === 'GET' && r.url === '/api/devices').flush({ devices: [existing] });
+    expect(c.editingId()).toBeNull(); // form reset after save
+  });
+
   it('shows an inline error on 409', () => {
     const fixture = TestBed.createComponent(SettingsPage);
     fixture.detectChanges();
@@ -178,7 +207,7 @@ describe('SettingsPage', () => {
     flushConfig();
 
     fixture.componentInstance.form.id = 'dup';
-    fixture.componentInstance.add();
+    fixture.componentInstance.submitDevice();
     http
       .expectOne((r) => r.method === 'POST')
       .flush({}, { status: 409, statusText: 'Conflict' });
