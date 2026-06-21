@@ -21,18 +21,20 @@ def _recorder():
     """An injectable post that records JSON and form calls uniformly."""
     calls: list[dict] = []
 
-    async def post(url, payload=None, *, data=None, headers=None):
-        calls.append({"url": url, "json": payload, "data": data, "headers": headers})
+    async def post(url, payload=None, *, data=None, headers=None, body=None, method="POST"):
+        calls.append({"url": url, "json": payload, "data": data, "headers": headers,
+                      "body": body, "method": method})
 
     return calls, post
 
 
 def test_build_channels_from_config():
-    sent: list = []
-    chans = build_channels({"webhook": {"url": "http://h"}}, post=lambda u, p: sent.append((u, p)))
-    assert "webhook" in chans
-    # No url ⇒ no channel built.
-    assert build_channels({"webhook": {}}) == {}
+    # Custom webhooks are a list; each enabled, addressed endpoint becomes `webhook:<id>`.
+    chans = build_channels({"webhooks": [{"id": "h", "url": "http://h", "enabled": True}]})
+    assert "webhook:h" in chans
+    # No url, disabled, or empty list ⇒ no channel built.
+    assert build_channels({"webhooks": [{"id": "h"}]}) == {}
+    assert build_channels({"webhooks": [{"id": "h", "url": "http://h", "enabled": False}]}) == {}
     assert build_channels({}) == {}
 
 
@@ -43,8 +45,8 @@ def test_build_channels_only_enables_complete_configs():
         "gotify": {"url": "http://g", "token": "G"},
         "pushover": {"token": "P", "user": "U"},
         "email": {"host": "mail", "to": "me@h"},
-        # incomplete → skipped:
-        "webhook": {},
+        # incomplete webhook (no url) → skipped:
+        "webhooks": [{"id": "x"}],
     }
     chans = build_channels(cfg)
     assert set(chans) == {"telegram", "ntfy", "gotify", "pushover", "email"}
@@ -141,15 +143,31 @@ async def test_email_channel_invokes_sender_off_the_loop():
     assert sent and sent[0][1] == "[INFO] Hello"
 
 
+async def test_webhook_default_body_is_the_raw_alert_json():
+    import json
+    calls, post = _recorder()
+    await WebhookChannel({"id": "h", "url": "http://h"}, post=post).send({"rule_id": "r", "severity": "info"})
+    assert calls[0]["url"] == "http://h" and calls[0]["method"] == "POST"
+    assert json.loads(calls[0]["body"]) == {"rule_id": "r", "severity": "info"}
+    assert calls[0]["headers"]["Content-Type"] == "application/json"
+
+
+async def test_webhook_custom_template_renders_and_escapes():
+    import json
+    calls, post = _recorder()
+    ep = {"id": "slack", "url": "http://slack", "method": "post",
+          "payload_template": '{"text": "Alert: {name}"}', "headers": {"X-Token": "t"}}
+    await WebhookChannel(ep, post=post).send({"name": 'say "hi"', "severity": "warning"})
+    assert calls[0]["method"] == "POST"  # normalised
+    assert calls[0]["headers"]["X-Token"] == "t"
+    assert json.loads(calls[0]["body"]) == {"text": 'Alert: say "hi"'}
+
+
 async def test_dispatch_delivers_to_selected_channels():
-    sent: list = []
-
-    async def post(url, payload):
-        sent.append((url, payload))
-
-    chans = {"webhook": WebhookChannel("http://h", post=post)}
-    await dispatch(chans, ["webhook"], {"rule_id": "r"})
-    assert sent == [("http://h", {"rule_id": "r"})]
+    calls, post = _recorder()
+    chans = {"webhook:h": WebhookChannel({"id": "h", "url": "http://h"}, post=post)}
+    await dispatch(chans, ["webhook:h"], {"rule_id": "r"})
+    assert calls and calls[0]["url"] == "http://h"
 
 
 async def test_dispatch_ignores_unknown_channel():
@@ -157,9 +175,9 @@ async def test_dispatch_ignores_unknown_channel():
 
 
 async def test_dispatch_swallows_channel_failure():
-    async def boom(url, payload):
+    async def boom(url, **kw):
         raise RuntimeError("dead host")
 
-    chans = {"webhook": WebhookChannel("http://h", post=boom)}
+    chans = {"webhook:h": WebhookChannel({"id": "h", "url": "http://h"}, post=boom)}
     # A failing channel must NOT propagate (egress off the hot path).
-    await dispatch(chans, ["webhook"], {"rule_id": "r"})
+    await dispatch(chans, ["webhook:h"], {"rule_id": "r"})

@@ -383,11 +383,23 @@ export interface AlertsResponse {
   active_count: number; // active AND unacknowledged — drives the bell badge
 }
 
-/** Outbound readings webhook config (L09). */
-export interface ReadingsWebhookConfig {
+/** A user-defined webhook endpoint (L15) — the shape for both alert and readings egress.
+ *  `interval_s` is only meaningful for readings endpoints (alerts are event-driven). */
+export interface WebhookEndpoint {
+  id: string;
+  label: string;
   url: string | null;
-  interval_s: number;
+  method: string;
+  headers: Record<string, string>;
+  content_type: string;
+  payload_template: string;
   enabled: boolean;
+  interval_s?: number;
+}
+
+/** Outbound readings webhooks list (L09 + L15). */
+export interface ReadingsWebhooksResponse {
+  webhooks: WebhookEndpoint[];
 }
 
 /** MQTT publisher + Home Assistant discovery config (L07). */
@@ -404,11 +416,13 @@ export interface MqttConfig {
   discovery_prefix: string;
 }
 
-/** Notification-channel config (L10). `channels` is keyed by channel name (webhook/email/…). */
+/** Notification-channel config (L10 + L15). `channels` holds the single-config channels
+ *  (telegram/ntfy/…) plus a `webhooks` list of custom endpoints. */
 export interface AlertChannelsResponse {
-  channels: Record<string, Record<string, unknown>>;
-  configured: string[]; // channels that are fully configured (offered per rule + testable)
+  channels: Record<string, unknown>;
+  configured: string[]; // channel names fully configured (offered per rule + testable)
   supported: string[];
+  webhook_labels: Record<string, string>; // "webhook:<id>" → label, for the per-rule picker
 }
 
 // Rule-based automation (L03e). A rule = combinable conditions → prioritised actions that set
@@ -464,6 +478,7 @@ export interface AutomationOptions {
   match_modes: string[];
   severities: string[];
   channels: string[];
+  channel_labels?: Record<string, string>; // channel name → friendly label (webhooks)
   targets: AutomationTargetOption[];
 }
 

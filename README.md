@@ -54,9 +54,11 @@ and watch your panels, battery and grid in real time.
 - **Alerts** — a rule engine (low battery SoC, device offline/stale, inverter fault, over-temp…)
   with thresholds, hysteresis, debounce and quiet hours; sensible rules shipped on, and a
   **rule editor** to add/edit/enable/delete your own. Active/history **inbox** with acknowledge &
-  snooze and a header **bell badge**. Push delivery via **webhook, email (SMTP), Telegram, ntfy,
-  Gotify or Pushover** — configure any, then pick channels per rule (with a one-click test). All off
-  the hot path — a failing notifier never disrupts monitoring.
+  snooze and a header **bell badge**. Push delivery via **email (SMTP), Telegram, ntfy, Gotify,
+  Pushover, or any number of custom webhooks** — each webhook with its own URL, headers and
+  **payload template** (Slack/Discord/HA presets included), so you can POST whatever shape a service
+  expects. Configure any, then pick channels per rule (with a one-click test). All off the hot path —
+  a failing notifier never disrupts monitoring.
 - **Automation** — build your own **rules** that set inverter settings (e.g. work-mode slot 1
   target SoC) from conditions you combine: **day of week, time/date window, metric thresholds or
   tariff window**. Rules and individual actions carry **priorities** (the highest wins on a
@@ -67,9 +69,9 @@ and watch your panels, battery and grid in real time.
   control (the same `SOLARVOLT_ENABLE_CONTROL` switch that guards all write-back). Without it,
   automation stays preview-only.
 - **Integrations** — an **MQTT publisher with Home Assistant auto-discovery** (every metric shows up
-  as an HA sensor with no manual YAML), a **Prometheus `/metrics`** endpoint for Grafana users, and an
-  **outbound readings webhook** that posts each snapshot as JSON to a URL of your choice
-  (Node-RED / IFTTT / custom). (PVOutput is on the roadmap.)
+  as an HA sensor with no manual YAML), a **Prometheus `/metrics`** endpoint for Grafana users, and
+  **outbound readings webhooks** — any number of endpoints, each posting the latest snapshot on its
+  own interval with a custom payload template (Node-RED / IFTTT / custom). (PVOutput is on the roadmap.)
 - **Operational niceties** — **backup / restore** the database and **export any metric to CSV**;
   a **Diagnostics** tab in Settings (DB size, rollup lag, per-device Modbus comms health, grid-outage log);
   **inverter clock drift** with one-click sync; a **performance-ratio calibration** that tunes the

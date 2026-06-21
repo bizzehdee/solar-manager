@@ -24,10 +24,11 @@ import logging
 from datetime import datetime
 
 from .. import control
-from ..alerts.channels import Post, SendEmail, build_channels, dispatch
+from ..alerts.channels import Post, SendEmail, build_channels, dispatch, webhook_channel_labels
 from ..devices.base import TransportError
 from ..metrics import ALL_METRICS
 from ..tariff import Tariff
+from ..templating import render_message
 from .rules import (
     CONDITION_KINDS,
     AllowList,
@@ -45,26 +46,6 @@ log = logging.getLogger("solarvolt")
 
 def _local_now() -> datetime:
     return datetime.now().astimezone()
-
-
-class _SafeMetrics(dict):
-    """format_map helper: unknown metric keys are left as ``{key}`` rather than raising KeyError."""
-    def __missing__(self, key: str) -> str:
-        return "{" + key + "}"
-
-
-def _render_message(template: str, metrics: dict) -> str:
-    """Substitute ``{metric_key}`` / ``{metric_key:.2f}`` placeholders with current metric values.
-
-    Unknown keys are left as ``{key}`` in the output (safe — the user sees what didn't resolve).
-    Malformed format specs (e.g. ``{soc:.1fX}``) fall back to the raw template rather than erroring.
-    """
-    if not template or "{" not in template:
-        return template
-    try:
-        return template.format_map(_SafeMetrics(metrics))
-    except ValueError:
-        return template  # bad format spec — send the raw template rather than crashing
 
 
 class AutomationService:
@@ -93,6 +74,7 @@ class AutomationService:
         self._post = post
         self._send_email = send_email
         self._channels: dict = {}
+        self._channel_labels: dict[str, str] = {}
         self._debounce: dict[tuple, float] = {}  # (rule_id, action_type, *key) → last-fire epoch
         self._write_enabled: bool = False
         self._task: asyncio.Task | None = None
@@ -207,6 +189,8 @@ class AutomationService:
             "match_modes": ["all", "any"],
             "severities": ["info", "warning", "critical"],
             "channels": list(self._channels.keys()),
+            # Friendly names for webhook:<id> channels (other channels label = their own name).
+            "channel_labels": {name: self._channel_labels.get(name, name) for name in self._channels},
             "targets": targets,
         }
 
@@ -215,6 +199,7 @@ class AutomationService:
         """Rebuild the notification channel map from the current alert_channels config."""
         cfg = await self._cfg.get("alert_channels", {}) or {}
         self._channels = build_channels(cfg, post=self._post, send_email=self._send_email)
+        self._channel_labels = webhook_channel_labels(cfg)
 
     # --- notify / alert dispatch (ungated by ENABLE_CONTROL) -------------------
     def _debounce_key(self, action_type: str, rule_id: str, message: str, channels: tuple) -> tuple:
@@ -230,7 +215,7 @@ class AutomationService:
             self._debounce[key] = now
             payload = {
                 "rule_id": notif.rule_id, "name": notif.rule_name,
-                "message": _render_message(notif.message or notif.rule_name, metrics),
+                "message": render_message(notif.message or notif.rule_name, metrics),
                 "severity": notif.severity, "device_id": device_id,
             }
             try:
@@ -255,7 +240,7 @@ class AutomationService:
                     severity=alert_action.severity,
                     metric=None,
                     value=None,
-                    message=_render_message(alert_action.message or alert_action.rule_name, metrics),
+                    message=render_message(alert_action.message or alert_action.rule_name, metrics),
                     fired_at=now,
                 )
             except Exception as exc:

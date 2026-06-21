@@ -7,6 +7,7 @@ coalescing per slot, read-back + audit, failure handling, and the background sch
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import datetime, timezone
 
 import pytest
@@ -84,7 +85,7 @@ def _weekend_rule(*, fields: dict, enabled=True, action_enabled=True, slot=1) ->
     }
 
 
-def _notify_rule(*, channels=("webhook",), message="Low SoC", debounce_s=0.0, enabled=True,
+def _notify_rule(*, channels=("webhook:hook",), message="Low SoC", debounce_s=0.0, enabled=True,
                  action_enabled=True) -> dict:
     return {
         "id": "notify_rule", "name": "Notify rule", "match": "all", "enabled": enabled,
@@ -249,11 +250,11 @@ async def test_scheduler_swallows_a_failing_tick():
 async def test_notify_action_dispatches_to_channel():
     dispatched: list[dict] = []
 
-    async def fake_post(url, payload=None, **kw):
-        dispatched.append({"url": url, "payload": payload})
+    async def fake_post(url, *, body=None, **kw):
+        dispatched.append({"url": url, "payload": json.loads(body)})
 
-    cfg = _Config({"automation_rules": [_notify_rule(channels=("webhook",), message="Low SoC")],
-                   "alert_channels": {"webhook": {"url": "http://hook.example/test"}}})
+    cfg = _Config({"automation_rules": [_notify_rule(channels=("webhook:hook",), message="Low SoC")],
+                   "alert_channels": {"webhooks": [{"id": "hook", "url": "http://hook.example/test", "enabled": True}]}})
     device = Device("dummy", NullTransport(), DummyProfile())
     svc = AutomationService(cfg, _Poller(), _Registry([device]),
                             clock=lambda: _SAT, post=fake_post)
@@ -269,11 +270,11 @@ async def test_notify_action_dispatches_to_channel():
 async def test_notify_debounce_prevents_double_fire():
     dispatched: list[dict] = []
 
-    async def fake_post(url, payload=None, **kw):
-        dispatched.append(payload)
+    async def fake_post(url, *, body=None, **kw):
+        dispatched.append(json.loads(body))
 
-    cfg = _Config({"automation_rules": [_notify_rule(channels=("webhook",), debounce_s=600.0)],
-                   "alert_channels": {"webhook": {"url": "http://hook.example/test"}}})
+    cfg = _Config({"automation_rules": [_notify_rule(channels=("webhook:hook",), debounce_s=600.0)],
+                   "alert_channels": {"webhooks": [{"id": "hook", "url": "http://hook.example/test", "enabled": True}]}})
     device = Device("dummy", NullTransport(), DummyProfile())
     svc = AutomationService(cfg, _Poller(), _Registry([device]),
                             clock=lambda: _SAT, post=fake_post)
@@ -285,11 +286,11 @@ async def test_notify_debounce_prevents_double_fire():
 
 @pytest.mark.asyncio
 async def test_notify_channel_failure_does_not_break_apply():
-    async def boom(url, payload=None, **kw):
+    async def boom(url, *, body=None, **kw):
         raise RuntimeError("network error")
 
-    cfg = _Config({"automation_rules": [_notify_rule(channels=("webhook",))],
-                   "alert_channels": {"webhook": {"url": "http://hook.example/test"}}})
+    cfg = _Config({"automation_rules": [_notify_rule(channels=("webhook:hook",))],
+                   "alert_channels": {"webhooks": [{"id": "hook", "url": "http://hook.example/test", "enabled": True}]}})
     device = Device("dummy", NullTransport(), DummyProfile())
     svc = AutomationService(cfg, _Poller(), _Registry([device]),
                             clock=lambda: _SAT, post=boom)
@@ -302,11 +303,11 @@ async def test_notify_channel_failure_does_not_break_apply():
 async def test_disabled_notify_action_does_not_dispatch():
     dispatched: list[dict] = []
 
-    async def fake_post(url, payload=None, **kw):
-        dispatched.append(payload)
+    async def fake_post(url, *, body=None, **kw):
+        dispatched.append(json.loads(body))
 
-    cfg = _Config({"automation_rules": [_notify_rule(channels=("webhook",), action_enabled=False)],
-                   "alert_channels": {"webhook": {"url": "http://hook.example/test"}}})
+    cfg = _Config({"automation_rules": [_notify_rule(channels=("webhook:hook",), action_enabled=False)],
+                   "alert_channels": {"webhooks": [{"id": "hook", "url": "http://hook.example/test", "enabled": True}]}})
     device = Device("dummy", NullTransport(), DummyProfile())
     svc = AutomationService(cfg, _Poller(), _Registry([device]),
                             clock=lambda: _SAT, post=fake_post)
@@ -422,13 +423,13 @@ async def test_notify_message_template_rendered_with_metrics():
     """``{metric_key}`` placeholders in the notify message are replaced with live values."""
     dispatched: list[dict] = []
 
-    async def fake_post(url, payload=None, **kw):
-        dispatched.append(payload)
+    async def fake_post(url, *, body=None, **kw):
+        dispatched.append(json.loads(body))
 
     cfg = _Config({
-        "automation_rules": [_notify_rule(channels=("webhook",),
+        "automation_rules": [_notify_rule(channels=("webhook:hook",),
                                           message="Battery SoC is {battery_soc_pct:.1f}%")],
-        "alert_channels": {"webhook": {"url": "http://hook.example/test"}},
+        "alert_channels": {"webhooks": [{"id": "hook", "url": "http://hook.example/test", "enabled": True}]},
     })
     device = Device("dummy", NullTransport(), DummyProfile())
     # DummyProfile reports battery_soc_pct; inject a known value via a snapshot stub.
@@ -461,19 +462,19 @@ async def test_alert_message_template_rendered_with_metrics():
 
 def test_render_message_unknown_key_left_in_place():
     """Unknown metric keys are preserved as ``{key}`` rather than raising."""
-    from app.automation.service import _render_message
+    from app.templating import render_message as _render_message
     result = _render_message("SoC={battery_soc_pct} fault={no_such_metric}", {"battery_soc_pct": 55.0})
     assert result == "SoC=55.0 fault={no_such_metric}"
 
 
 def test_render_message_bad_format_spec_falls_back():
     """A malformed format spec returns the raw template rather than raising."""
-    from app.automation.service import _render_message
+    from app.templating import render_message as _render_message
     result = _render_message("{battery_soc_pct:.1fXXX}", {"battery_soc_pct": 42.0})
     assert result == "{battery_soc_pct:.1fXXX}"
 
 
 def test_render_message_no_placeholders_unchanged():
     """Messages with no ``{`` are returned as-is (fast path, no format_map call)."""
-    from app.automation.service import _render_message
+    from app.templating import render_message as _render_message
     assert _render_message("all clear", {"battery_soc_pct": 99.0}) == "all clear"

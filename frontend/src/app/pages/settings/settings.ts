@@ -7,6 +7,7 @@ import { DashboardsService } from '../../core/dashboards.service';
 import { DialogService } from '../../core/dialog.service';
 import { downloadDashboard, parseDashboard } from '../../core/dashboard-file';
 import { unknownWidgetTypes } from '../../shared/widget-registry';
+import { WebhookListEditor } from '../../shared/webhook-list-editor';
 import { PreferencesService } from '../../core/preferences.service';
 import { TranslatePipe } from '../../core/translate.pipe';
 import { DiagnosticsPage } from '../diagnostics/diagnostics';
@@ -18,9 +19,9 @@ import {
   DeviceTestResult,
   ForecastConfig,
   MqttConfig,
-  ReadingsWebhookConfig,
   SerialPort,
   StatsConfig,
+  WebhookEndpoint,
 } from '../../core/models';
 
 // Settings › Devices (plan.md §6, §11): the device registry. Lists configured devices and
@@ -29,7 +30,7 @@ type SettingsTab = 'devices' | 'solar' | 'tariff' | 'notifications' | 'dashboard
 
 @Component({
   selector: 'app-settings',
-  imports: [FormsModule, TranslatePipe, DiagnosticsPage],
+  imports: [FormsModule, TranslatePipe, DiagnosticsPage, WebhookListEditor],
   template: `
     <h4 class="mb-3"><i class="bi bi-gear"></i> {{ 'settings.title' | translate }}</h4>
 
@@ -414,15 +415,17 @@ type SettingsTab = 'devices' | 'solar' | 'tariff' | 'notifications' | 'dashboard
           channels per rule on the Alerts page. Save before sending a test.
         </p>
 
-        <h6 class="text-secondary d-flex align-items-center gap-2">Webhook @if (isConfigured('webhook')) { <span class="badge text-bg-success">configured</span> }</h6>
-        <div class="row g-2 mb-2 align-items-end">
-          <div class="col-12 col-md-8">
-            <input class="form-control" [(ngModel)]="channels.webhook.url" name="chWhUrl" placeholder="POST URL" aria-label="Webhook URL" />
-          </div>
-          <div class="col-12 col-md-4">
-            <button type="button" class="btn btn-outline-secondary btn-sm" (click)="testChannel('webhook')" [disabled]="!isConfigured('webhook')">Test</button>
-          </div>
-        </div>
+        <h6 class="text-secondary d-flex align-items-center gap-2">Custom webhooks</h6>
+        <p class="small text-secondary mb-2">
+          Any number of endpoints (Slack / Discord / Home Assistant / custom), each with its own
+          payload. Save, then target specific webhooks per rule on the Alerts page.
+        </p>
+        <app-webhook-list-editor
+          [endpoints]="alertWebhooks()"
+          [placeholders]="alertPlaceholders"
+          (save)="saveAlertWebhooks($event)"
+          (test)="testAlertWebhook($event)"
+        />
 
         <h6 class="text-secondary d-flex align-items-center gap-2 mt-3">Telegram @if (isConfigured('telegram')) { <span class="badge text-bg-success">configured</span> }</h6>
         <div class="row g-2 mb-2 align-items-end">
@@ -472,38 +475,25 @@ type SettingsTab = 'devices' | 'solar' | 'tariff' | 'notifications' | 'dashboard
       </div>
     </div>
 
-    <!-- Integrations › outbound readings webhook (L09): periodically POST the latest snapshot to a
-         user URL (Node-RED / IFTTT / custom). Off the hot path — a dead endpoint never blocks monitoring. -->
+    <!-- Integrations › outbound readings webhooks (L09 + L15): periodically POST the latest snapshot
+         to any number of user URLs, each with its own cadence + payload. Off the hot path — a dead
+         endpoint never blocks monitoring. -->
     <div class="card mt-3">
-      <div class="card-header"><i class="bi bi-broadcast"></i> Outbound readings webhook</div>
+      <div class="card-header"><i class="bi bi-broadcast"></i> Outbound readings webhooks</div>
       <div class="card-body">
         @if (webhookMsg(); as msg) { <div class="alert alert-{{ msg.cls }} py-2">{{ msg.text }}</div> }
-        <div class="row g-3 align-items-end">
-          <div class="col-12 col-md-6">
-            <label class="form-label small text-secondary" for="wh-url">URL</label>
-            <input id="wh-url" class="form-control" [(ngModel)]="webhook.url" name="whUrl" placeholder="your endpoint URL" />
-          </div>
-          <div class="col-6 col-md-3">
-            <label class="form-label small text-secondary" for="wh-int">Interval (s)</label>
-            <input id="wh-int" type="number" min="5" class="form-control" [(ngModel)]="webhook.interval_s" name="whInterval" />
-          </div>
-          <div class="col-6 col-md-3">
-            <div class="form-check form-switch mt-md-4">
-              <input class="form-check-input" type="checkbox" role="switch" id="wh-en" [(ngModel)]="webhook.enabled" name="whEnabled" />
-              <label class="form-check-label" for="wh-en">Enabled</label>
-            </div>
-          </div>
-        </div>
-        <div class="mt-3 d-flex gap-2">
-          <button type="button" class="btn btn-primary" (click)="saveWebhook()"><i class="bi bi-save"></i> Save</button>
-          <button type="button" class="btn btn-outline-secondary" (click)="testWebhook()" [disabled]="!webhook.url">
-            <i class="bi bi-send"></i> Send test
-          </button>
-        </div>
-        <p class="small text-secondary mt-2 mb-0">
-          POSTs the latest normalized snapshot as JSON on the chosen interval. Save before sending a
-          test. A failing endpoint is logged and never disrupts monitoring; alert egress is set per rule.
+        <p class="small text-secondary mb-2">
+          Each endpoint POSTs the latest snapshot on its own interval. An empty template sends the
+          full JSON snapshot. Save before sending a test. A failing endpoint is logged, never disrupts
+          monitoring.
         </p>
+        <app-webhook-list-editor
+          [endpoints]="readingsWebhooks()"
+          [readings]="true"
+          [placeholders]="readingsPlaceholders"
+          (save)="saveReadingsWebhooks($event)"
+          (test)="testReadingsWebhook($event)"
+        />
       </div>
     </div>
 
@@ -782,9 +772,10 @@ export class SettingsPage implements OnInit {
   readonly restoring = signal(false);
   readonly restoreMsg = signal<{ cls: string; text: string } | null>(null);
 
-  // Outbound readings webhook (L09).
+  // Outbound readings webhooks (L09 + L15 — multiple endpoints with custom payloads).
   readonly webhookMsg = signal<{ cls: string; text: string } | null>(null);
-  webhook: ReadingsWebhookConfig = { url: '', interval_s: 60, enabled: false };
+  readonly readingsWebhooks = signal<WebhookEndpoint[]>([]);
+  readonly readingsPlaceholders = ['ts', 'pv_power_w', 'battery_soc_pct', 'grid_power_w', 'load_power_w'];
 
   // MQTT publisher + Home Assistant discovery (L07).
   readonly mqttMsg = signal<{ cls: string; text: string } | null>(null);
@@ -797,8 +788,9 @@ export class SettingsPage implements OnInit {
   // fully set up server-side (drives the Test buttons + the per-rule channel list on Alerts).
   readonly channelsMsg = signal<{ cls: string; text: string } | null>(null);
   readonly configured = signal<string[]>([]);
+  readonly alertWebhooks = signal<WebhookEndpoint[]>([]);
+  readonly alertPlaceholders = ['severity', 'name', 'message', 'metric', 'value', 'device_id', 'rule_id'];
   channels = {
-    webhook: { url: '' },
     telegram: { bot_token: '', chat_id: '' },
     ntfy: { topic: '', server: '' },
     gotify: { url: '', token: '' },
@@ -826,7 +818,7 @@ export class SettingsPage implements OnInit {
     this.loadProfiles();
     this.loadTariff();
     this.loadForecast();
-    this.loadWebhook();
+    this.loadReadingsWebhooks();
     this.loadMqtt();
     this.loadChannels();
     this.dashboards.refresh();
@@ -940,31 +932,38 @@ export class SettingsPage implements OnInit {
     setTimeout(() => this.mqttMsg.set(null), 4000);
   }
 
-  // --- Notification channels (L10) ---
+  // --- Notification channels (L10) + custom alert webhooks (L15) ---
   isConfigured = (name: string): boolean => this.configured().includes(name);
 
+  private applyChannels(r: { channels: Record<string, unknown>; configured: string[] }): void {
+    // Merge saved single-channel config over the form defaults; pull the webhooks list out.
+    const forms = this.channels as unknown as Record<string, Record<string, unknown>>;
+    for (const key of Object.keys(forms)) {
+      const saved = r.channels[key] as Record<string, unknown> | undefined;
+      if (saved) forms[key] = { ...forms[key], ...saved };
+    }
+    this.alertWebhooks.set((r.channels['webhooks'] as WebhookEndpoint[]) || []);
+    this.configured.set(r.configured);
+  }
+
   private loadChannels(): void {
-    this.api.getAlertChannels().subscribe({
-      next: (r) => {
-        // Merge saved config over the form defaults so untouched providers keep their defaults.
-        const forms = this.channels as unknown as Record<string, Record<string, unknown>>;
-        for (const key of Object.keys(forms)) {
-          const saved = r.channels[key];
-          if (saved) forms[key] = { ...forms[key], ...saved };
-        }
-        this.configured.set(r.configured);
-      },
+    this.api.getAlertChannels().subscribe({ next: (r) => this.applyChannels(r) });
+  }
+
+  /** Persist the single channels + the given alert-webhook list (one PUT carries both). */
+  private putChannels(webhooks: WebhookEndpoint[], okMsg: string): void {
+    this.api.putAlertChannels({ ...this.channels, webhooks }).subscribe({
+      next: (r) => { this.applyChannels(r); this.flashChannels('success', okMsg); },
+      error: () => this.flashChannels('danger', 'Could not save the channels.'),
     });
   }
 
   saveChannels(): void {
-    this.api.putAlertChannels(this.channels as unknown as Record<string, Record<string, unknown>>).subscribe({
-      next: (r) => {
-        this.configured.set(r.configured);
-        this.flashChannels('success', 'Saved.');
-      },
-      error: () => this.flashChannels('danger', 'Could not save the channels.'),
-    });
+    this.putChannels(this.alertWebhooks(), 'Saved.');
+  }
+
+  saveAlertWebhooks(webhooks: WebhookEndpoint[]): void {
+    this.putChannels(webhooks, 'Webhooks saved.');
   }
 
   testChannel(name: string): void {
@@ -974,35 +973,30 @@ export class SettingsPage implements OnInit {
     });
   }
 
+  testAlertWebhook(ep: WebhookEndpoint): void {
+    if (!ep.id) { this.flashChannels('warning', 'Save the webhook before testing it.'); return; }
+    this.testChannel(`webhook:${ep.id}`);
+  }
+
   private flashChannels(cls: string, text: string): void {
     this.channelsMsg.set({ cls, text });
     setTimeout(() => this.channelsMsg.set(null), 4000);
   }
 
-  private loadWebhook(): void {
-    this.api.getReadingsWebhook().subscribe({
-      next: (c) => (this.webhook = { url: c.url ?? '', interval_s: c.interval_s, enabled: c.enabled }),
+  private loadReadingsWebhooks(): void {
+    this.api.getReadingsWebhooks().subscribe({ next: (r) => this.readingsWebhooks.set(r.webhooks) });
+  }
+
+  saveReadingsWebhooks(webhooks: WebhookEndpoint[]): void {
+    this.api.putReadingsWebhooks(webhooks).subscribe({
+      next: (r) => { this.readingsWebhooks.set(r.webhooks); this.flashWebhook('success', 'Saved.'); },
+      error: () => this.flashWebhook('danger', 'Could not save the webhooks.'),
     });
   }
 
-  saveWebhook(): void {
-    this.api
-      .putReadingsWebhook({
-        url: (this.webhook.url || '').trim() || null,
-        interval_s: Number(this.webhook.interval_s),
-        enabled: this.webhook.enabled,
-      })
-      .subscribe({
-        next: (c) => {
-          this.webhook = { url: c.url ?? '', interval_s: c.interval_s, enabled: c.enabled };
-          this.flashWebhook('success', 'Saved.');
-        },
-        error: () => this.flashWebhook('danger', 'Could not save the webhook.'),
-      });
-  }
-
-  testWebhook(): void {
-    this.api.testReadingsWebhook().subscribe({
+  testReadingsWebhook(ep: WebhookEndpoint): void {
+    if (!ep.id) { this.flashWebhook('warning', 'Save the webhook before testing it.'); return; }
+    this.api.testReadingsWebhook(ep.id).subscribe({
       next: (r) =>
         this.flashWebhook(
           r.sent ? 'success' : 'warning',

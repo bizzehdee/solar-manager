@@ -23,34 +23,59 @@ def _client() -> TestClient:
 def test_alert_channels_config_round_trip_and_options_reflect_it():
     with _client() as client:
         base = client.get("/api/alert-channels").json()
-        assert base["channels"] == {} and base["configured"] == []
-        assert set(base["supported"]) >= {"webhook", "email", "telegram", "ntfy", "gotify", "pushover"}
+        assert base["configured"] == []
+        assert set(base["supported"]) >= {"email", "telegram", "ntfy", "gotify", "pushover"}
 
-        # Configure two channels; one incomplete (dropped from `configured`).
+        # Configure a single channel + two custom webhooks (one disabled, one missing url).
         saved = client.put("/api/alert-channels", json={
             "telegram": {"bot_token": "T", "chat_id": "42"},
             "ntfy": {},  # incomplete
             "bogus": {"x": 1},  # not a supported channel → stripped
+            "webhooks": [
+                {"id": "slack", "label": "Slack", "url": "http://slack", "enabled": True},
+                {"label": "Off one", "url": "http://x", "enabled": False},  # id derived from label
+            ],
         }).json()
-        assert saved["configured"] == ["telegram"]
+        assert "telegram" in saved["configured"]
+        assert "webhook:slack" in saved["configured"]  # enabled + addressed
+        assert "webhook:off-one" not in saved["configured"]  # disabled
         assert "bogus" not in saved["channels"]
+        assert saved["webhook_labels"]["webhook:slack"] == "Slack"
 
 
 def test_alert_channel_test_endpoint():
     with _client() as client:
         # Not configured → 400.
-        assert client.post("/api/alert-channels/webhook/test").status_code == 400
+        assert client.post("/api/alert-channels/webhook:hook/test").status_code == 400
 
-        # Configure webhook, inject a recorder, then a manual test delivers the sample alert.
-        client.put("/api/alert-channels", json={"webhook": {"url": "http://hook"}})
+        # Configure a webhook, inject a recorder, then a manual test delivers the sample alert.
+        client.put("/api/alert-channels", json={
+            "webhooks": [{"id": "hook", "url": "http://hook", "enabled": True}],
+        })
         sent: list = []
 
-        async def post(url, payload=None, *, data=None, headers=None):
-            sent.append((url, payload))
+        async def post(url, **kw):
+            sent.append((url, kw.get("body")))
 
-        client.app.state.automation._channels["webhook"]._post = post
-        assert client.post("/api/alert-channels/webhook/test").json() == {"ok": True}
+        client.app.state.automation._channels["webhook:hook"]._post = post
+        assert client.post("/api/alert-channels/webhook:hook/test").json() == {"ok": True}
         assert sent and sent[0][0] == "http://hook"
+
+
+def test_alert_webhook_test_works_when_disabled():
+    with _client() as client:
+        # A saved-but-disabled webhook can still be tested (verify before enabling).
+        client.put("/api/alert-channels", json={
+            "webhooks": [{"id": "hook", "url": "http://hook", "enabled": False}],
+        })
+        captured: list = []
+
+        async def post(url, **kw):
+            captured.append(url)
+
+        client.app.state.automation._post = post  # used to build the transient channel
+        assert client.post("/api/alert-channels/webhook:hook/test").json() == {"ok": True}
+        assert captured == ["http://hook"]
 
 
 def test_alerts_list_ack_snooze_and_404():

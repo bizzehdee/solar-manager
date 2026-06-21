@@ -255,7 +255,7 @@ import {
                                 <div class="form-check form-check-inline">
                                   <input class="form-check-input" type="checkbox" [id]="'ach-' + $index + '-' + ch"
                                          [checked]="hasChannel(a, ch)" (change)="toggleChannel(a, ch)" />
-                                  <label class="form-check-label small" [for]="'ach-' + $index + '-' + ch">{{ ch }}</label>
+                                  <label class="form-check-label small" [for]="'ach-' + $index + '-' + ch">{{ channelLabel(ch) }}</label>
                                 </div>
                               }
                             } @else {
@@ -523,6 +523,9 @@ export class AutomationPage implements OnInit {
   }
 
   hasChannel = (a: AutomationAction, ch: string): boolean => (a.channels ?? []).includes(ch);
+
+  /** Friendly label for a channel name (webhooks show their label, not `webhook:<id>`). */
+  channelLabel = (ch: string): string => this.options().channel_labels?.[ch] ?? ch;
 
   toggleChannel(a: AutomationAction, ch: string): void {
     const chs = a.channels ?? [];

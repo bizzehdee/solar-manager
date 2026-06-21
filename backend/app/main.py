@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -24,7 +25,7 @@ from starlette.responses import Response
 from starlette.types import Scope
 
 from . import control
-from .alerts.channels import SUPPORTED_CHANNELS, build_channels
+from .alerts.channels import SUPPORTED_CHANNELS, WebhookChannel, build_channels, webhook_channel_labels
 from .automation.service import AutomationService
 from .config import Settings
 from .dashboards import DashboardNotFound, DashboardStore
@@ -61,6 +62,51 @@ from .version import __version__
 
 # Where the built Angular app lands (Phase 0 frontend build output). Optional in dev.
 _FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist" / "solarvolt" / "browser"
+
+_SLUG_RE = re.compile(r"[^a-z0-9]+")
+
+
+def _slug(text: object) -> str:
+    """A stable id slug from arbitrary text (lowercase, non-alnum → '-')."""
+    return _SLUG_RE.sub("-", str(text or "").strip().lower()).strip("-")
+
+
+def _sanitize_webhook(ep: dict, *, readings: bool, fallback_id: str) -> dict:
+    """Coerce one webhook endpoint to the canonical shape (L15). Shared by alert + readings
+    endpoints; readings entries additionally carry their own clamped `interval_s`."""
+    eid = _slug(ep.get("id") or ep.get("label")) or fallback_id
+    out = {
+        "id": eid,
+        "label": str(ep.get("label") or eid),
+        "url": (str(ep.get("url") or "").strip()) or None,
+        "method": str(ep.get("method") or "POST").upper(),
+        "headers": {str(k): str(v) for k, v in (ep.get("headers") or {}).items() if str(k).strip()},
+        "content_type": str(ep.get("content_type") or "application/json"),
+        "payload_template": str(ep.get("payload_template") or ""),
+        "enabled": bool(ep.get("enabled", False)),
+    }
+    if readings:
+        out["interval_s"] = max(float(ep.get("interval_s") or 60.0), 5.0)
+    return out
+
+
+def _sanitize_webhooks(raw: object, *, readings: bool) -> list[dict]:
+    """Validate/normalize a list of webhook endpoints, assigning ids where missing and de-duping."""
+    if not isinstance(raw, list):
+        return []
+    out: list[dict] = []
+    seen: set[str] = set()
+    for i, ep in enumerate(raw):
+        if not isinstance(ep, dict):
+            continue
+        wh = _sanitize_webhook(ep, readings=readings, fallback_id=f"wh{i + 1}")
+        eid, n = wh["id"], 2
+        while eid in seen:
+            eid, n = f"{wh['id']}-{n}", n + 1
+        wh["id"] = eid
+        seen.add(eid)
+        out.append(wh)
+    return out
 
 
 def _parse_time(value: str | None, default: float) -> float:
@@ -621,33 +667,44 @@ def create_app(
             raise HTTPException(status_code=404, detail=f"alert {alert_id} not found")
         return JSONResponse({"ok": True, "snooze_until": until})
 
-    # ---- notification channels (Later / L10) ----------------------------------
+    # ---- notification channels (Later / L10; custom webhooks L15) -------------
     async def _alert_channels_view() -> dict:
         cfg = await app.state.app_config.get("alert_channels", {}) or {}
         return {
-            "channels": cfg,
+            "channels": cfg,  # incl. the `webhooks` list
             "configured": list(build_channels(cfg).keys()),
             "supported": list(SUPPORTED_CHANNELS),
+            "webhook_labels": webhook_channel_labels(cfg),
         }
 
     @app.get("/api/alert-channels")
     async def get_alert_channels() -> JSONResponse:
-        """Notification-channel config (webhook/email/Telegram/ntfy/Gotify/Pushover) + which are
-        fully configured. Single-house, no-auth deployment (CLAUDE.md) — secrets are returned for
-        editing, as the whole DB is already user-downloadable via /api/backup."""
+        """Notification-channel config (custom webhooks + email/Telegram/ntfy/Gotify/Pushover) and
+        which are fully configured. Single-house, no-auth deployment (CLAUDE.md) — secrets are
+        returned for editing, as the whole DB is already user-downloadable via /api/backup."""
         return JSONResponse(await _alert_channels_view())
 
     @app.put("/api/alert-channels")
     async def put_alert_channels(body: dict = Body(...)) -> JSONResponse:
-        cfg = {k: v for k, v in (body or {}).items() if k in SUPPORTED_CHANNELS and isinstance(v, dict)}
+        incoming = body or {}
+        cfg = {k: v for k, v in incoming.items() if k in SUPPORTED_CHANNELS and isinstance(v, dict)}
+        cfg["webhooks"] = _sanitize_webhooks(incoming.get("webhooks"), readings=False)
         await app.state.app_config.set("alert_channels", cfg)
         await app.state.automation.reload_channels()
         return JSONResponse(await _alert_channels_view())
 
-    @app.post("/api/alert-channels/{name}/test")
+    @app.post("/api/alert-channels/{name:path}/test")
     async def test_alert_channel(name: str) -> JSONResponse:
-        """Send a synthetic alert through one configured channel so the user can verify it."""
+        """Send a synthetic alert through one channel so the user can verify it. Works for the
+        single channels and for `webhook:<id>` endpoints — including saved-but-disabled ones, so
+        you can test before enabling."""
         channel = app.state.automation._channels.get(name)
+        if channel is None and name.startswith("webhook:"):
+            cfg = await app.state.app_config.get("alert_channels", {}) or {}
+            ep = next((e for e in (cfg.get("webhooks") or [])
+                       if f"webhook:{e.get('id')}" == name and e.get("url")), None)
+            if ep is not None:
+                channel = WebhookChannel(ep, post=app.state.automation._post)
         if channel is None:
             raise HTTPException(status_code=400, detail=f"channel {name!r} is not configured")
         sample = {
@@ -661,40 +718,28 @@ def create_app(
             raise HTTPException(status_code=502, detail=f"channel {name!r} failed: {exc}") from exc
         return JSONResponse({"ok": True})
 
-    # ---- outbound readings webhook (Later / L09) ------------------------------
-    def _readings_webhook_view(cfg: dict) -> dict:
-        return {
-            "url": cfg.get("url"),
-            "interval_s": float(cfg.get("interval_s") or 60.0),
-            "enabled": bool(cfg.get("enabled", False)),
-        }
+    # ---- outbound readings webhooks (Later / L09; multiple endpoints L15) -----
+    @app.get("/api/integrations/readings-webhooks")
+    async def get_readings_webhooks() -> JSONResponse:
+        return JSONResponse({"webhooks": await app.state.app_config.get("readings_webhooks", []) or []})
 
-    @app.get("/api/integrations/readings-webhook")
-    async def get_readings_webhook() -> JSONResponse:
-        cfg = await app.state.app_config.get("readings_webhook", {}) or {}
-        return JSONResponse(_readings_webhook_view(cfg))
+    @app.put("/api/integrations/readings-webhooks")
+    async def put_readings_webhooks(body: dict = Body(...)) -> JSONResponse:
+        webhooks = _sanitize_webhooks((body or {}).get("webhooks"), readings=True)
+        await app.state.app_config.set("readings_webhooks", webhooks)
+        return JSONResponse({"webhooks": webhooks})
 
-    @app.put("/api/integrations/readings-webhook")
-    async def put_readings_webhook(body: dict = Body(...)) -> JSONResponse:
-        cfg = {
-            "url": (str(body.get("url") or "").strip()) or None,
-            "interval_s": max(float(body.get("interval_s", 60.0)), 5.0),
-            "enabled": bool(body.get("enabled", False)),
-        }
-        await app.state.app_config.set("readings_webhook", cfg)
-        return JSONResponse(_readings_webhook_view(cfg))
-
-    @app.post("/api/integrations/readings-webhook/test")
-    async def test_readings_webhook() -> JSONResponse:
-        """Send one snapshot POST now and report the result, so the user can verify the URL
-        without waiting for the next tick. Off the hot path — only the manual caller sees it."""
-        cfg = await app.state.app_config.get("readings_webhook", {}) or {}
-        url = cfg.get("url")
-        if not url:
-            raise HTTPException(status_code=400, detail="no webhook URL configured")
+    @app.post("/api/integrations/readings-webhooks/{webhook_id}/test")
+    async def test_readings_webhook(webhook_id: str) -> JSONResponse:
+        """POST one snapshot now through a single endpoint and report the result — verify the URL
+        without waiting for its next tick. Off the hot path — only the manual caller sees it."""
+        endpoints = await app.state.app_config.get("readings_webhooks", []) or []
+        ep = next((e for e in endpoints if e.get("id") == webhook_id and e.get("url")), None)
+        if ep is None:
+            raise HTTPException(status_code=400, detail=f"readings webhook {webhook_id!r} is not configured")
         svc: ReadingsWebhookService = app.state.readings_webhook
         try:
-            sent = await svc.post_once(url)
+            sent = await svc.post_once(ep)
         except Exception as exc:  # surface the failure to the manual caller
             raise HTTPException(status_code=502, detail=f"webhook POST failed: {exc}") from exc
         return JSONResponse({"ok": True, "sent": sent})

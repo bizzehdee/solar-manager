@@ -1154,7 +1154,27 @@ pipeline, lighter footprint.
     picks up the labels as one-hot features. E2E: create a band → assert it renders → refresh → assert it
     persists. *Refs: §22.*
 
-- [ ] **L15 · Multiple custom webhooks + user-defined payloads** · Deps: L09, L10, L11
+- [x] **L15 · Multiple custom webhooks + user-defined payloads** · Deps: L09, L10, L11
+  - **Done:** shared `app/templating.py` `render_template`/`render_message`/`render_body` (regex
+    substitution so literal JSON braces pass through; unknown keys left literal; JSON-escaping of
+    substituted values; malformed template → default body — never crashes egress). Automation reuses
+    `render_message` (old private `_render_message` removed). Both egress paths take a **list of
+    endpoint dicts** (`{id,label,url,method,headers,content_type,payload_template,enabled[,interval_s]}`):
+    `WebhookChannel` rebuilt around an endpoint (custom body/headers/method; empty template ⇒ raw
+    alert JSON); `build_channels` iterates `alert_channels.webhooks` → `webhook:<id>` channels;
+    `webhook_channel_labels` + `options().channel_labels` surface labels to the rule picker;
+    `ReadingsWebhookService` iterates `readings_webhooks` with **per-endpoint cadence** (clamped ≥5 s)
+    and templated bodies (`readings_context` flattens `ts` + `{device}_{metric}` + bare first-device
+    keys). API: `GET/PUT /api/alert-channels` (webhooks list + `webhook_labels`), per-channel test
+    handles `webhook:<id>` incl. disabled; `GET/PUT /api/integrations/readings-webhooks` +
+    `…/{id}/test`; `_sanitize_webhooks` slugs/validates/dedupes ids. Frontend: reusable
+    `WebhookListEditor` (add/edit/remove, method/content-type/headers, payload-template editor with
+    Slack/Discord/Default presets + placeholder hint, per-row Test), used for both lists in Settings ›
+    Notifications; rule editor shows webhook labels. Tests: `test_templating.py` (10, module 100%),
+    updated `test_alert_channels`/`test_alert_api`/`test_readings_webhook`/`test_automation_service`,
+    `webhook-list-editor.spec.ts`, `api.service.spec.ts`, and an E2E (`webhooks.spec.ts`). All §14
+    invariants hold (off the hot path, per-endpoint enable, dead endpoint logged not fatal, interval
+    clamp, no-CDN). Backend 436, frontend 206 green. *Refs: §14 (Custom webhooks), §15, §21.*
   - **Deliverable:** lift the single-webhook limit on **both** egress paths — alert/notification
     webhooks (L10) and outbound readings webhooks (L09) — to **any number of user-defined endpoints**,
     each with a **user-definable payload** (§14 *Custom webhooks*). The app should be able to POST

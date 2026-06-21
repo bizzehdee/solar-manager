@@ -28,7 +28,8 @@ import {
   HistoryMetrics,
   HistoryResponse,
   Preferences,
-  ReadingsWebhookConfig,
+  ReadingsWebhooksResponse,
+  WebhookEndpoint,
   MqttConfig,
   SettingsSchemaResponse,
   Snapshot,
@@ -190,11 +191,11 @@ export class ApiService {
     return this.http.get<AlertChannelsResponse>('/api/alert-channels');
   }
 
-  putAlertChannels(channels: Record<string, Record<string, unknown>>): Observable<AlertChannelsResponse> {
+  putAlertChannels(channels: Record<string, unknown>): Observable<AlertChannelsResponse> {
     return this.http.put<AlertChannelsResponse>('/api/alert-channels', channels);
   }
 
-  /** Send a synthetic alert through one configured channel to verify it. */
+  /** Send a synthetic alert through one channel to verify it (name may be `webhook:<id>`). */
   testAlertChannel(name: string): Observable<{ ok: boolean }> {
     return this.http.post<{ ok: boolean }>(`/api/alert-channels/${name}/test`, {});
   }
@@ -235,19 +236,19 @@ export class ApiService {
     return this.http.post<AutomationApplyResult>('/api/automation/apply', {}, { params });
   }
 
-  // --- Outbound readings webhook (L09) ---
+  // --- Outbound readings webhooks (L09 + L15: multiple endpoints) ---
 
-  getReadingsWebhook(): Observable<ReadingsWebhookConfig> {
-    return this.http.get<ReadingsWebhookConfig>('/api/integrations/readings-webhook');
+  getReadingsWebhooks(): Observable<ReadingsWebhooksResponse> {
+    return this.http.get<ReadingsWebhooksResponse>('/api/integrations/readings-webhooks');
   }
 
-  putReadingsWebhook(body: ReadingsWebhookConfig): Observable<ReadingsWebhookConfig> {
-    return this.http.put<ReadingsWebhookConfig>('/api/integrations/readings-webhook', body);
+  putReadingsWebhooks(webhooks: WebhookEndpoint[]): Observable<ReadingsWebhooksResponse> {
+    return this.http.put<ReadingsWebhooksResponse>('/api/integrations/readings-webhooks', { webhooks });
   }
 
-  /** Send one snapshot POST now to verify the configured URL. */
-  testReadingsWebhook(): Observable<{ ok: boolean; sent: boolean }> {
-    return this.http.post<{ ok: boolean; sent: boolean }>('/api/integrations/readings-webhook/test', {});
+  /** Send one snapshot POST now through a single endpoint to verify it. */
+  testReadingsWebhook(id: string): Observable<{ ok: boolean; sent: boolean }> {
+    return this.http.post<{ ok: boolean; sent: boolean }>(`/api/integrations/readings-webhooks/${id}/test`, {});
   }
 
   // --- MQTT publisher + Home Assistant discovery (L07) ---

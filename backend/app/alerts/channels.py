@@ -16,25 +16,32 @@ import asyncio
 import logging
 from typing import Awaitable, Callable, Protocol
 
+from ..templating import render_body
+
 log = logging.getLogger("solarvolt.alerts")
 
-# post(url, json=…, data=…, headers=…) -> None. JSON by default; `data` is form-encoded
-# (Pushover wants a form). Injected so tests don't hit the network. The legacy 2-positional
-# form `post(url, payload)` still works (WebhookChannel and existing callers rely on it).
+# post(url, json=…, data=…, headers=…, body=…, method=…) -> None. JSON by default; `data` is
+# form-encoded (Pushover wants a form); `body` is a raw string (custom webhooks with a templated
+# payload + content-type). Injected so tests don't hit the network.
 Post = Callable[..., Awaitable[None]]
 # send_email(cfg, subject, body) -> None (blocking smtplib; run off the loop via a thread).
 SendEmail = Callable[[dict, str, str], None]
 
-# Channel types we know how to build (drives the config UI + the rule-editor channel list).
-SUPPORTED_CHANNELS = ("webhook", "email", "telegram", "ntfy", "gotify", "pushover")
+# Single-config channel types (each one config blob). Custom webhooks are separate — a *list*
+# of endpoints under `webhooks` (L15), built into `webhook:<id>` channels.
+SUPPORTED_CHANNELS = ("email", "telegram", "ntfy", "gotify", "pushover")
 
 
 async def _httpx_post(url: str, payload: dict | None = None, *, data: dict | None = None,
-                      headers: dict | None = None) -> None:
+                      headers: dict | None = None, body: str | None = None,
+                      method: str = "POST") -> None:
     import httpx
 
     async with httpx.AsyncClient(timeout=10.0) as client:
-        resp = await client.post(url, json=payload, data=data, headers=headers)
+        if body is not None:  # raw templated body (custom webhook); honour method + content-type
+            resp = await client.request(method, url, content=body.encode("utf-8"), headers=headers)
+        else:
+            resp = await client.post(url, json=payload, data=data, headers=headers)
         resp.raise_for_status()
 
 
@@ -90,16 +97,26 @@ class Channel(Protocol):
 
 
 class WebhookChannel:
-    """POST the raw alert payload to a user URL (Node-RED / IFTTT / custom)."""
+    """POST to a user URL (Node-RED / IFTTT / Slack / Discord / custom). Configured by an
+    *endpoint* dict: ``{id, label, url, method, headers, content_type, payload_template, enabled}``.
+    With no template the raw alert dict is sent as JSON (legacy behaviour); with one, the rendered
+    (JSON-escaped) body is sent with the configured content-type + method + headers."""
 
     name = "webhook"
 
-    def __init__(self, url: str, *, post: Post | None = None) -> None:
-        self._url = url
+    def __init__(self, endpoint: dict, *, post: Post | None = None) -> None:
+        self._ep = endpoint
         self._post = post or _httpx_post
 
     async def send(self, alert: dict) -> None:
-        await self._post(self._url, alert)
+        ep = self._ep
+        content_type = ep.get("content_type") or "application/json"
+        body = render_body(ep.get("payload_template"), alert, alert,
+                           json_escape=content_type.startswith("application/json"))
+        headers = dict(ep.get("headers") or {})
+        headers.setdefault("Content-Type", content_type)
+        await self._post(ep["url"], body=body, headers=headers,
+                         method=(ep.get("method") or "POST").upper())
 
 
 class TelegramChannel:
@@ -200,9 +217,12 @@ def build_channels(config: dict, *, post: Post | None = None, send_email: SendEm
     config = config or {}
     channels: dict[str, Channel] = {}
 
-    wh = config.get("webhook") or {}
-    if wh.get("url"):
-        channels["webhook"] = WebhookChannel(wh["url"], post=post)
+    # Custom webhooks are a *list* of endpoints (L15); each becomes its own channel `webhook:<id>`
+    # so rules can target specific ones. Only enabled, fully-addressed endpoints are dispatched to.
+    for ep in config.get("webhooks") or []:
+        eid, url = ep.get("id"), ep.get("url")
+        if eid and url and ep.get("enabled", True):
+            channels[f"webhook:{eid}"] = WebhookChannel(ep, post=post)
 
     tg = config.get("telegram") or {}
     if tg.get("bot_token") and tg.get("chat_id"):
@@ -225,6 +245,17 @@ def build_channels(config: dict, *, post: Post | None = None, send_email: SendEm
         channels["email"] = EmailChannel(em, send_email=send_email)
 
     return channels
+
+
+def webhook_channel_labels(config: dict) -> dict[str, str]:
+    """``webhook:<id>`` → label for each enabled webhook endpoint, for the rule-editor channel
+    picker (so the user sees friendly names, not slugs)."""
+    out: dict[str, str] = {}
+    for ep in (config or {}).get("webhooks") or []:
+        eid, url = ep.get("id"), ep.get("url")
+        if eid and url and ep.get("enabled", True):
+            out[f"webhook:{eid}"] = ep.get("label") or eid
+    return out
 
 
 async def dispatch(channels: dict[str, Channel], names: tuple[str, ...] | list[str], alert: dict) -> None:

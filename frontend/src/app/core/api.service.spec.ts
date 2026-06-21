@@ -178,18 +178,22 @@ describe('ApiService', () => {
 
   // --- Notification channels (L10) + readings webhook (L09) ---
   it('getAlertChannels()/putAlertChannels()/testAlertChannel() hit the channel URLs', () => {
-    api.getAlertChannels().subscribe((r) => expect(r.configured).toEqual(['webhook']));
-    http.expectOne('/api/alert-channels').flush({ channels: { webhook: { url: 'http://h' } }, configured: ['webhook'], supported: ['webhook'] });
+    api.getAlertChannels().subscribe((r) => expect(r.configured).toEqual(['webhook:h']));
+    http.expectOne('/api/alert-channels').flush({
+      channels: { webhooks: [{ id: 'h', url: 'http://h', enabled: true }] },
+      configured: ['webhook:h'], supported: ['telegram'], webhook_labels: { 'webhook:h': 'H' },
+    });
 
-    const body = { telegram: { bot_token: 'T', chat_id: '1' } };
+    const body = { telegram: { bot_token: 'T', chat_id: '1' }, webhooks: [] };
     api.putAlertChannels(body).subscribe();
     const put = http.expectOne('/api/alert-channels');
     expect(put.request.method).toBe('PUT');
     expect(put.request.body).toEqual(body);
-    put.flush({ channels: body, configured: ['telegram'], supported: ['telegram'] });
+    put.flush({ channels: body, configured: ['telegram'], supported: ['telegram'], webhook_labels: {} });
 
-    api.testAlertChannel('telegram').subscribe((r) => expect(r.ok).toBe(true));
-    const test = http.expectOne('/api/alert-channels/telegram/test');
+    // A webhook channel name carries a colon — it must reach the test URL intact.
+    api.testAlertChannel('webhook:h').subscribe((r) => expect(r.ok).toBe(true));
+    const test = http.expectOne('/api/alert-channels/webhook:h/test');
     expect(test.request.method).toBe('POST');
     test.flush({ ok: true });
   });
@@ -213,7 +217,7 @@ describe('ApiService', () => {
     api.getAutomationOptions('dev1').subscribe();
     const opts = http.expectOne((r) => r.url === '/api/automation/options');
     expect(opts.request.params.get('device_id')).toBe('dev1');
-    opts.flush({ condition_kinds: [], ops: [], metrics: [], match_modes: [], targets: [] });
+    opts.flush({ condition_kinds: [], ops: [], metrics: [], match_modes: [], channels: [], targets: [] });
 
     api.getAutomationPreview().subscribe((p) => expect(p.rule_count).toBe(0));
     http.expectOne((r) => r.url === '/api/automation/preview')
@@ -225,19 +229,20 @@ describe('ApiService', () => {
     apply.flush({ device_id: 'dummy', now: 't', applied: [], failed: [] });
   });
 
-  it('getReadingsWebhook()/putReadingsWebhook()/testReadingsWebhook() hit the integration URLs', () => {
-    api.getReadingsWebhook().subscribe((c) => expect(c.enabled).toBe(false));
-    http.expectOne('/api/integrations/readings-webhook').flush({ url: null, interval_s: 60, enabled: false });
+  it('getReadingsWebhooks()/putReadingsWebhooks()/testReadingsWebhook() hit the integration URLs', () => {
+    api.getReadingsWebhooks().subscribe((r) => expect(r.webhooks).toEqual([]));
+    http.expectOne('/api/integrations/readings-webhooks').flush({ webhooks: [] });
 
-    const cfg = { url: 'http://hook', interval_s: 30, enabled: true };
-    api.putReadingsWebhook(cfg).subscribe();
-    const put = http.expectOne('/api/integrations/readings-webhook');
+    const webhooks = [{ id: 'h', label: 'H', url: 'http://hook', method: 'POST', headers: {},
+                        content_type: 'application/json', payload_template: '', enabled: true, interval_s: 30 }];
+    api.putReadingsWebhooks(webhooks).subscribe();
+    const put = http.expectOne('/api/integrations/readings-webhooks');
     expect(put.request.method).toBe('PUT');
-    expect(put.request.body).toEqual(cfg);
-    put.flush(cfg);
+    expect(put.request.body).toEqual({ webhooks });
+    put.flush({ webhooks });
 
-    api.testReadingsWebhook().subscribe((r) => expect(r.sent).toBe(true));
-    const test = http.expectOne('/api/integrations/readings-webhook/test');
+    api.testReadingsWebhook('h').subscribe((r) => expect(r.sent).toBe(true));
+    const test = http.expectOne('/api/integrations/readings-webhooks/h/test');
     expect(test.request.method).toBe('POST');
     test.flush({ ok: true, sent: true });
   });

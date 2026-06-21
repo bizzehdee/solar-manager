@@ -5,6 +5,6 @@ this in `app.alerts.channels`; this package is the *readings/events* egress.
 """
 
 from .mqtt import MqttService
-from .readings_webhook import ReadingsWebhookService
+from .readings_webhook import ReadingsWebhookService, readings_context
 
-__all__ = ["ReadingsWebhookService", "MqttService"]
+__all__ = ["ReadingsWebhookService", "MqttService", "readings_context"]
