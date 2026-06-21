@@ -89,7 +89,7 @@ describe('ForecastPage', () => {
     fixture.detectChanges();
 
     const el = fixture.nativeElement as HTMLElement;
-    expect(el.querySelectorAll('app-stat-card').length).toBe(3);
+    expect(el.querySelectorAll('app-metric-card').length).toBe(3);
     expect(el.querySelectorAll('app-time-series-chart').length).toBe(2);
 
     const text = el.textContent ?? '';

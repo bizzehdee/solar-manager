@@ -1179,3 +1179,18 @@ pipeline, lighter footprint.
     `chart-widget.spec.ts` (window/auto-resolution/pinned/legacy-shape/fallback/refetch/header/no-data),
     `widget-registry.spec.ts` (alias resolution), `test_dashboards.py`, and the History E2E updated.
     *Refs: §8, §9, §21.*
+
+- [x] **L18 · Merge stat-card + metric-card into one `metric-card`** · Deps: L16
+  - **Why:** stat-card and metric-card were near-identical labelled value+unit cards; they differed
+    only in that stat-card accepted a preformatted string and metric-card a (decimal-formatted) number.
+    With derived KPIs now first-class metrics (L16) and text-valued metrics possible (`MetricValue` is
+    `number | string | string[]`), one card should just render *whatever the metric returns*.
+  - **Done:** `shared/metric-card.ts` (`MetricCard`) now takes `value: number | string | string[] | null`
+    — numbers are decimal-formatted (`1.0-3`), strings render as-is (e.g. "GBP 1.23", a clock time),
+    string-arrays are comma-joined, and missing (undefined/null/empty) → em-dash (missing ≠ zero, §4);
+    plus the optional `hint` line carried over from stat-card. The registry adapter passes the **raw**
+    metric value through (no number coercion) so text metrics render. Registry collapses to one
+    `metric-card` type; the old `stat-card` key resolves via `WIDGET_ALIASES` so existing dashboards
+    still render. Forecast's standalone KPI cards switched to `<app-metric-card>`. Deleted `stat-card.*`;
+    added `metric-card.spec.ts` (number/string/array/missing/hint); `widget-registry.spec.ts`,
+    `forecast.spec.ts` updated. *Refs: §8, §10, §21.*

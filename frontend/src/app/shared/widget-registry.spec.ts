@@ -9,7 +9,7 @@ const data: DashboardData = {
 describe('WIDGET_REGISTRY', () => {
   it('declares every L06 widget type with complete sizing metadata', () => {
     const expected = [
-      'header', 'energy-flow', 'metric-gauge', 'metric-card', 'stat-card', 'chart',
+      'header', 'energy-flow', 'metric-gauge', 'metric-card', 'chart',
     ];
     expect(Object.keys(WIDGET_REGISTRY).sort()).toEqual([...expected].sort());
     for (const def of Object.values(WIDGET_REGISTRY)) {
@@ -62,11 +62,20 @@ describe('WIDGET_REGISTRY', () => {
     expect(unitField?.options?.map((o) => o.value)).toEqual(['minutes', 'hours', 'days']);
   });
 
-  it('resolves the legacy chart type aliases to the unified chart def', () => {
+  it('metric-card passes the raw metric value through (so text metrics render, not just numbers)', () => {
+    const inputs = WIDGET_REGISTRY['metric-card'].inputs(
+      { metric: 'mode', label: 'Mode' },
+      { metrics: { mode: 'eco' }, inverterOnline: true },
+    );
+    expect(inputs['value']).toBe('eco'); // a string, not coerced to a number
+  });
+
+  it('resolves the legacy type aliases (split charts, stat-card) to their merged defs', () => {
     expect(widgetDef('time-series-chart')).toBe(WIDGET_REGISTRY['chart']);
     expect(widgetDef('history-chart')).toBe(WIDGET_REGISTRY['chart']);
+    expect(widgetDef('stat-card')).toBe(WIDGET_REGISTRY['metric-card']);
     // Aliases are known types, so import validation never flags them as unknown.
-    expect(unknownWidgetTypes([{ type: 'time-series-chart' }, { type: 'history-chart' }])).toEqual([]);
+    expect(unknownWidgetTypes([{ type: 'time-series-chart' }, { type: 'stat-card' }])).toEqual([]);
   });
 
   it('header defaults to a full-width 12×1 cell and passes its text through', () => {

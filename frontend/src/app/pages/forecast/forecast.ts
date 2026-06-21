@@ -3,7 +3,7 @@ import { DatePipe, DecimalPipe } from '@angular/common';
 
 import { ApiService } from '../../core/api.service';
 import { DailyForecast, ForecastResponse, HistoryPoint } from '../../core/models';
-import { StatCard } from '../../shared/stat-card';
+import { MetricCard } from '../../shared/metric-card';
 import { TimeSeriesChart } from '../../shared/time-series-chart';
 
 type ScopeKey = 'today' | 'tomorrow' | '3d' | '7d';
@@ -14,7 +14,7 @@ type ScopeKey = 'today' | 'tomorrow' | '3d' | '7d';
 // the model is configured under Settings › Solar array & site (T064).
 @Component({
   selector: 'app-forecast',
-  imports: [TimeSeriesChart, StatCard, DatePipe, DecimalPipe],
+  imports: [TimeSeriesChart, MetricCard, DatePipe, DecimalPipe],
   template: `
     <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
       <h4 class="mb-0"><i class="bi bi-cloud-sun"></i> Forecast</h4>
@@ -41,7 +41,7 @@ type ScopeKey = 'today' | 'tomorrow' | '3d' | '7d';
       <!-- KPI row: expected yield for the selected range + projected battery empty/full times. -->
       <div class="row g-3 mb-3">
         <div class="col-12 col-md-4">
-          <app-stat-card
+          <app-metric-card
             [label]="'Expected ' + scopeLabel().toLowerCase()"
             [value]="expectedKwh()"
             unit="kWh"
@@ -50,10 +50,10 @@ type ScopeKey = 'today' | 'tomorrow' | '3d' | '7d';
           />
         </div>
         <div class="col-6 col-md-4">
-          <app-stat-card label="Battery empty at" [value]="depletionLabel()" icon="bi-battery" role="danger" />
+          <app-metric-card label="Battery empty at" [value]="depletionLabel()" icon="bi-battery" role="danger" />
         </div>
         <div class="col-6 col-md-4">
-          <app-stat-card label="Battery full at" [value]="fullLabel()" icon="bi-battery-full" role="success" />
+          <app-metric-card label="Battery full at" [value]="fullLabel()" icon="bi-battery-full" role="success" />
         </div>
       </div>
 

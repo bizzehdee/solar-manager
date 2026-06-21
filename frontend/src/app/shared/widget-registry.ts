@@ -7,7 +7,6 @@ import { HeaderWidget } from './header-widget';
 import { metricUnit } from '../core/metric-units';
 import { MetricCard } from './metric-card';
 import { PowerGauge } from './power-gauge';
-import { StatCard } from './stat-card';
 
 // Widget registry for L06 dashboards (T_DB3): maps a dashboard widget `type` → the presentational
 // component plus its grid sizing rules, an editable config schema (T_DB7), and an `inputs(config,
@@ -100,35 +99,16 @@ export const WIDGET_REGISTRY: Record<string, WidgetDef> = {
       };
     },
   },
+  // Card: renders whatever the metric returns — numbers are decimal-formatted, strings shown as-is,
+  // missing → em-dash. The value is passed straight through (not coerced to a number) so text metrics
+  // render. Merged from the old metric-card + stat-card (the latter is a back-compat alias below).
   'metric-card': {
     component: MetricCard,
-    label: 'Metric card',
+    label: 'Card',
     minW: 2,
     minH: 1,
     defaultW: 2,
     defaultH: 1,
-    configSchema: [
-      { key: 'metric', label: 'Metric', type: 'metric' },
-      { key: 'label', label: 'Label', type: 'text' },
-      { key: 'unit', label: 'Unit', type: 'text' },
-      { key: 'icon', label: 'Icon', type: 'icon' },
-      { key: 'role', label: 'Colour', type: 'role' },
-    ],
-    inputs: (config, data) => ({
-      label: str(config['label'], metricOf(config)),
-      value: num(data.metrics[metricOf(config)]),
-      unit: unitOf(config),
-      icon: str(config['icon'], 'bi-dot'),
-      role: str(config['role'], 'primary'),
-    }),
-  },
-  'stat-card': {
-    component: StatCard,
-    label: 'Stat card',
-    minW: 2,
-    minH: 2,
-    defaultW: 4,
-    defaultH: 2,
     configSchema: [
       { key: 'metric', label: 'Metric', type: 'metric' },
       { key: 'label', label: 'Label', type: 'text' },
@@ -193,6 +173,8 @@ export const WIDGET_REGISTRY: Record<string, WidgetDef> = {
 const WIDGET_ALIASES: Record<string, string> = {
   'time-series-chart': 'chart',
   'history-chart': 'chart',
+  // stat-card was merged into metric-card (one card that renders numbers or text).
+  'stat-card': 'metric-card',
 };
 
 export function widgetDef(type: string): WidgetDef | undefined {

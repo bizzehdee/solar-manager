@@ -1,8 +1,12 @@
-import { Component, input } from '@angular/core';
+import { Component, computed, input } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
 
-// Reusable labelled value + unit card (plan.md §8 component library). Configurable by
-// inputs (label/unit/icon/colour role) so the same card serves PV, load, grid, etc.
+// Reusable labelled value + unit card (plan.md §8/§10 component library), merged from the old
+// metric-card + stat-card (which were near-identical). It renders whatever the metric returns:
+// numbers are decimal-formatted, strings (e.g. a preformatted "GBP 1.23" or a clock time) are shown
+// as-is, and a missing value (undefined/null) shows an em-dash — missing ≠ zero (CLAUDE.md §4).
+// Configurable by inputs (label/unit/icon/colour role + optional hint) so one card serves PV, load,
+// grid, derived KPIs, forecast times, etc.
 @Component({
   selector: 'app-metric-card',
   imports: [DecimalPipe],
@@ -12,18 +16,39 @@ import { DecimalPipe } from '@angular/common';
       <!-- min-width:0 lets the text column shrink so it truncates instead of overflowing the cell. -->
       <div style="min-width:0">
         <div class="fs-5 fw-semibold text-truncate">
-          @if (value() === undefined) { <span class="text-secondary">—</span> }
-          @else { {{ value() | number: '1.0-3' }} <small class="text-secondary">{{ unit() }}</small> }
+          @if (isMissing()) { <span class="text-secondary">—</span> }
+          @else if (numeric() !== null) { {{ numeric() | number: '1.0-3' }} <small class="text-secondary">{{ unit() }}</small> }
+          @else { {{ display() }} <small class="text-secondary">{{ unit() }}</small> }
         </div>
         <div class="small text-secondary text-truncate">{{ label() }}</div>
+        @if (hint()) { <div class="small text-secondary fst-italic text-truncate">{{ hint() }}</div> }
       </div>
     </div>
   </div>`,
 })
 export class MetricCard {
   readonly label = input.required<string>();
-  readonly value = input<number | undefined>(undefined);
+  readonly value = input<number | string | string[] | undefined | null>(undefined);
   readonly unit = input('');
   readonly icon = input('bi-dot');
   readonly role = input('primary');
+  readonly hint = input<string | undefined>(undefined);
+
+  readonly isMissing = computed(() => {
+    const v = this.value();
+    return v === undefined || v === null || (Array.isArray(v) && v.length === 0);
+  });
+
+  /** The value as a number when it is one (so it can be decimal-formatted), else null. */
+  readonly numeric = computed<number | null>(() => {
+    const v = this.value();
+    return typeof v === 'number' ? v : null;
+  });
+
+  /** Non-numeric display: strings as-is, arrays comma-joined. */
+  readonly display = computed<string>(() => {
+    const v = this.value();
+    if (Array.isArray(v)) return v.join(', ');
+    return v == null ? '' : String(v);
+  });
 }
