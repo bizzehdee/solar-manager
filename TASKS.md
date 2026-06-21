@@ -1280,7 +1280,13 @@ pipeline, lighter footprint.
     option (host/port/user/pass/base-topic), profile picker hidden, Test verifies broker connectivity.
     Tests: `test_sa_mqtt.py` (13, 96% — mapping, message→metric, device read, connect-fail, read-only,
     custom base topic), `test_factory`, `test_history_api` (create needs no profile), `settings.spec`.
-    *Refs: §4, §14, §20, §21.*
+    **Follow-up (live-validated): expanded coverage** — added 8 hybrid-inverter canonical metrics
+    (`ac_output_voltage_v`/`_frequency_hz`, `load_pct`, `generator_power_w`, `grid_power_ct_w`/`_ld_w`,
+    `load_power_essential_w`/`_non_essential_w`) so the default mapping is **25 metrics** (verified
+    against the live broker), plus an opt-in **`include_all` raw passthrough** that surfaces every
+    other numeric SA topic under a namespaced `sa_<device>_<measurement>` key (80 total live) — for
+    power users; SA's settings/config topics are otherwise (correctly) excluded. Settings form gains an
+    "Include all numeric topics" switch. *Refs: §4, §14, §20, §21.*
   - **Deliverable:** read **already-decoded sensor data from a Solar Assistant MQTT publisher** as a
     device — so a user can run SolarVolt alongside Solar Assistant while testing, comparing the two
     against the same inverter without a second RS485 connection. This is a **new device family** (§20):

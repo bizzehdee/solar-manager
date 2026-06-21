@@ -11,7 +11,13 @@ import types
 import pytest
 
 from app.devices.base import Device, TransportError, system_clock
-from app.devices.sa_mqtt import SaMqttConfig, SaMqttProfile, SaMqttSource, map_measurement
+from app.devices.sa_mqtt import (
+    SaMqttConfig,
+    SaMqttProfile,
+    SaMqttSource,
+    map_measurement,
+    passthrough_key,
+)
 
 
 class FakeMqtt:
@@ -69,9 +75,16 @@ def test_map_measurement_resolves_known_topics_only():
     assert m("solar_assistant/inverter_1/temperature/state") == "inverter_temp_c"
     # …but a battery's bare temperature must NOT mis-map to the inverter key.
     assert m("solar_assistant/battery_1/temperature/state") is None
+    # Hybrid-inverter extras (L20 follow-up) now map to canonical keys.
+    assert m("solar_assistant/inverter_1/ac_output_voltage/state") == "ac_output_voltage_v"
+    assert m("solar_assistant/inverter_1/load_percentage/state") == "load_pct"
+    assert m("solar_assistant/inverter_1/generator_power/state") == "generator_power_w"
+    assert m("solar_assistant/inverter_1/grid_power_ct/state") == "grid_power_ct_w"
+    assert m("solar_assistant/inverter_1/load_power_essential/state") == "load_power_essential_w"
+    assert m("solar_assistant/inverter_1/load_power_non-essential/state") == "load_power_non_essential_w"
     # SA settings topics (work_mode, time_point_*, capacity_point_*, …) are not metrics → None.
     assert m("solar_assistant/inverter_1/work_mode/state") is None
-    assert m("solar_assistant/inverter_1/load_power_essential/state") is None
+    assert m("solar_assistant/inverter_1/capacity_point_1/state") is None
     # Wrong base, not a /state topic, or an unmapped measurement → None.
     assert m("other/inverter_1/pv_power/state") is None
     assert m("solar_assistant/inverter_1/pv_power/config") is None
@@ -99,6 +112,30 @@ async def test_non_numeric_and_unmapped_payloads_are_skipped():
     await src.connect()
     client.deliver("solar_assistant/inverter_1/inverter_state/state", "Solar/Battery")  # unmapped
     client.deliver("solar_assistant/inverter_1/pv_power/state", "not-a-number")          # mapped key, bad value
+    assert src.latest() == {}
+
+
+def test_passthrough_key_namespaces_unmapped_topics():
+    assert passthrough_key("solar_assistant/inverter_1/capacity_point_1/state", "solar_assistant") \
+        == "sa_inverter_1_capacity_point_1"
+    assert passthrough_key("solar_assistant/inverter_1/pv_power/config", "solar_assistant") is None
+
+
+@pytest.mark.asyncio
+async def test_include_all_exposes_unmapped_numeric_topics_namespaced():
+    src, client = _source(include_all=True)
+    await src.connect()
+    client.deliver("solar_assistant/inverter_1/pv_power/state", "0")            # mapped → canonical
+    client.deliver("solar_assistant/inverter_1/capacity_point_1/state", "65")  # unmapped numeric → sa_*
+    client.deliver("solar_assistant/inverter_1/work_mode/state", "Zero export")  # string → skipped
+    assert src.latest() == {"pv_power_w": 0.0, "sa_inverter_1_capacity_point_1": 65.0}
+
+
+@pytest.mark.asyncio
+async def test_default_does_not_pass_through_unmapped_topics():
+    src, client = _source()  # include_all defaults False
+    await src.connect()
+    client.deliver("solar_assistant/inverter_1/capacity_point_1/state", "65")
     assert src.latest() == {}
 
 

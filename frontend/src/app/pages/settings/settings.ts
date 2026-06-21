@@ -243,6 +243,15 @@ type SettingsTab = 'devices' | 'solar' | 'tariff' | 'notifications' | 'dashboard
                 <label class="form-label small text-secondary" for="dev-mqbase">Base topic</label>
                 <input id="dev-mqbase" class="form-control" [(ngModel)]="form.mqttBaseTopic" name="mqttBaseTopic" placeholder="solar_assistant" />
               </div>
+              <div class="col-12">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" id="dev-mqall" [(ngModel)]="form.mqttIncludeAll" name="mqttIncludeAll" />
+                  <label class="form-check-label small" for="dev-mqall">
+                    Include all numeric topics (raw passthrough) — also exposes Solar Assistant's
+                    settings/config values as <code>sa_…</code> metrics, not just the standard sensors.
+                  </label>
+                </div>
+              </div>
             }
           </div>
           @if (testResult(); as r) {
@@ -798,6 +807,7 @@ export class SettingsPage implements OnInit {
     mqttUser: '',
     mqttPass: '',
     mqttBaseTopic: 'solar_assistant',
+    mqttIncludeAll: false,
   };
 
   // Tariff form (T051/T052): standing charge + flat-or-TOU import + flat export. Import
@@ -1077,7 +1087,8 @@ export class SettingsPage implements OnInit {
         return { host: this.form.host, port: Number(this.form.tcpPort), slave_id: this.form.slaveId };
       case 'sa_mqtt':
         return { host: this.form.host, port: Number(this.form.mqttPort), username: this.form.mqttUser,
-                 password: this.form.mqttPass, base_topic: this.form.mqttBaseTopic };
+                 password: this.form.mqttPass, base_topic: this.form.mqttBaseTopic,
+                 include_all: this.form.mqttIncludeAll };
       default: // modbus_rtu
         return { port: this.form.port, baudrate: Number(this.form.baud), slave_id: this.form.slaveId };
     }
@@ -1291,7 +1302,8 @@ export class SettingsPage implements OnInit {
       next: () => {
         this.form = { id: '', name: '', transport: 'dummy', profile: '', port: '', baud: 9600, slaveId: 1,
                       host: '', serial: '', solarmanPort: 8899, tcpPort: 502,
-                      mqttPort: 1883, mqttUser: '', mqttPass: '', mqttBaseTopic: 'solar_assistant' };
+                      mqttPort: 1883, mqttUser: '', mqttPass: '', mqttBaseTopic: 'solar_assistant',
+                      mqttIncludeAll: false };
         this.testResult.set(null);
         this.refresh();
       },

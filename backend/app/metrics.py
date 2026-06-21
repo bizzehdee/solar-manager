@@ -55,6 +55,15 @@ OPTIONAL_METRICS: frozenset[str] = frozenset(
         "battery_soh_pct",
         "battery_cycles",
         "battery_capacity_ah_measured",
+        # Hybrid-inverter extras (reported by some devices, e.g. via the Solar Assistant bridge).
+        "ac_output_voltage_v",
+        "ac_output_frequency_hz",
+        "load_pct",
+        "generator_power_w",
+        "grid_power_ct_w",          # grid power at the CT clamp (utility tie point)
+        "grid_power_ld_w",          # grid power on the load side
+        "load_power_essential_w",
+        "load_power_non_essential_w",
     }
 )
 

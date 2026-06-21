@@ -23,6 +23,7 @@ broker.
 from __future__ import annotations
 
 import asyncio
+import re
 import threading
 import time
 from dataclasses import dataclass
@@ -60,6 +61,15 @@ SA_MEASUREMENT_MAP: dict[str, str] = {
     "battery_temperature": "battery_temp_c",
     "battery_state_of_health": "battery_soh_pct",
     "inverter_temperature": "inverter_temp_c",  # alias for SA versions that name it explicitly
+    # Hybrid-inverter extras present on Solar Assistant (validated against a live instance).
+    "ac_output_voltage": "ac_output_voltage_v",
+    "ac_output_frequency": "ac_output_frequency_hz",
+    "load_percentage": "load_pct",
+    "generator_power": "generator_power_w",
+    "grid_power_ct": "grid_power_ct_w",
+    "grid_power_ld": "grid_power_ld_w",
+    "load_power_essential": "load_power_essential_w",
+    "load_power_non-essential": "load_power_non_essential_w",
 }
 
 
@@ -74,6 +84,10 @@ class SaMqttConfig:
     base_topic: str = "solar_assistant"
     tls: bool = False
     connect_timeout_s: float = 10.0
+    # Power-user opt-in: also surface *every other* numeric SA topic (incl. settings/config) under a
+    # namespaced `sa_<device>_<measurement>` key, so nothing is hidden. Off by default — the curated
+    # canonical mapping above keeps the metric list meaningful.
+    include_all: bool = False
 
 
 ClientFactory = Callable[[SaMqttConfig], "object"]
@@ -111,6 +125,20 @@ def map_measurement(topic: str, base_topic: str) -> str | None:
     return key
 
 
+_SLUG_RE = re.compile(r"[^a-z0-9]+")
+
+
+def passthrough_key(topic: str, base_topic: str) -> str | None:
+    """For `include_all`: a namespaced metric key from an unmapped state topic, e.g.
+    ``solar_assistant/inverter_1/capacity_point_1/state`` → ``sa_inverter_1_capacity_point_1``.
+    None if it isn't a `<base>/…/state` topic."""
+    prefix = base_topic.rstrip("/") + "/"
+    if not topic.startswith(prefix) or not topic.endswith("/state"):
+        return None
+    inner = topic[len(prefix):-len("/state")]
+    return "sa_" + _SLUG_RE.sub("_", inner.lower()).strip("_")
+
+
 class SaMqttSource:
     """MQTT-subscribing transport. Implements the register-shaped `Transport` protocol nominally
     (`read_registers` is unused — there are no registers), but its real job is to keep `latest()`
@@ -141,6 +169,8 @@ class SaMqttSource:
             self._stats["messages"] += 1
             self._stats["last_message_ts"] = time.time()
         key = map_measurement(msg.topic, self._config.base_topic)
+        if key is None and self._config.include_all:
+            key = passthrough_key(msg.topic, self._config.base_topic)
         if key is None:
             return
         try:
@@ -199,8 +229,9 @@ class SaMqttProfile:
         return self._latest()
 
     def capabilities(self) -> set[str]:
-        # What's reported depends on what SA publishes; advertise the keys we can map.
-        return set(SA_MEASUREMENT_MAP.values())
+        # What's actually reported depends on what SA publishes (incl. any passthrough keys), so
+        # advertise the mappable canonical keys plus whatever has arrived so far.
+        return set(SA_MEASUREMENT_MAP.values()) | set(self._latest().keys())
 
     @property
     def info(self) -> DeviceInfo:

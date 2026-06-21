@@ -467,6 +467,7 @@ describe('SettingsPage', () => {
     expect(c.canTest()).toBe(true); // no register profile required
     expect((c as unknown as { deviceParams(): Record<string, unknown> }).deviceParams()).toEqual({
       host: '10.0.0.2', port: 1883, username: '', password: '', base_topic: 'solar_assistant',
+      include_all: false,
     });
   });
 

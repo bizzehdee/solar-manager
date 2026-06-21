@@ -162,6 +162,7 @@ def build_device_from_config(row: dict, *, clock=system_clock) -> Device | None:
             password=(params.get("password") or None),
             base_topic=str(params.get("base_topic") or "solar_assistant"),
             tls=bool(params.get("tls", False)),
+            include_all=bool(params.get("include_all", False)),
         )
         return build_sa_mqtt_device(device_id, cfg, clock=clock)
     return None
