@@ -17,7 +17,7 @@ import { PowerGauge } from './power-gauge';
 export interface WidgetConfigField {
   key: string;
   label: string;
-  type: 'metric' | 'text' | 'number' | 'icon' | 'role' | 'select';
+  type: 'metric' | 'metric-list' | 'text' | 'number' | 'icon' | 'role' | 'select' | 'boolean';
   /** Choices for `type: 'select'` (e.g. the time-series window unit). */
   options?: { value: string; label: string }[];
 }
@@ -135,7 +135,8 @@ export const WIDGET_REGISTRY: Record<string, WidgetDef> = {
     defaultW: 8,
     defaultH: 6,
     configSchema: [
-      { key: 'metric', label: 'Metric', type: 'metric' },
+      { key: 'metrics', label: 'Metrics', type: 'metric-list' },
+      { key: 'stacked', label: 'Stack series (cumulative areas)', type: 'boolean' },
       { key: 'label', label: 'Header', type: 'text' },
       { key: 'unit', label: 'Unit', type: 'text' },
       { key: 'window', label: 'Show last', type: 'number' },

@@ -130,13 +130,45 @@ export function mergeLayout(widgets: DashboardWidget[], nodes: GridStackNode[]):
             <div class="modal-body">
               <div class="row g-3">
                 @for (f of defFor(w.type)?.configSchema || []; track f.key) {
-                  <div class="col-12 col-md-6">
+                  <div class="col-12" [class.col-md-6]="f.type !== 'metric-list'">
                     <label class="form-label small text-secondary" [attr.for]="'cfg-' + f.key">{{ f.label }}</label>
                     @if (f.type === 'metric') {
                       <select [id]="'cfg-' + f.key" class="form-select form-select-sm"
                               [ngModel]="configValue(w, f.key)" (ngModelChange)="setConfig(f.key, $event)">
                         @for (m of metricOptions(w, f.key); track m) { <option [value]="m">{{ m }}</option> }
                       </select>
+                    } @else if (f.type === 'metric-list') {
+                      <!-- Multiple series, each its own colour; reorderable add/remove (L21). -->
+                      @for (row of metricRows(w, f.key); track $index) {
+                        <div class="input-group input-group-sm mb-1">
+                          <span class="input-group-text p-1">
+                            <span class="d-inline-block rounded border" style="width:1.1rem;height:1.1rem"
+                                  [style.background-color]="row.color || 'transparent'"></span>
+                          </span>
+                          <select class="form-select form-select-sm" [ngModel]="row.metric" [ngModelOptions]="{ standalone: true }"
+                                  (ngModelChange)="updateMetricRow(f.key, $index, 'metric', $event)">
+                            <option value="" disabled>Select a metric…</option>
+                            @for (m of metricChoices(); track m) { <option [value]="m">{{ m }}</option> }
+                          </select>
+                          <select class="form-select form-select-sm" style="max-width:8rem" [ngModel]="row.color || ''"
+                                  [ngModelOptions]="{ standalone: true }" (ngModelChange)="updateMetricRow(f.key, $index, 'color', $event)">
+                            @for (c of seriesColorOptions; track c.value) {
+                              <option [value]="c.value" [style.color]="c.value || 'inherit'">{{ c.label }}</option>
+                            }
+                          </select>
+                          <button type="button" class="btn btn-outline-danger" (click)="removeMetricRow(f.key, $index)" aria-label="Remove metric">
+                            <i class="bi bi-x-lg"></i>
+                          </button>
+                        </div>
+                      }
+                      <button type="button" class="btn btn-sm btn-outline-primary" (click)="addMetricRow(f.key)">
+                        <i class="bi bi-plus-lg"></i> Add metric
+                      </button>
+                    } @else if (f.type === 'boolean') {
+                      <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" [id]="'cfg-' + f.key"
+                               [ngModel]="configValue(w, f.key) === true" (ngModelChange)="setConfig(f.key, $event)" />
+                      </div>
                     } @else if (f.type === 'number') {
                       <input [id]="'cfg-' + f.key" type="number" class="form-control form-control-sm"
                              [ngModel]="configValue(w, f.key)" (ngModelChange)="setConfig(f.key, $event)" />
@@ -224,6 +256,62 @@ export class DashboardHost implements AfterViewInit, OnDestroy {
   /** The swatch colour for a stored role value (defaults to blue/primary). */
   roleColor(value: unknown): string {
     return this.roleOptions.find((r) => r.value === value)?.color ?? 'var(--bs-primary)';
+  }
+
+  // Per-series colours for the multi-metric chart (L21). Hex (not CSS vars) so chart.js can paint
+  // them on the canvas; "Auto" (blank) lets the chart assign from its palette by series index.
+  protected readonly seriesColorOptions = [
+    { value: '', label: 'Auto' },
+    { value: '#0d6efd', label: 'Blue' },
+    { value: '#198754', label: 'Green' },
+    { value: '#fd7e14', label: 'Orange' },
+    { value: '#dc3545', label: 'Red' },
+    { value: '#6f42c1', label: 'Purple' },
+    { value: '#0dcaf0', label: 'Cyan' },
+    { value: '#ffc107', label: 'Amber' },
+    { value: '#6c757d', label: 'Grey' },
+    { value: '#20c997', label: 'Teal' },
+  ];
+
+  /** Rows for a `metric-list` config field, migrating a legacy single `metric` so an existing
+   *  chart's metric shows up in the editor. */
+  metricRows(w: DashboardWidget, key: string): { metric: string; label?: string; color?: string }[] {
+    const raw = w.config[key];
+    if (Array.isArray(raw)) {
+      return raw.map((r) => (typeof r === 'string' ? { metric: r } : { ...(r as Record<string, unknown>) }))
+        .filter((r): r is { metric: string; color?: string } => typeof (r as { metric?: unknown }).metric === 'string');
+    }
+    const single = w.config['metric'];
+    return typeof single === 'string' && single ? [{ metric: single }] : [];
+  }
+
+  /** Live metric keys offered in the per-series dropdowns. */
+  metricChoices(): string[] {
+    return Array.from(new Set(Object.keys(this.data().metrics))).sort();
+  }
+
+  addMetricRow(key: string): void {
+    const i = this.configIndex();
+    if (i === null) return;
+    this.setConfig(key, [...this.metricRows(this.items[i], key), { metric: '' }]);
+  }
+
+  removeMetricRow(key: string, idx: number): void {
+    const i = this.configIndex();
+    if (i === null) return;
+    this.setConfig(key, this.metricRows(this.items[i], key).filter((_, j) => j !== idx));
+  }
+
+  updateMetricRow(key: string, idx: number, field: 'metric' | 'color', value: string): void {
+    const i = this.configIndex();
+    if (i === null) return;
+    const rows = this.metricRows(this.items[i], key).map((r, j) => {
+      if (j !== idx) return r;
+      const next: { metric: string; label?: string; color?: string } = { ...r, [field]: value };
+      if (field === 'color' && !value) delete next.color; // "Auto" ⇒ drop the key
+      return next;
+    });
+    this.setConfig(key, rows);
   }
 
   // Widget "Icon" field options: a curated set of Bootstrap Icons (self-hosted, no CDN) relevant to

@@ -1305,3 +1305,18 @@ pipeline, lighter footprint.
   - **Done when:** a user can add an `sa_mqtt` device pointed at their SA broker and see its metrics on
     the dashboard; tests cover topic→metric mapping, connect failure → stale, and the factory/form.
     *Refs: §4, §14, §20, §21.*
+
+- [x] **L21 · Multi-series (stackable) chart widget** · Deps: L17
+  - **Done:** the chart widget charts **multiple metrics on one chart**, each series its own colour,
+    with an optional **stacked** mode (cumulative filled areas, e.g. PV/battery/grid making up load).
+    The dumb `TimeSeriesChart` gains a `series` input (array of `{label, points, color?, useLast?,
+    scale?}`) aligned on the **union of timestamps** (rollup buckets line up; gaps → null) + a
+    `stacked` input (stacked x/y axes, area fill, legend on); the single-series + overlay path
+    (Forecast) is unchanged. `ChartWidget` resolves a `metrics` config list (back-compat: a single
+    `metric` still works), fetches `/api/history` per series via `forkJoin`, assigns palette colours
+    by index when unset, and gates refetch on a primitive fingerprint (so the series array's fresh
+    reference doesn't double-fetch). Editor: a new **`metric-list`** config field (add/remove rows,
+    each a metric dropdown + named-colour dropdown with swatch) and a **`boolean`** field (the Stack
+    toggle) in `dashboard-host`; chart `configSchema` now `metrics`+`stacked`+window/resolution/header.
+    Tests: `chart-widget.spec` (multi-fetch, per-series colour/label, stacked), `time-series-chart.spec`
+    (ts-union alignment, palette, stacked axes), build + no-CDN green. Frontend 212. *Refs: §8, §9, §21.*

@@ -36,8 +36,35 @@ describe('ChartWidget', () => {
     expect(span).toBeLessThanOrEqual(30 * 60 + 2);
     req.flush({ device_id: 'd1', metric: 'battery_soc_pct', resolution: 'raw', start: 0, end: 0, points: [{ ts: now, value: 55 }] });
     fixture.detectChanges();
-    expect(fixture.componentInstance.points().length).toBe(1);
+    expect(fixture.componentInstance.seriesData().length).toBe(1);
+    expect(fixture.componentInstance.seriesData()[0].points.length).toBe(1);
     expect(fixture.nativeElement.querySelector('app-time-series-chart')).toBeTruthy();
+  });
+
+  it('charts multiple metrics — one /api/history request per series, each a series with a colour', () => {
+    const now = Math.floor(Date.now() / 1000);
+    const fixture = create({
+      metrics: [
+        { metric: 'pv_power_w', label: 'Solar', color: '#198754' },
+        { metric: 'load_power_w' }, // colour auto-assigned
+      ],
+      window: 1, window_unit: 'hours', stacked: true,
+    });
+    http.expectOne((r) => r.url === '/api/history/metrics').flush({ device_id: 'd1', metrics: ['pv_power_w'] });
+
+    const reqs = http.match((r) => r.url === '/api/history');
+    expect(reqs.length).toBe(2);
+    expect(reqs.map((r) => r.request.params.get('metric')).sort()).toEqual(['load_power_w', 'pv_power_w']);
+    reqs[0].flush({ device_id: 'd1', metric: 'pv_power_w', resolution: 'raw', start: 0, end: 0, points: [{ ts: now, value: 1000 }] });
+    reqs[1].flush({ device_id: 'd1', metric: 'load_power_w', resolution: 'raw', start: 0, end: 0, points: [{ ts: now, value: 800 }] });
+    fixture.detectChanges();
+
+    const series = fixture.componentInstance.seriesData();
+    expect(series.length).toBe(2);
+    expect(series[0]).toMatchObject({ label: 'Solar', color: '#198754' });
+    expect(series[1].label).toBe('Load power'); // humanised fallback
+    expect(fixture.componentInstance.stacked()).toBe(true);
+    expect(fixture.componentInstance.heading()).toBe('2 metrics');
   });
 
   it('auto-derives a coarser bucket for multi-day windows', () => {
