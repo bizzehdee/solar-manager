@@ -437,6 +437,39 @@ describe('SettingsPage', () => {
     });
   });
 
+  it('builds Modbus-TCP device params + gates Test on profile/host (L19)', () => {
+    const fixture = TestBed.createComponent(SettingsPage);
+    fixture.detectChanges();
+    http.expectOne('/api/devices').flush({ devices: [] });
+    flushConfig();
+
+    const c = fixture.componentInstance;
+    c.form.transport = 'modbus_tcp';
+    expect(c.canTest()).toBe(false); // needs profile + host
+    c.form.profile = 'sunsynk-8k-sg05lp1';
+    c.form.host = '192.168.1.50';
+    expect(c.canTest()).toBe(true);
+    expect((c as unknown as { deviceParams(): Record<string, unknown> }).deviceParams()).toEqual({
+      host: '192.168.1.50', port: 502, slave_id: 1,
+    });
+  });
+
+  it('builds sa_mqtt device params + gates Test on host only, no profile (L20)', () => {
+    const fixture = TestBed.createComponent(SettingsPage);
+    fixture.detectChanges();
+    http.expectOne('/api/devices').flush({ devices: [] });
+    flushConfig();
+
+    const c = fixture.componentInstance;
+    c.form.transport = 'sa_mqtt';
+    expect(c.canTest()).toBe(false); // needs a broker host
+    c.form.host = '10.0.0.2';
+    expect(c.canTest()).toBe(true); // no register profile required
+    expect((c as unknown as { deviceParams(): Record<string, unknown> }).deviceParams()).toEqual({
+      host: '10.0.0.2', port: 1883, username: '', password: '', base_topic: 'solar_assistant',
+    });
+  });
+
   it('embeds the Diagnostics page on the Diagnostics tab (loads its own data)', () => {
     const fixture = TestBed.createComponent(SettingsPage);
     fixture.detectChanges();

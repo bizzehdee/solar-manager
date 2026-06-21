@@ -142,11 +142,14 @@ type SettingsTab = 'devices' | 'solar' | 'tariff' | 'notifications' | 'dashboard
               <select id="dev-transport" class="form-select" [(ngModel)]="form.transport" name="transport">
                 <option value="dummy">dummy</option>
                 <option value="modbus_rtu">modbus_rtu</option>
+                <option value="modbus_tcp">modbus_tcp</option>
                 <option value="solarman_v5">solarman_v5</option>
+                <option value="sa_mqtt">sa_mqtt</option>
               </select>
             </div>
-            <!-- A profile is needed for any real transport (the same map serves RTU + SolarmanV5). -->
-            @if (form.transport !== 'dummy') {
+            <!-- A register profile is needed for the Modbus-family transports (same map serves
+                 RTU / TCP / SolarmanV5); sa_mqtt is its own family and needs none. -->
+            @if (form.transport !== 'dummy' && form.transport !== 'sa_mqtt') {
               <div class="col-12 col-md-4">
                 <label class="form-label small text-secondary" for="dev-profile">{{ 'field.profile' | translate }}</label>
                 <select id="dev-profile" class="form-select" [(ngModel)]="form.profile" name="profile">
@@ -203,6 +206,42 @@ type SettingsTab = 'devices' | 'solar' | 'tariff' | 'notifications' | 'dashboard
               <div class="col-6 col-md-4">
                 <label class="form-label small text-secondary" for="dev-slave">{{ 'field.slaveId' | translate }}</label>
                 <input id="dev-slave" type="number" class="form-control" [(ngModel)]="form.slaveId" name="slaveId" />
+              </div>
+            }
+            @if (form.transport === 'modbus_tcp') {
+              <div class="col-12 col-md-4">
+                <label class="form-label small text-secondary" for="dev-tcphost">Host / IP</label>
+                <input id="dev-tcphost" class="form-control" [(ngModel)]="form.host" name="tcpHost" placeholder="e.g. 192.168.1.50" />
+              </div>
+              <div class="col-6 col-md-4">
+                <label class="form-label small text-secondary" for="dev-tcpport">Port</label>
+                <input id="dev-tcpport" type="number" class="form-control" [(ngModel)]="form.tcpPort" name="tcpPort" />
+              </div>
+              <div class="col-6 col-md-4">
+                <label class="form-label small text-secondary" for="dev-tcpslave">{{ 'field.slaveId' | translate }}</label>
+                <input id="dev-tcpslave" type="number" class="form-control" [(ngModel)]="form.slaveId" name="tcpSlaveId" />
+              </div>
+            }
+            @if (form.transport === 'sa_mqtt') {
+              <div class="col-12 col-md-4">
+                <label class="form-label small text-secondary" for="dev-mqhost">Broker host / IP</label>
+                <input id="dev-mqhost" class="form-control" [(ngModel)]="form.host" name="mqttHost" placeholder="your Solar Assistant broker" />
+              </div>
+              <div class="col-6 col-md-2">
+                <label class="form-label small text-secondary" for="dev-mqport">Port</label>
+                <input id="dev-mqport" type="number" class="form-control" [(ngModel)]="form.mqttPort" name="mqttPort" />
+              </div>
+              <div class="col-6 col-md-3">
+                <label class="form-label small text-secondary" for="dev-mquser">Username</label>
+                <input id="dev-mquser" class="form-control" [(ngModel)]="form.mqttUser" name="mqttUser" />
+              </div>
+              <div class="col-6 col-md-3">
+                <label class="form-label small text-secondary" for="dev-mqpass">Password</label>
+                <input id="dev-mqpass" type="password" class="form-control" [(ngModel)]="form.mqttPass" name="mqttPass" />
+              </div>
+              <div class="col-12 col-md-4">
+                <label class="form-label small text-secondary" for="dev-mqbase">Base topic</label>
+                <input id="dev-mqbase" class="form-control" [(ngModel)]="form.mqttBaseTopic" name="mqttBaseTopic" placeholder="solar_assistant" />
               </div>
             }
           </div>
@@ -748,10 +787,17 @@ export class SettingsPage implements OnInit {
     port: '',
     baud: 9600,
     slaveId: 1,
-    // SolarmanV5 (L01): TCP to a data-logger stick.
+    // SolarmanV5 (L01): TCP to a data-logger stick. `host` is shared by the LAN transports below.
     host: '',
     serial: '',
     solarmanPort: 8899,
+    // Modbus TCP (L19): standard port-502 Modbus over the LAN.
+    tcpPort: 502,
+    // Solar Assistant MQTT bridge (L20).
+    mqttPort: 1883,
+    mqttUser: '',
+    mqttPass: '',
+    mqttBaseTopic: 'solar_assistant',
   };
 
   // Tariff form (T051/T052): standing charge + flat-or-TOU import + flat export. Import
@@ -1023,23 +1069,28 @@ export class SettingsPage implements OnInit {
   /** Probe the connection for the values currently in the Add-device form. */
   /** Build the transport-specific params block for create/test. */
   private deviceParams(): Record<string, unknown> {
-    if (this.form.transport === 'solarman_v5') {
-      return {
-        host: this.form.host,
-        serial: this.form.serial,
-        port: Number(this.form.solarmanPort),
-        slave_id: this.form.slaveId,
-      };
+    switch (this.form.transport) {
+      case 'solarman_v5':
+        return { host: this.form.host, serial: this.form.serial,
+                 port: Number(this.form.solarmanPort), slave_id: this.form.slaveId };
+      case 'modbus_tcp':
+        return { host: this.form.host, port: Number(this.form.tcpPort), slave_id: this.form.slaveId };
+      case 'sa_mqtt':
+        return { host: this.form.host, port: Number(this.form.mqttPort), username: this.form.mqttUser,
+                 password: this.form.mqttPass, base_topic: this.form.mqttBaseTopic };
+      default: // modbus_rtu
+        return { port: this.form.port, baudrate: Number(this.form.baud), slave_id: this.form.slaveId };
     }
-    return { port: this.form.port, baudrate: Number(this.form.baud), slave_id: this.form.slaveId };
   }
 
   /** Whether the Test-connection button has enough to probe (per transport). */
   canTest(): boolean {
-    if (!this.form.profile) return false;
-    return this.form.transport === 'solarman_v5'
-      ? !!(this.form.host && this.form.serial)
-      : !!this.form.port;
+    switch (this.form.transport) {
+      case 'sa_mqtt': return !!this.form.host; // its own family — no register profile
+      case 'modbus_tcp': return !!(this.form.profile && this.form.host);
+      case 'solarman_v5': return !!(this.form.profile && this.form.host && this.form.serial);
+      default: return !!(this.form.profile && this.form.port); // modbus_rtu
+    }
   }
 
   testConnection(): void {
@@ -1238,7 +1289,9 @@ export class SettingsPage implements OnInit {
     }
     this.api.createDevice(body).subscribe({
       next: () => {
-        this.form = { id: '', name: '', transport: 'dummy', profile: '', port: '', baud: 9600, slaveId: 1, host: '', serial: '', solarmanPort: 8899 };
+        this.form = { id: '', name: '', transport: 'dummy', profile: '', port: '', baud: 9600, slaveId: 1,
+                      host: '', serial: '', solarmanPort: 8899, tcpPort: 502,
+                      mqttPort: 1883, mqttUser: '', mqttPass: '', mqttBaseTopic: 'solar_assistant' };
         this.testResult.set(null);
         this.refresh();
       },

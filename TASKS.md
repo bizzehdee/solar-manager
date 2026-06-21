@@ -1246,3 +1246,54 @@ pipeline, lighter footprint.
     still render. Forecast's standalone KPI cards switched to `<app-metric-card>`. Deleted `stat-card.*`;
     added `metric-card.spec.ts` (number/string/array/missing/hint); `widget-registry.spec.ts`,
     `forecast.spec.ts` updated. *Refs: §8, §10, §21.*
+
+## Later — More transports (on demand)
+
+- [x] **L19 · `modbus_tcp` transport** · Deps: T030
+  - **Done:** `devices/modbus_tcp.py` `ModbusTcpSource` over pymodbus `AsyncModbusTcpClient`, mirroring
+    `modbus_rtu`/`solarman_v5` (host/port/slave-id, retries+backoff, `isError()` handling, `comms_stats`,
+    injectable client factory); reuses the YAML profiles unchanged. `factory.build_modbus_tcp_device` +
+    a `modbus_tcp` branch; validation requires profile + params.host. Settings form: `modbus_tcp` option
+    (host/port/slave-id) sharing the profile + Test. Tests: `test_modbus_tcp.py` (8, 93%), `test_factory`,
+    `test_history_api` validation, `settings.spec`. *Refs: §4, §20, §21.*
+  - **Deliverable:** Modbus over TCP (the standard 502 protocol) as a selectable connection type —
+    for inverters/gateways exposed on the LAN rather than wired to a local RS485 adapter. Reuses the
+    **exact same YAML register profiles** as `modbus_rtu`/`solarman_v5` (only the wire differs), so
+    no profile changes. Behind the `Transport` seam (§4): `ModbusTcpSource` over `pymodbus`
+    `AsyncModbusTcpClient`, mirroring `modbus_rtu`/`solarman_v5` (host/port/slave-id, bounded
+    retries + backoff, `comms_stats`, injectable client factory → fully unit-testable, no hardware).
+  - Config `{host, port=502, slave_id=1}`; factory `build_modbus_tcp_device` + a `modbus_tcp` branch
+    in `build_device_from_config`; `_validate_device_body` requires `profile` + `params.host`. Settings
+    add-device form: a `modbus_tcp` option (host / port / slave-id) sharing the profile + Test action.
+  - **Done when:** a user can add a Modbus-TCP device, Test it, and it polls like any other; tests
+    cover the transport (retry/short-read/error → stale) + factory + form. *Refs: §4, §20, §21.*
+
+- [x] **L20 · `sa_mqtt` transport (Solar Assistant MQTT bridge)** · Deps: L07
+  - **Done:** new device family — `devices/sa_mqtt.py` `SaMqttSource` (paho-mqtt, VERSION2 callbacks)
+    subscribes to `<base>/#`, keeps the latest mapped value per topic in memory; `SaMqttProfile`
+    synthesises a `Reading` from it (no register blocks, like the dummy). `SA_MEASUREMENT_MAP` maps SA
+    measurement names → canonical keys (seed to verify; signs passed through). Config
+    `{host,port=1883,username,password,base_topic,tls}`, injectable client factory. `factory.build_sa_mqtt_device`
+    + a `sa_mqtt` branch; validation requires only params.host (no profile). Settings form: `sa_mqtt`
+    option (host/port/user/pass/base-topic), profile picker hidden, Test verifies broker connectivity.
+    Tests: `test_sa_mqtt.py` (13, 96% — mapping, message→metric, device read, connect-fail, read-only,
+    custom base topic), `test_factory`, `test_history_api` (create needs no profile), `settings.spec`.
+    *Refs: §4, §14, §20, §21.*
+  - **Deliverable:** read **already-decoded sensor data from a Solar Assistant MQTT publisher** as a
+    device — so a user can run SolarVolt alongside Solar Assistant while testing, comparing the two
+    against the same inverter without a second RS485 connection. This is a **new device family** (§20):
+    not register+profile but a transport that subscribes to MQTT and emits a `Reading` of canonical
+    metrics directly (the cross-family contract is `Reading`, not registers).
+  - **Mapping (data, not code):** `SA_MEASUREMENT_MAP` translates SA's `<base>/<device>/<measurement>/
+    state` topics (default base `solar_assistant`) → canonical metric keys (e.g. `battery_state_of_charge`
+    → `battery_soc_pct`, `pv_power` → `pv_power_w`). A **seed to verify** against the user's instance,
+    not trusted blindly (CLAUDE.md); sign conventions are passed through and flagged for comparison.
+  - `SaMqttSource` (transport, `paho-mqtt` — already a dep) keeps the latest value per topic in memory,
+    updated on message; `SaMqttProfile` decodes that into a `Reading`. Config `{host, port=1883,
+    username, password, base_topic, tls}`; injectable client factory → unit-testable with no broker.
+    Factory `build_sa_mqtt_device` + a `sa_mqtt` branch; `_validate_device_body` requires `params.host`
+    (no register profile). Settings form: an `sa_mqtt` option (host/port/user/pass/base-topic), no
+    profile picker; Test verifies broker connectivity.
+  - **Done when:** a user can add an `sa_mqtt` device pointed at their SA broker and see its metrics on
+    the dashboard; tests cover topic→metric mapping, connect failure → stale, and the factory/form.
+    *Refs: §4, §14, §20, §21.*

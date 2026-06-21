@@ -183,7 +183,22 @@ def test_device_create_validation(midday):
     with _client(midday) as client:
         # modbus_rtu needs profile + params.port
         assert client.post("/api/devices", json={"id": "x", "transport": "modbus_rtu"}).status_code == 422
+        # modbus_tcp needs profile + params.host
+        assert client.post("/api/devices", json={"id": "x2", "transport": "modbus_tcp",
+                                                  "profile": "sunsynk-8k-sg05lp1"}).status_code == 422
+        # sa_mqtt needs params.host (but no register profile)
+        assert client.post("/api/devices", json={"id": "x3", "transport": "sa_mqtt"}).status_code == 422
         # unknown transport
         assert client.post("/api/devices", json={"id": "y", "transport": "carrier-pigeon"}).status_code == 422
         # missing id
         assert client.post("/api/devices", json={"transport": "dummy"}).status_code == 422
+
+
+def test_create_sa_mqtt_device_needs_no_profile(midday):
+    with _client(midday) as client:
+        r = client.post("/api/devices", json={
+            "id": "sa", "name": "Solar Assistant", "transport": "sa_mqtt",
+            "params": {"host": "10.0.0.2", "base_topic": "solar_assistant"},
+        })
+        assert r.status_code == 201
+        assert r.json()["transport"] == "sa_mqtt"

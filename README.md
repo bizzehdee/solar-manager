@@ -26,10 +26,12 @@ and watch your panels, battery and grid in real time.
   the energy-flow diagram) and pick which metric each one shows. Build **your own dashboards** too,
   and **export/import** them as JSON files to share or back up. Built-ins can be tweaked and reset
   to default any time.
-- **Multiple devices** — add, edit and remove devices from **Settings › Devices**; mix
-  brands/models freely (each is just a profile). Adding one is point-and-click: pick the
-  serial port from a list of detected adapters and the model from a profile dropdown, then
-  **Test connection** to confirm the inverter responds before saving.
+- **Multiple devices & connection types** — add, edit and remove devices from **Settings ›
+  Devices**; mix brands/models freely (each is just a profile). Connect over **Modbus RTU**
+  (USB-RS485), **Modbus TCP** (port 502 over the LAN), a **SolarmanV5** Wi-Fi logger stick, or
+  bridge in **Solar Assistant** over MQTT (read its sensors to run both side-by-side while
+  testing). Adding one is point-and-click — pick the connection, the model profile, then **Test
+  connection** to confirm it responds before saving.
 - **Statistics** — daily energy totals, self-consumption & self-sufficiency, battery
   round-trip efficiency, and **cost / savings / CO₂** from a configurable tariff: a fixed
   **standing charge**, **flat or time-of-use** import rates (multiple daily windows, e.g. a
@@ -50,7 +52,7 @@ and watch your panels, battery and grid in real time.
 - **Works with no hardware out of the box** — a built-in **dummy inverter** produces
   realistic, time-of-day-aware data, so you can try the whole app on a fresh clone.
 - **Real inverter support** — read live instant data from a Sunsynk SG05LP1 over a
-  USB-RS485 adapter.
+  USB-RS485 adapter, Modbus TCP, or a SolarmanV5 logger.
 - **Alerts** — a rule engine (low battery SoC, device offline/stale, inverter fault, over-temp…)
   with thresholds, hysteresis, debounce and quiet hours; sensible rules shipped on, and a
   **rule editor** to add/edit/enable/delete your own. Active/history **inbox** with acknowledge &

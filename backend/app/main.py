@@ -1043,13 +1043,18 @@ def _validate_device_body(body: dict, *, require_id: bool) -> None:
     if require_id and not body.get("id"):
         raise HTTPException(status_code=422, detail="device 'id' is required")
     transport = body.get("transport", "dummy")
-    if transport not in ("dummy", "modbus_rtu", "solarman_v5"):
+    if transport not in ("dummy", "modbus_rtu", "modbus_tcp", "solarman_v5", "sa_mqtt"):
         raise HTTPException(status_code=422, detail=f"unknown transport {transport!r}")
     if transport == "modbus_rtu":
         if not body.get("profile"):
             raise HTTPException(status_code=422, detail="modbus_rtu device needs a 'profile'")
         if not (body.get("params") or {}).get("port"):
             raise HTTPException(status_code=422, detail="modbus_rtu device needs params.port")
+    if transport == "modbus_tcp":
+        if not body.get("profile"):
+            raise HTTPException(status_code=422, detail="modbus_tcp device needs a 'profile'")
+        if not (body.get("params") or {}).get("host"):
+            raise HTTPException(status_code=422, detail="modbus_tcp device needs params.host")
     if transport == "solarman_v5":
         if not body.get("profile"):
             raise HTTPException(status_code=422, detail="solarman_v5 device needs a 'profile'")
@@ -1058,6 +1063,10 @@ def _validate_device_body(body: dict, *, require_id: bool) -> None:
             raise HTTPException(status_code=422, detail="solarman_v5 device needs params.host")
         if not params.get("serial"):
             raise HTTPException(status_code=422, detail="solarman_v5 device needs params.serial (logger serial)")
+    if transport == "sa_mqtt":
+        # A new family (no register profile) — just needs the broker host.
+        if not (body.get("params") or {}).get("host"):
+            raise HTTPException(status_code=422, detail="sa_mqtt device needs params.host (MQTT broker)")
 
 
 async def _add_to_registry(registry: DeviceRegistry, row: dict, clock) -> None:
