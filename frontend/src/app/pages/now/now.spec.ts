@@ -7,6 +7,8 @@ import { ApiService } from '../../core/api.service';
 import { LiveService } from '../../core/live.service';
 import { DashboardConfig, MetricValue, Snapshot } from '../../core/models';
 
+// Inverter clock now lives in Settings › Diagnostics (per-device health), not on Now.
+
 // Minimal LiveService stub exposing the `snapshot` signal DashboardDataService consumes.
 class FakeLiveService {
   readonly snapshot = signal<Snapshot | null>(null);
@@ -27,23 +29,10 @@ const nowConfig: DashboardConfig = {
   ],
 };
 
-let clockResponse = {
-  device_id: 'd1', supported: true, device_time: '2026-06-21T12:01:35',
-  system_time: '2026-06-21T12:00:00', drift_s: 95, syncable: true,
-};
-const syncCalls: string[] = [];
-
 const fakeApi = {
   getDashboard: () => of(nowConfig),
   putDashboard: () => of(nowConfig),
   deleteDashboard: () => of(undefined),
-  getDevices: () => of({ devices: [{ id: 'd1', ratings: { ac_power_w: 5000 } }] }),
-  getDeviceClock: () => of(clockResponse),
-  syncDeviceClock: (id: string) => {
-    syncCalls.push(id);
-    clockResponse = { ...clockResponse, drift_s: 0 };
-    return of({ ok: true, drift_s: 0 });
-  },
 } as unknown as ApiService;
 
 describe('NowPage', () => {
@@ -95,26 +84,6 @@ describe('NowPage', () => {
     expect(el.querySelectorAll('app-power-gauge svg').length).toBe(2);
     expect(el.textContent).toContain('60 %'); // SoC gauge value + overridden unit
     expect(el.textContent).toContain('6500 W'); // solar gauge — true watts
-  });
-
-  it('shows inverter clock drift and syncs to system time', () => {
-    clockResponse = {
-      device_id: 'd1', supported: true, device_time: '2026-06-21T12:01:35',
-      system_time: '2026-06-21T12:00:00', drift_s: 95, syncable: true,
-    };
-    syncCalls.length = 0;
-    const fixture = TestBed.createComponent(NowPage);
-    live.set({ battery_soc_pct: 60 });
-    fixture.detectChanges(); // ngOnInit → getDevices → getDeviceClock
-
-    const el = fixture.nativeElement as HTMLElement;
-    expect(el.textContent).toContain('Inverter clock');
-    expect(el.textContent).toContain('+95 s'); // seconds shown under 2 min
-    expect(fixture.componentInstance.driftLabel(clockResponse)).toBe('+95 s');
-
-    fixture.componentInstance.syncClock();
-    expect(syncCalls).toEqual(['d1']);
-    expect(fixture.componentInstance.clock()?.drift_s).toBe(0);
   });
 
   it('reloads the layout on reset to default', () => {

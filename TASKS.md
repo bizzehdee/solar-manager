@@ -553,6 +553,17 @@ versioned releases.*
         - [x] **L03e-5e · Remove alerts engine + service** — `alerts/engine.py` and `alerts/service.py`
           deleted; `alerts/__init__.py` + `main.py` imports updated; `compare` now lives in
           `automation/rules.py`; the `alerts` package is channels-only. *(commit `c3ae97e`)*
+    - [ ] **L03e-6 · Inverse / else actions on rules** · Deps: L03e-4
+      - Add an optional `else_actions` tuple to `AutomationRule` (alongside `actions`). When the rule **matches**, its `actions` fire (today's behaviour); when it **does not match**, its `else_actions` fire instead. This gives single-rule if-else patterns without a mirror-image second rule: "if Monday → grid-charge slot 0 on, else → off", "if winter → target SoC 80%, else → 50%". `else_actions` are full `Action` objects, so any action type is allowed in the else branch (`set_setting`/`notify`/`alert`) — the UI (below) only surfaces the common `set_setting` case.
+      - **Two invariants to preserve (the sharp edges):**
+        1. **No conditions ⇒ neither branch fires.** `rule_matches()` already returns `False` for a rule with zero conditions (an always-on automation must be explicit, not an empty-condition accident). Adding else must *not* turn that into "always fires the else branch" — a rule with no conditions is inert in both branches. Encode this explicitly in the engine, not as an accident of control flow.
+        2. **Disabled rule ⇒ both branches are previews.** The else branch goes through the same `armed = rule.enabled and action.enabled` gate as the primary branch; a disabled rule (or disabled else action) yields non-`active` `ProposedChange`s only.
+      - **Engine change (`evaluate_rules`, `rules.py`):** replace the current `if not rule_matches(rule, ctx): continue` skip with: compute `matched = rule_matches(...)`; if the rule has no conditions, skip entirely (invariant 1); otherwise iterate `rule.actions if matched else rule.else_actions`. Both branches feed the **same** `set_setting` priority/conflict resolution, allow-list status check, and `notify`/`alert` collection that exist today — an else `set_setting` competes for its target on equal footing with any matched primary `set_setting` from another rule. `AutomationRule.from_dict`/`to_dict` gain `else_actions` (default `()`), mirroring how `actions` is (de)serialised.
+      - **Branch tagging:** add `branch: str` (`"primary"` | `"else"`) to `ProposedChange`, set per emission and included in `as_dict()`. This is what lets the preview, audit log, and decision JSON say *which* branch a change came from. (No new collection on `AutomationDecision` — else changes land in the existing `changes`/`overridden`/`notifications`/`in_app_alerts` tuples, distinguished by `branch`.)
+      - **Service change (minimal):** `apply()` / `_decide()` need **no structural change** — they already consume `decision.settings_to_apply()` / `notify_actions()` / `alert_actions()`, which span whichever branch the engine emitted. The only additions: carry `branch` into the audit-log entry written per applied change, and into the dispatched notify/alert metadata, so the history says "applied (else branch)".
+      - **Preview/decision response:** because every `ProposedChange` now carries `branch`, the API response is unchanged in shape; the frontend renders the branch. Preview reads e.g. "Rule X: conditions not met → applying else actions" / "Rule X: matched → applying actions".
+      - **UI (`automation.ts` rule editor) — `set_setting` else-value sugar:** each `set_setting` action row gains a small **"else" toggle**; when on, an **else value** input appears beside the primary value (target/slot/section picker stays shared — only the value differs). On save, the editor compiles each such action into a primary `actions` entry plus a mirrored `else_actions` entry (same `target`, `enabled`, action type; `value` = the else value). On load, the editor **reconstitutes** the toggle only when it detects this mirror pattern (an `else_actions` entry whose target matches a primary action 1:1); any `else_actions` that don't fit the mirror pattern (e.g. a different target, or a notify/alert in the else branch authored via the API) render as a read-only **"advanced else (edit as JSON)"** note rather than being silently dropped or corrupted on round-trip. The preview card shows both branches: "would set SoC slot 0 to 100% (Mon) / 20% (other days)".
+      - **Done when:** a rule with `else_actions` round-trips through JSON serialisation (engine + API); a matched rule applies its `actions` and a non-matched rule applies its `else_actions` instead; a **no-condition** rule fires neither branch; a **disabled** rule/else-action stays preview-only; priority resolution correctly handles a conflict between a matched primary from one rule and a non-matched else from another rule on the same target (the **priority cross-over** case); every applied change records its `branch` in the audit log; the preview shows both branches clearly; the UI toggle compiles to/from the mirror pattern and preserves non-mirror `else_actions` on round-trip. **Tests** cover: match→primary, no-match→else, empty-`else_actions` on no-match (nothing fires), no-conditions (neither branch), disabled-rule (preview only), priority cross-over, `branch` tagging in `as_dict`, and full serialisation round-trip — plus a frontend test for the toggle compile/reconstitute. *Refs: §18.*
 - [-] **L04 · More vendors / protocol families** — Growatt/Solis/Sungrow/… (new YAML each);
   generic SunSpec profile; text-command family (Voltronic/Must) + Victron family each carry a
   one-time transport+profile-contract cost, then siblings are cheap. *Refs: §20.*
@@ -674,6 +685,45 @@ versioned releases.*
     five nodes, four wires, a green inverter ring and an active flow on the dummy; e2e 15 green.
     *Gotcha logged:* Angular's per-property style bindings (`[style.offset-path]`, `[style.--ep]`)
     silently no-op on these SVG `<path>` nodes — the offset-path must be written via `[attr.style]`.
+
+- [ ] **L16 · Derived (calculated) metrics as first-class canonical metrics** · Deps: T043, T051
+  - **Why:** the daily KPIs (self-consumption %, self-sufficiency %, round-trip efficiency, savings,
+    CO₂ avoided, peak PV) should be usable *anywhere a metric is* — metric-cards, gauges, and
+    time-series charts — not locked inside the bespoke `daily-kpis` widget. The clean way (chosen over a
+    frontend-only fetch-merge, which can't feed the DB-backed charts) is to **compute them server-side
+    and treat them as canonical metrics**: add them to each poll's `Reading.metrics`, so they flow
+    through the live snapshot (cards/gauges) *and* get persisted to `samples`/rollups (charts) with zero
+    frontend special-casing. They're "running today" values that evolve through the day, so a chart shows
+    their intraday build-up. Missing ≠ zero — a derived metric is omitted when its inputs are absent or
+    the denominator is 0 (§4).
+  - **L16-1 ✅ done · Engine: pure energy-ratio metrics** *(no new deps)* — `app/derived.py` `derive_metrics(metrics)`
+    pure function computing, from the existing `today_*_wh` counters: `self_consumption_pct`
+    (= self-consumed PV / PV), `self_sufficiency_pct` (= (load − import) / load), `round_trip_efficiency_pct`
+    (= discharge / charge). Reuse `economics.self_consumed_pv_wh`. Add the three keys to
+    `metrics.ALL_METRICS` (a new `DERIVED_METRICS` set). Hook into `Poller.poll_once` to merge the result
+    into each `Reading.metrics` before broadcast/persist. **Done when:** the dummy snapshot and
+    `/api/history/metrics` expose the three derived keys, charts plot them, and the pure function is
+    unit-tested (ratios, omitted-on-missing-input, zero-denominator). ≥ 90% coverage on `derived.py`.
+  - **L16-2 ✅ done · Engine: economics + stateful metrics** · Deps: L16-1 — adds `savings`,
+    `co2_avoided_kg`, `peak_pv_w`. Implemented via `app/derived_stats.py` `DerivedStatsService`: a
+    periodic task that reuses `StatsService.daily` (so savings/CO₂ are **TOU-accurate and match
+    `/api/stats/daily`**, and peak = the day's rollup max), caches today's values per device, and the
+    poller merges the cache into each `Reading` off the hot path (`Poller(derived_provider=…)`). Wired
+    into the lifespan (start before poll, stop on shutdown). Keys added to `metrics.DERIVED_METRICS`.
+    Verified end-to-end in `/api/live`. Tests: `test_derived_stats.py` (cache rounding, peak-omitted,
+    poller merge). *(Peak comes from the daily rollup rather than a separate running-max, so it's
+    consistent with stats and survives restarts.)*
+  - **L16-3 · Frontend: unit hints + retire the bespoke widget** · Deps: L16-1 — *(unit hints ✅ done;
+    widget split + `daily-kpis` removal pending)* — `core/metric-units.ts`
+    `metricUnit(key)` (suffix heuristic: `_w`→W, `_pct`→%, `_kg`→kg, …) used as the **default unit** in the
+    metric-card/gauge/stat-card registry adapters and as the **placeholder** in the editor's unit field, so
+    a picked metric carries a sensible unit without typing one (covers existing metrics too). Then **split
+    the History `daily-kpis` widget into individual metric-cards** (one per derived KPI) in the `_HISTORY`
+    seed and **remove the `daily-kpis` widget** (registry + component) now that the KPIs are ordinary
+    metrics. `savings` has no unit suffix (currency is locale/config-specific) → its card unit is set
+    explicitly. **Done when:** the History dashboard shows individual KPI cards fed by the derived metrics,
+    the KPIs are selectable in card/gauge/chart metric pickers with auto units, and `daily-kpis` is gone;
+    `test_dashboards` + frontend specs updated. *Refs: §4, §8, §10, §21.*
 
 ### L06 sub-tasks
 
@@ -914,6 +964,164 @@ self-contained egress/notification pieces — each additive, off the hot path, b
 - [-] **L12 · Fault-event history log** *(deferred from T054)* · Deps: T042
   - An events table logging inverter fault / run-state transitions so intermittent faults are
     catchable after the fact (today faults are surfaced live only). *Refs: §16.*
+
+## Later — ML-driven smart optimization
+
+*Train a lightweight scikit-learn model on historical data (energy/grid/battery/solar/tariff + time features) to automatically suggest inverter timer-settings that minimise cost or maximise ROI. Model output feeds through the existing automation preview + apply path (§18/§12). See `plan.md` §22 for the full design.*
+
+**Code home (decided):** a new `backend/app/ml/` package mirroring the per-concern layout of
+`forecast/` and `automation/` — `ml/features.py` (M001), `ml/training.py` (M002), `ml/inference.py`
+(M003), `ml/store.py` (model/version persistence), `ml/service.py` (background-task orchestration +
+wiring into the persist loop and the automation decision). Tests in `backend/tests/test_ml_*.py`.
+
+**New dependencies (added in M002, called out here so it isn't a surprise):** `scikit-learn` +
+`joblib` (which pull `numpy`/`scipy`). These are sizeable and must resolve to prebuilt **ARM64
+wheels** so `pip install` on a Pi stays binary-only (no source build). Pin versions in
+`backend/requirements.txt`; the no-hardware CI path installs them too. If wheel size/ARM build risk
+proves unacceptable, the §22 fallback is a `Ridge`-with-interactions model (still scikit-learn) — same
+pipeline, lighter footprint.
+
+- [ ] **M001 · Feature engineering pipeline** · Deps: T043, T051, T078 · Required by: M002, M006
+  - Pure functions in `ml/features.py` to extract labelled training examples from history: per complete
+    day, a feature vector → target. Returns plain `list[dict]` rows (or a numpy `(X, y)` via a thin
+    adapter) so the module has **no scikit-learn dependency** — it stays pure/unit-testable; encoding to
+    arrays happens in M002. Reads `rollup_1d`/`rollup_1h` (via `StorageRepository`), `app_config`
+    tariff/site/economics, and the `audit` table.
+  - **Features (input):** time encoding (hour, weekday, day-of-year → sin/cos; is_weekend; season),
+    **actual** PV Wh and load Wh for the window (from rollups — retrospective training uses actuals, not
+    forecast), starting SoC %, battery capacity (from config), the active tariff import/export rates +
+    cheapest/peak window flags, and the **timer-slot settings active during that window**. Label features
+    (`has_ev_charging`, …) are **added in M006** — M001 ships without them first.
+  - **Target (label):** net cost for the window (import_cost − export_revenue) computed via the existing
+    **`economics.compute_economics()` + `tariff.RateSchedule`** — reuse the app's cost math so training
+    target == what History/Stats report (no divergent cost function).
+  - **Train/serve skew (the subtle bit, call it out):** the same feature column is *actual* PV/load at
+    training time but *forecast* PV/load at inference (M003). Name the columns by role (`pv_wh_window`,
+    `load_wh_window`) and document that the inference path fills them from the forecast service — so the
+    model isn't trained on a feature it can't get at serve time.
+  - **Reconstructing active settings (the gnarliest bit — the current spec understated this):** the
+    `audit` table stores **change deltas** (`changes` = JSON `{field: {old, new}}`, with `section`/`slot`/
+    `ts`/`result`), **not** the settings active at a given time. So "settings active during window W" must
+    be **reconstructed by replaying** successful (`result='ok'`) audit rows forward from a base state,
+    keyed by `(section, slot, field)`. Define the base state explicitly: before the first audit entry the
+    value is **unknown** → examples whose settings are wholly unknown are **excluded** (don't impute a
+    fake baseline). Helper: `settings_at(audit_rows, ts) -> dict[(section,slot,field), value]`,
+    unit-tested directly.
+  - **Confidence gate:** `count(complete_examples) < MIN_TRAINING_DAYS` (default 14, configurable via
+    `Settings`) returns an `insufficient_data` status carrying the shortfall (`have`, `need`) — never a
+    crash or a silent empty set. "Complete" = both rollup data and reconstructable settings exist for the
+    day.
+  - **Done when:** `make_train_examples(window_days=N, device_id)` returns examples + a status from
+    recorded dummy data; time features cyclic-encoded; tariff windows correctly attributed; `settings_at`
+    correctly replays the audit log (covered by its own test incl. the unknown-base exclusion); below the
+    gate it returns `insufficient_data{have,need}`. Module ≥ 90% coverage. *Refs: §22.*
+
+- [ ] **M002 · Continuous model training** · Deps: M001
+  - Training pipeline in `ml/training.py` + persistence in `ml/store.py`. Pulls examples from M001,
+    checks the confidence gate, **encodes** (standardise numerics, one-hot/cyclic-encode time features —
+    this is where scikit-learn enters), trains a `GradientBoostingRegressor`, holds out the latest 7 days
+    for validation, applies the accuracy gate (reject if MAE > 1.5× the previous model's), and records
+    versioned metrics (MAE, R², trained-at, feature count, example count).
+  - **Adds the scikit-learn/joblib/numpy dependencies** (see section preamble) to
+    `backend/requirements.txt`, pinned to ARM64-wheel-available versions.
+  - **Model store (decided):** persist each version as `<data_dir>/models/v{N}.joblib` (model + scaler +
+    feature metadata bundled). `<data_dir>` is **configurable, defaults beside the SQLite `db_path`, and
+    is gitignored** — never inside the repo working copy (a `git pull` / read-only deploy must not clobber
+    or lose models). Version **history + the active-version pointer** go in a new `ml_models` table
+    (append a `(version, sql)` tuple to `MIGRATIONS` in `storage/migrations.py`) so M005's `/history`
+    endpoint is a simple query; the previous model is retained as fallback and a failed/rejected run never
+    becomes active.
+  - **Trigger cadence (refined — don't retrain on every persist):** a new training *example* only appears
+    once a day is **complete**, so retraining more often is wasted work. Gate the background retrain on
+    "a new complete day exists since `last_trained_day`", debounced; still also triggerable on-demand via
+    API (M005). Runs as a low-priority background task off the hot path (`ml/service.py`).
+  - **Done when:** training on deterministic dummy data converges to a model predicting daily cost within
+    a known error bound; a retrain preserves the old model; a worse retrain is rejected + logged and the
+    old model stays active; a failed retrain doesn't break inference; below the gate status is
+    `insufficient_data` and no training is attempted; redundant triggers (no new complete day) are
+    no-ops. Module ≥ 90% coverage. *Refs: §22.*
+
+- [ ] **M003 · Inference / suggestion engine** · Deps: M002
+  - `ml/inference.py`: load the active model, respect the confidence gate, enumerate a **bounded** set of
+    candidate timer-slot configurations — target SoC ∈ {20,40,60,80,100}, grid-charge ∈ {on,off}, slot
+    start ∈ the user's actual tariff windows (non-optimised slots fixed to current values to keep the
+    space small) — fill the forecast-derived feature columns (train/serve skew note from M001) from the
+    **forecast service**, predict cost per candidate, and return the lowest-cost proposal + predicted
+    improvement vs. current settings.
+  - **Allow-list constraint (new — ties to the rules engine):** candidate configs may only touch targets
+    the profile marks automation-**safe** (`automation.rules.AllowList.safe`, derived from the settings
+    schema). The enumerator filters by the allow-list so ML can never propose a write the rule engine
+    itself wouldn't be allowed to make.
+  - **Fallback:** no model / gate unmet → return `null` with a clear status (`insufficient_data{have,need}`
+    or `no_model`); rule-based automation (L03) is unaffected.
+  - **Done when:** with a trained model + tomorrow's forecast + current settings (above the gate) the
+    engine returns a proposed config (allow-list-filtered) with a predicted saving; below the gate / with
+    no model it degrades gracefully with a clear status. Module ≥ 90% coverage. *Refs: §22.*
+
+- [ ] **M004 · Integration with automation preview + apply (dry-run + live)** · Deps: M003, L03e-3
+  - Surface the ML proposal in the existing `GET /api/automation/preview` (built by
+    `AutomationService.preview()` → `evaluate_rules`). The ML proposal enters as synthetic
+    `set_setting` `ProposedChange`(s): add a **`source` field** to `ProposedChange` (`"rule"` default |
+    `"ml"`) plus `predicted_improvement` + `confidence`, and feed them through the **same priority
+    resolution** as rules (the ML proposal is treated as one rule at a configurable priority; conflicts
+    with rule proposals resolve per §18). `as_dict()` carries the new fields.
+  - **Apply wiring:** the scheduler/`apply` path composes the rule decision **and** the ML proposal
+    *before* `settings_to_apply()`, so live-mode ML writes go through the unchanged
+    `AutomationService.apply()` → `control.apply_settings()` → §12 chain (validate → write → read-back →
+    audit). No new write plumbing; the audit entry records `source='ml'`.
+  - **Mode toggle:** `ml_mode: "dry_run" | "live"` (stored in `app_config`, see M005). Dry-run → proposal
+    appears in preview only, never auto-applied. Live → scheduler applies it. Live additionally requires
+    `Settings.enable_control` (`SOLARVOLT_ENABLE_CONTROL`); if control is off the effective mode is forced
+    to dry-run regardless of the stored toggle.
+  - **Done when:** preview returns an ML proposal (with `source:"ml"`, improvement, confidence) when a
+    model exists above the gate; manual apply and live auto-apply both succeed through the existing safety
+    path with `source='ml'` in the audit; dry-run never auto-applies; live auto-applies only when both the
+    toggle and `enable_control` are on; ML↔rule priority conflicts resolve deterministically; below the
+    gate neither mode proposes. Tests cover all combinations against the dummy. *Refs: §18, §12, §22.*
+
+- [ ] **M005 · Model management API + Settings UI** · Deps: M004
+  - Backend: `GET /api/automation/model` (active version, trained-at, validation MAE/R², feature count,
+    example count, gate progress `have/need`, status `insufficient_data|training|ready|error`),
+    `POST /api/automation/model/train` (trigger a background retrain → 202 + task id),
+    `GET /api/automation/model/history` (past runs from the `ml_models` table with per-version metrics),
+    and `GET/PUT /api/automation/config` for `ml_mode` (`dry_run|live`, persisted in `app_config`).
+    Training never blocks the response.
+  - Frontend: an **ML Automation** card in Settings (new sub-tab under the existing Automation/Settings
+    tab system, which is now query-param driven — `?tab=`) showing model status, a gate progress bar
+    ("12 of 14 minimum days"), last-trained date, validation MAE/R², feature count, a dry-run/live toggle
+    (disabled + greyed when `enable_control` is off, with a tooltip explaining why), and a "Train now"
+    button (spinner while running, metrics refresh on completion). Add the calls to `api.service.ts` +
+    types to `models.ts`.
+  - **Done when:** the user can see status (incl. gate progress), toggle dry-run/live (persisted), trigger
+    training, and watch metrics update on completion; the live toggle is forced/greyed to dry-run when
+    control is off. Frontend unit tests + a Playwright E2E asserting "Train now" updates the status pill
+    and the mode toggle persists across reload. *Refs: §22.*
+
+- [ ] **M006 · Usage annotation (label time windows on History)** · Deps: T044, T045 · Extends: M001
+  - Users mark time regions on the History chart with descriptive labels (e.g. "EV charging", "cooking",
+    "washing"). These become one-hot features in M001's pipeline so the model learns the cost effect of
+    specific loads and can factor planned usage into suggestions.
+  - **Storage:** a `usage_labels` table (`id, device_id, starts_at, ends_at, label, notes, created_at,
+    updated_at`) added by **appending a new `(version, sql)` tuple to `MIGRATIONS` in
+    `storage/migrations.py`** (the integer-versioned runner; the exact number is whatever is next when
+    this lands). Backend API `GET/POST/PUT/DELETE /api/usage-labels` per device, with overlap detection
+    (warn — don't reject — on overlapping labels for the same device).
+  - **Label taxonomy:** built-in set — `ev_charging`, `cooking`, `washing_drying`, `heating`, `cooling`,
+    `pool_pump`, `water_heating`, plus a free-text `other` with a user-defined name; `GET
+    /api/usage-labels/labels` returns the taxonomy.
+  - **Annotation UX on History:** the History chart is now the `history-chart` **dashboard widget**
+    (post-L06), so the label layer is added there, not to a standalone page. Drag-select a time region →
+    popup to pick a taxonomy label (or type a custom "other") → render as a translucent colour band keyed
+    by label type; existing bands are clickable to resize (drag edges), re-label, or delete; the layer
+    shares the chart's time axis so pan/zoom keeps bands aligned.
+  - **ML integration (extends M001/M003):** M001 joins `usage_labels` on overlap with each training
+    window → one-hot features (`has_ev_charging`, …). At inference (M003) the user can optionally declare
+    planned labels for the forecast window in the preview UI ("I will charge the EV tomorrow"), encoded as
+    predicted features.
+  - **Done when:** backend CRUD round-trips with overlap warnings; the History widget shows labelled
+    bands that persist across reload; create/resize/re-label/delete all work and survive reload; M001
+    picks up the labels as one-hot features. E2E: create a band → assert it renders → refresh → assert it
+    persists. *Refs: §22.*
 
 - [ ] **L15 · Multiple custom webhooks + user-defined payloads** · Deps: L09, L10, L11
   - **Deliverable:** lift the single-webhook limit on **both** egress paths — alert/notification

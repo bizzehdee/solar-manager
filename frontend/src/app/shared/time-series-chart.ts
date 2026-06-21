@@ -11,7 +11,15 @@ import { HistoryPoint } from '../core/models';
 @Component({
   selector: 'app-time-series-chart',
   imports: [BaseChartDirective],
-  template: `<div style="position:relative;height:320px">
+  // Fill the host exactly at any size. The canvas is absolutely positioned so it never feeds its own
+  // size back into the layout (the classic chart.js "won't shrink / scrollbar" trap); chart.js is
+  // responsive + maintainAspectRatio:false, so it tracks the wrapper as the cell is resized.
+  styles: [`
+    :host { display: block; width: 100%; height: 100%; }
+    .tsc-wrap { position: relative; width: 100%; height: 100%; overflow: hidden; }
+    .tsc-wrap canvas { position: absolute; inset: 0; }
+  `],
+  template: `<div class="tsc-wrap">
     <canvas
       baseChart
       [type]="kind()"

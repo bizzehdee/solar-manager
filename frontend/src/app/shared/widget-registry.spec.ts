@@ -4,13 +4,12 @@ import { WIDGET_REGISTRY, widgetDef, unknownWidgetTypes } from './widget-registr
 const data: DashboardData = {
   metrics: { battery_soc_pct: 55, pv_power_w: 3200, grid_power_w: -1500, grid_voltage_v: 240 },
   inverterOnline: true,
-  series: { pv_power_w: [{ ts: 1, value: 100 }] },
 };
 
 describe('WIDGET_REGISTRY', () => {
   it('declares every L06 widget type with complete sizing metadata', () => {
     const expected = [
-      'energy-flow', 'metric-gauge', 'metric-card', 'stat-card', 'time-series-chart',
+      'header', 'energy-flow', 'metric-gauge', 'metric-card', 'stat-card', 'time-series-chart',
       'daily-kpis', 'history-chart',
     ];
     expect(Object.keys(WIDGET_REGISTRY).sort()).toEqual([...expected].sort());
@@ -54,11 +53,22 @@ describe('WIDGET_REGISTRY', () => {
     expect(inputs['value']).toBeUndefined();
   });
 
-  it('time-series-chart pulls its points from data.series[metric]', () => {
-    const inputs = WIDGET_REGISTRY['time-series-chart'].inputs({ metric: 'pv_power_w' }, data);
-    expect((inputs['points'] as unknown[]).length).toBe(1);
-    const empty = WIDGET_REGISTRY['time-series-chart'].inputs({ metric: 'none' }, data);
-    expect(empty['points']).toEqual([]);
+  it('time-series-chart is config-driven (self-fetching container)', () => {
+    const cfg = { metric: 'battery_soc_pct', window: 6, window_unit: 'hours' };
+    const inputs = WIDGET_REGISTRY['time-series-chart'].inputs(cfg, data);
+    expect(inputs['config']).toBe(cfg); // passed straight through; the widget fetches its own data
+    // The window unit is a select with minutes/hours/days choices.
+    const unitField = WIDGET_REGISTRY['time-series-chart'].configSchema.find((f) => f.key === 'window_unit');
+    expect(unitField?.type).toBe('select');
+    expect(unitField?.options?.map((o) => o.value)).toEqual(['minutes', 'hours', 'days']);
+  });
+
+  it('header defaults to a full-width 12×1 cell and passes its text through', () => {
+    const def = WIDGET_REGISTRY['header'];
+    expect([def.defaultW, def.defaultH]).toEqual([12, 1]);
+    expect(def.inputs({ text: 'Battery' }, data)).toEqual({ text: 'Battery', icon: '', role: 'body' });
+    // Empty config falls back to a generic heading (no live data needed).
+    expect(def.inputs({}, data)['text']).toBe('Section');
   });
 
   it('widgetDef returns undefined for an unknown type', () => {

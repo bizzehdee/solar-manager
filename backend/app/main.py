@@ -43,6 +43,7 @@ from .devices.serial_ports import list_serial_ports
 from .devices.yaml_profile import available_profiles
 from .forecast.openmeteo import OpenMeteoClient
 from .forecast.service import ForecastService
+from .derived_stats import DerivedStatsService
 from .persistence import PersistenceService
 from .poller import Poller
 from .stats import StatsService
@@ -114,8 +115,15 @@ async def lifespan(app: FastAPI):
     for device in registry.devices:
         await verify_firmware(device)
 
-    poller = Poller(registry, interval_s=settings.poll_interval_s)
+    # Stats-derived metrics (savings, CO₂, peak PV) — cached off the hot path, merged into each
+    # poll so they appear as canonical metrics (task L16-2). Created before the poller so it can read
+    # the cache; started after so its first refresh has the registry connected.
+    derived_stats = DerivedStatsService(app.state.stats, registry, clock=clock)
+    app.state.derived_stats = derived_stats
+
+    poller = Poller(registry, interval_s=settings.poll_interval_s, derived_provider=derived_stats.values)
     app.state.poller = poller
+    await derived_stats.start()
     await poller.start()
 
     persistence = PersistenceService(
@@ -158,6 +166,7 @@ async def lifespan(app: FastAPI):
         await grid_events.stop()
         await persistence.stop()
         await poller.stop()
+        await derived_stats.stop()
         await registry.close_all()
         await history_repo.close()
 
@@ -204,7 +213,8 @@ def create_app(
             db_size = os.path.getsize(settings.db_path)
 
         watermark = await history.rollup_watermark()
-        now_ts = app.state.clock().timestamp()
+        system = app.state.clock()
+        now_ts = system.timestamp()
         try:
             network = host_network()
         except Exception:  # never let a host-probe quirk break diagnostics
@@ -213,6 +223,20 @@ def create_app(
         devices = []
         for device in registry.devices:
             h = health.get(device.device_id, {})
+            # Inverter RTC drift (T097) — per-device operational health, so it lives in the
+            # diagnostics snapshot. A clock read must never break diagnostics.
+            clock = None
+            if device.has_clock:
+                try:
+                    dt = await device.read_clock()
+                    clock = {
+                        "supported": True,
+                        "device_time": dt.isoformat() if dt is not None else None,
+                        "drift_s": (dt.timestamp() - now_ts) if dt is not None else None,
+                        "syncable": settings.enable_control and device.clock_syncable,
+                    }
+                except Exception:
+                    clock = None
             devices.append({
                 "device_id": device.device_id,
                 "vendor": device.info.vendor,
@@ -220,6 +244,7 @@ def create_app(
                 "online": h.get("online", False),
                 "last_sample_age_s": h.get("last_sample_age_s"),
                 "comms": device.comms_stats(),
+                "clock": clock,
             })
         return JSONResponse({
             "version": __version__,

@@ -15,8 +15,9 @@ import { DashboardHost } from '../../shared/dashboard-host';
   imports: [DashboardHost],
   template: `
     @if (dashboard(); as d) {
-      <h4 class="mb-3">{{ d.name }}</h4>
-      <app-dashboard-host [dashboard]="d" [data]="data.data()" (layoutSaved)="onSaved(d, $event)" />
+      <app-dashboard-host [dashboard]="d" [data]="data.data()" (layoutSaved)="onSaved(d, $event)">
+        <h4 dashTitle class="mb-0">{{ d.name }}</h4>
+      </app-dashboard-host>
     } @else if (notFound()) {
       <div class="alert alert-warning">That dashboard doesn't exist.</div>
     } @else {

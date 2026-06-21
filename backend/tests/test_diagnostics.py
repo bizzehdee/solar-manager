@@ -29,6 +29,10 @@ def test_diagnostics_reports_build_db_and_devices():
         dummy = next(x for x in d["devices"] if x["device_id"] == "dummy")
         assert dummy["online"] is True
         assert dummy["comms"] is None  # the dummy moves no bytes
+        # Inverter clock drift now travels in the per-device diagnostics snapshot (T097).
+        assert dummy["clock"]["supported"] is True
+        assert isinstance(dummy["clock"]["drift_s"], (int, float))
+        assert dummy["clock"]["syncable"] is False  # control disabled by default
 
 
 # --- Modbus transport comms stats -----------------------------------------------

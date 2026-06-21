@@ -125,6 +125,96 @@ describe('DashboardHost', () => {
     expect(host.items.length).toBe(1); // back to the original single widget
   });
 
+  function importEvent(text: string): Event {
+    const input = document.createElement('input');
+    Object.defineProperty(input, 'files', { value: [new File([text], 'd.json', { type: 'application/json' })] });
+    return { target: input } as unknown as Event;
+  }
+
+  it('imports a layout from JSON and emits it for persistence', async () => {
+    const fixture = editFixture();
+    const host = fixture.componentInstance;
+    let emitted: DashboardWidget[] | undefined;
+    host.layoutSaved.subscribe((w) => (emitted = w));
+    await host.onImportFile(importEvent(JSON.stringify({
+      name: 'X', widgets: [{ type: 'metric-card', x: 0, y: 0, w: 2, h: 1, config: { metric: 'grid_power_w' } }],
+    })));
+    expect(host.items.length).toBe(1);
+    expect(host.items[0].config['metric']).toBe('grid_power_w');
+    expect(emitted?.length).toBe(1);
+    expect(host.notice()?.cls).toBe('success');
+  });
+
+  it('warns (but still imports) when a layout has unknown widget types', async () => {
+    const fixture = editFixture();
+    const host = fixture.componentInstance;
+    await host.onImportFile(importEvent(JSON.stringify({
+      name: 'X', widgets: [{ type: 'mystery', x: 0, y: 0, w: 2, h: 2, config: {} }],
+    })));
+    expect(host.items.length).toBe(1);
+    expect(host.notice()?.cls).toBe('warning');
+    expect(host.notice()?.text).toContain('mystery');
+  });
+
+  it('shows an error notice and keeps the layout on an invalid import file', async () => {
+    const fixture = editFixture();
+    const host = fixture.componentInstance;
+    await host.onImportFile(importEvent('not json at all'));
+    expect(host.notice()?.cls).toBe('danger');
+    expect(host.items.length).toBe(1); // unchanged
+  });
+
+  it('reset emits so the page can drop its override', () => {
+    const fixture = editFixture();
+    const host = fixture.componentInstance;
+    let fired = false;
+    host.reset.subscribe(() => (fired = true));
+    host.reset.emit();
+    expect(fired).toBe(true);
+  });
+
+  it('opens widget config in a centred modal (not an inline bottom panel)', () => {
+    const fixture = editFixture();
+    const host = fixture.componentInstance;
+    host.enterEdit();
+    host.configure(0);
+    fixture.detectChanges();
+
+    const root = fixture.nativeElement as HTMLElement;
+    const modal = root.querySelector('.modal.d-block');
+    expect(modal).not.toBeNull();
+    expect(root.querySelector('.modal-backdrop')).not.toBeNull();
+    expect(modal?.textContent).toContain('Configure');
+
+    // "Done" closes it (clears the selection → modal removed).
+    (modal!.querySelector('.modal-footer .btn') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(host.configIndex()).toBeNull();
+    expect((fixture.nativeElement as HTMLElement).querySelector('.modal.d-block')).toBeNull();
+  });
+
+  it('renders the colour (role) field as a dropdown labelled by actual colour, with a swatch', () => {
+    const fixture = editFixture(); // metric-card has a {key:'role', label:'Colour', type:'role'} field
+    const host = fixture.componentInstance;
+    host.enterEdit();
+    host.configure(0);
+    fixture.detectChanges();
+
+    const select = (fixture.nativeElement as HTMLElement).querySelector('#cfg-role') as HTMLSelectElement;
+    expect(select?.tagName).toBe('SELECT');
+    // Values stay the Bootstrap roles (widgets consume them); labels are the actual colours.
+    expect(Array.from(select.options).map((o) => o.value)).toEqual(
+      expect.arrayContaining(['primary', 'success', 'danger']),
+    );
+    expect(Array.from(select.options).map((o) => o.textContent?.trim())).toEqual(
+      expect.arrayContaining(['Blue', 'Green', 'Red']),
+    );
+    // A colour swatch sits beside the select as a live example of the choice.
+    expect(select.closest('.input-group')?.querySelector('span[style]')).not.toBeNull();
+    expect(host.roleColor('success')).toBe('var(--bs-success)');
+    expect(host.roleColor('unknown')).toBe('var(--bs-primary)');
+  });
+
   it('setConfig updates the selected widget config immutably', () => {
     const fixture = editFixture();
     const host = fixture.componentInstance;
