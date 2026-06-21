@@ -46,6 +46,17 @@ describe('MetricCard', () => {
     expect((create(null).nativeElement as HTMLElement).textContent).toContain('—');
   });
 
+  it('renders the configured Bootstrap icon class (regression: was wiped by a [class] binding)', () => {
+    const fixture = create(42);
+    fixture.componentRef.setInput('icon', 'bi-sun');
+    fixture.componentRef.setInput('role', 'warning');
+    fixture.detectChanges();
+    const i = (fixture.nativeElement as HTMLElement).querySelector('i')!;
+    expect(i.classList).toContain('bi');
+    expect(i.classList).toContain('bi-sun');
+    expect(i.classList).toContain('text-warning');
+  });
+
   it('renders an optional hint line', () => {
     const fixture = create(42);
     fixture.componentRef.setInput('hint', 'updated just now');

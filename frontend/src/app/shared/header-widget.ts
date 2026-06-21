@@ -7,8 +7,8 @@ import { Component, input } from '@angular/core';
 @Component({
   selector: 'app-header-widget',
   template: `<div class="d-flex align-items-center gap-2 h-100 px-1 border-bottom">
-    @if (icon()) { <i class="bi {{ icon() }} fs-5" [class]="'text-' + role()"></i> }
-    <span class="fs-5 fw-semibold text-truncate" [class]="'text-' + role()">{{ text() }}</span>
+    @if (icon()) { <i class="bi {{ icon() }} fs-5 text-{{ role() }}"></i> }
+    <span class="fs-5 fw-semibold text-truncate text-{{ role() }}">{{ text() }}</span>
   </div>`,
 })
 export class HeaderWidget {

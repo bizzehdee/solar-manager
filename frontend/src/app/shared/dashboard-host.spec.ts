@@ -215,6 +215,24 @@ describe('DashboardHost', () => {
     expect(host.roleColor('unknown')).toBe('var(--bs-primary)');
   });
 
+  it('renders the icon field as a dropdown with a live icon preview beside it', () => {
+    const fixture = editFixture(); // metric-card has a {key:'icon', label:'Icon', type:'icon'} field
+    const host = fixture.componentInstance;
+    host.enterEdit();
+    host.configure(0);
+    host.setConfig('icon', 'bi-sun'); // so the preview reflects the chosen icon
+    fixture.detectChanges();
+
+    const select = (fixture.nativeElement as HTMLElement).querySelector('#cfg-icon') as HTMLSelectElement;
+    expect(select?.tagName).toBe('SELECT');
+    expect(Array.from(select.options).map((o) => o.value)).toEqual(
+      expect.arrayContaining(['bi-sun', 'bi-battery', 'bi-leaf']),
+    );
+    // A live <i> preview of the chosen icon sits beside the select.
+    const preview = select.closest('.input-group')?.querySelector('i.bi');
+    expect(preview?.classList).toContain('bi-sun');
+  });
+
   it('setConfig updates the selected widget config immutably', () => {
     const fixture = editFixture();
     const host = fixture.componentInstance;

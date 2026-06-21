@@ -145,6 +145,16 @@ export function mergeLayout(widgets: DashboardWidget[], nodes: GridStackNode[]):
                               [ngModel]="configValue(w, f.key)" (ngModelChange)="setConfig(f.key, $event)">
                         @for (o of f.options || []; track o.value) { <option [value]="o.value">{{ o.label }}</option> }
                       </select>
+                    } @else if (f.type === 'icon') {
+                      <div class="input-group input-group-sm">
+                        <span class="input-group-text"><i class="bi {{ iconClass(configValue(w, f.key)) }}"></i></span>
+                        <select [id]="'cfg-' + f.key" class="form-select form-select-sm"
+                                [ngModel]="configValue(w, f.key)" (ngModelChange)="setConfig(f.key, $event)">
+                          @for (ic of iconOptions; track ic.value) {
+                            <option [value]="ic.value">{{ ic.label }}</option>
+                          }
+                        </select>
+                      </div>
                     } @else if (f.type === 'role') {
                       <div class="input-group input-group-sm">
                         <span class="input-group-text p-1">
@@ -214,6 +224,41 @@ export class DashboardHost implements AfterViewInit, OnDestroy {
   /** The swatch colour for a stored role value (defaults to blue/primary). */
   roleColor(value: unknown): string {
     return this.roleOptions.find((r) => r.value === value)?.color ?? 'var(--bs-primary)';
+  }
+
+  // Widget "Icon" field options: a curated set of Bootstrap Icons (self-hosted, no CDN) relevant to
+  // energy/solar/battery dashboards, labelled in plain words. The editor shows a live preview swatch.
+  protected readonly iconOptions = [
+    { value: 'bi-dot', label: 'None' },
+    { value: 'bi-sun', label: 'Sun' },
+    { value: 'bi-cloud-sun', label: 'Cloud & sun' },
+    { value: 'bi-lightning-charge', label: 'Lightning' },
+    { value: 'bi-plug', label: 'Plug' },
+    { value: 'bi-power', label: 'Power' },
+    { value: 'bi-battery', label: 'Battery' },
+    { value: 'bi-battery-half', label: 'Battery (half)' },
+    { value: 'bi-battery-full', label: 'Battery (full)' },
+    { value: 'bi-battery-charging', label: 'Battery (charging)' },
+    { value: 'bi-house', label: 'House' },
+    { value: 'bi-house-check', label: 'House (check)' },
+    { value: 'bi-graph-up', label: 'Graph up' },
+    { value: 'bi-graph-down', label: 'Graph down' },
+    { value: 'bi-activity', label: 'Activity' },
+    { value: 'bi-speedometer2', label: 'Speedometer' },
+    { value: 'bi-thermometer-half', label: 'Thermometer' },
+    { value: 'bi-heart-pulse', label: 'Heart pulse' },
+    { value: 'bi-arrow-repeat', label: 'Cycle' },
+    { value: 'bi-pie-chart', label: 'Pie chart' },
+    { value: 'bi-piggy-bank', label: 'Piggy bank' },
+    { value: 'bi-leaf', label: 'Leaf' },
+    { value: 'bi-lightbulb', label: 'Lightbulb' },
+    { value: 'bi-clock', label: 'Clock' },
+    { value: 'bi-grid-3x3-gap', label: 'Grid' },
+  ];
+
+  /** The icon class for a stored icon value (defaults to a neutral dot). */
+  iconClass(value: unknown): string {
+    return typeof value === 'string' && value ? value : 'bi-dot';
   }
 
   /** Suggested unit for the widget's chosen metric (shown as the unit field's placeholder). */

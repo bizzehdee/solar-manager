@@ -12,7 +12,7 @@ import { DecimalPipe } from '@angular/common';
   imports: [DecimalPipe],
   template: `<div class="card h-100 overflow-hidden">
     <div class="card-body d-flex align-items-center gap-2 p-2">
-      <i class="bi {{ icon() }} fs-3 flex-shrink-0" [class]="'text-' + role()"></i>
+      <i class="bi {{ icon() }} fs-3 flex-shrink-0 text-{{ role() }}"></i>
       <!-- min-width:0 lets the text column shrink so it truncates instead of overflowing the cell. -->
       <div style="min-width:0">
         <div class="fs-5 fw-semibold text-truncate">
