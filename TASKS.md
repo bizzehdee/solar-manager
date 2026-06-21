@@ -1160,3 +1160,22 @@ pipeline, lighter footprint.
     and template rendering (incl. JSON-escaping + malformed-template fallback) — the templating module is
     critical-logic (§21, ≥ 90%); frontend unit tests for the dynamic list + an E2E that adds/tests a
     webhook on the dummy. *Refs: §14 (Custom webhooks), §15, §21.*
+
+- [x] **L17 · Merge time-series-chart + history-chart into one `chart` widget** · Deps: L16
+  - **Why:** after the History chart's inline controls moved into the editor modal and both charts
+    gained a header, `time-series-chart` and `history-chart` were near-duplicate self-fetching wrappers
+    around the dumb `<app-time-series-chart>` — differing only in how the window was expressed (range-in-
+    days vs "last N min/hours/days"), auto vs pinned resolution, and a refresh timer. Two near-identical
+    widgets meant a "which chart do I pick?" choice with no real distinction.
+  - **Done:** single `shared/chart-widget.ts` (`ChartWidget`) — config `{ metric?, label?, unit?, window?,
+    window_unit?, resolution? }`; window = value + unit (minutes/hours/days); resolution auto-derived from
+    the window span (≤3h raw, ≤3d 5m, else 1h) unless pinned (raw/5m/1h/1d via an **Auto** option);
+    first-available-metric fallback; 30 s refresh timer + config-driven `effect` refetch; header
+    (`{label|humanised} · last {N unit}`); counters (…_wh) → kWh bars. Registry collapses to one `chart`
+    type; the old `time-series-chart`/`history-chart` keys resolve via `WIDGET_ALIASES` (the unified
+    component reads the legacy `{resolution, range}` shape) so existing stored dashboards still render and
+    the "Add widget" menu shows one **Chart** entry. History built-in seed now uses `chart`
+    (`window:24, window_unit:hours, resolution:1h`). Deleted `time-trend-chart.*` + `history-chart.*`;
+    `chart-widget.spec.ts` (window/auto-resolution/pinned/legacy-shape/fallback/refetch/header/no-data),
+    `widget-registry.spec.ts` (alias resolution), `test_dashboards.py`, and the History E2E updated.
+    *Refs: §8, §9, §21.*

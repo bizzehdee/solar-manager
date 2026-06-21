@@ -12,7 +12,7 @@ test.describe('History dashboard (on the dummy)', () => {
     // The KPIs are individual metric-cards now (no single daily-kpis widget).
     await expect(page.locator('app-metric-card').first()).toBeVisible();
 
-    const chart = page.locator('app-history-chart');
+    const chart = page.locator('app-chart-widget');
     await expect(chart).toBeVisible();
     // Config-driven: no inline selectors; shows a chart canvas or the no-data state on a fresh DB.
     await expect(chart.locator('canvas').or(chart.getByText('No data yet'))).toBeVisible();

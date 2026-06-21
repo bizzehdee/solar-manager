@@ -48,9 +48,8 @@ _NOW: dict[str, Any] = {
     ],
 }
 
-# "History" — the existing History page as a layout: today's derived-KPI row (daily-kpis) above an
-# interactive metric/resolution/range time-series chart (history-chart). Both are container widgets
-# that fetch their own data (stats/daily, history).
+# "History" — the existing History page as a layout: today's derived-KPI row of metric-cards above a
+# self-fetching trend chart. The chart is a container widget that fetches its own /api/history data.
 _HISTORY: dict[str, Any] = {
     "id": "history",
     "name": "History",
@@ -64,7 +63,7 @@ _HISTORY: dict[str, Any] = {
         _widget("metric-card", 6, 0, 2, 2, {"metric": "co2_avoided_kg", "label": "CO₂ avoided", "icon": "bi-leaf", "role": "success"}),
         _widget("metric-card", 8, 0, 2, 2, {"metric": "peak_pv_w", "label": "Peak PV", "icon": "bi-sun", "role": "warning"}),
         _widget("metric-card", 10, 0, 2, 2, {"metric": "round_trip_efficiency_pct", "label": "Round-trip eff.", "icon": "bi-arrow-repeat", "role": "info"}),
-        _widget("history-chart", 0, 2, 12, 6, {"metric": "pv_power_w", "resolution": "1h", "range": 1}),
+        _widget("chart", 0, 2, 12, 6, {"metric": "pv_power_w", "window": 24, "window_unit": "hours", "resolution": "1h"}),
     ],
 }
 

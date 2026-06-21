@@ -1,14 +1,13 @@
 import { Type } from '@angular/core';
 
 import { DashboardData, MetricValue } from '../core/models';
+import { ChartWidget } from './chart-widget';
 import { EnergyFlow } from './energy-flow';
 import { HeaderWidget } from './header-widget';
-import { HistoryChart } from './history-chart';
 import { metricUnit } from '../core/metric-units';
 import { MetricCard } from './metric-card';
 import { PowerGauge } from './power-gauge';
 import { StatCard } from './stat-card';
-import { TimeTrendChart } from './time-trend-chart';
 
 // Widget registry for L06 dashboards (T_DB3): maps a dashboard widget `type` → the presentational
 // component plus its grid sizing rules, an editable config schema (T_DB7), and an `inputs(config,
@@ -145,18 +144,19 @@ export const WIDGET_REGISTRY: Record<string, WidgetDef> = {
       role: str(config['role'], 'primary'),
     }),
   },
-  'time-series-chart': {
-    component: TimeTrendChart,
-    label: 'Time-series chart',
+  // Self-contained container widget: it fetches its own /api/history data, so the `inputs` adapter
+  // only passes config through. Window = value + unit ("last N minutes/hours/days"); resolution is
+  // auto-derived from the window unless pinned.
+  chart: {
+    component: ChartWidget,
+    label: 'Chart',
     minW: 4,
     minH: 4,
     defaultW: 8,
     defaultH: 6,
-    // Self-fetching trend over a fixed window ("last N minutes/hours/days"); config-driven, the
-    // container queries /api/history itself (so it works at any scale, not just live).
     configSchema: [
       { key: 'metric', label: 'Metric', type: 'metric' },
-      { key: 'label', label: 'Label', type: 'text' },
+      { key: 'label', label: 'Header', type: 'text' },
       { key: 'unit', label: 'Unit', type: 'text' },
       { key: 'window', label: 'Show last', type: 'number' },
       {
@@ -169,38 +169,16 @@ export const WIDGET_REGISTRY: Record<string, WidgetDef> = {
           { value: 'days', label: 'Days' },
         ],
       },
-    ],
-    inputs: (config) => ({ config }),
-  },
-  // Self-contained container widget: fetches its own data, so its `inputs` adapter only passes config.
-  'history-chart': {
-    component: HistoryChart,
-    label: 'History chart',
-    minW: 6,
-    minH: 4,
-    defaultW: 12,
-    defaultH: 6,
-    configSchema: [
-      { key: 'metric', label: 'Metric', type: 'metric' },
       {
         key: 'resolution',
         label: 'Resolution',
         type: 'select',
         options: [
+          { value: 'auto', label: 'Auto' },
           { value: 'raw', label: 'Raw samples' },
           { value: '5m', label: '5 minutes' },
           { value: '1h', label: '1 hour' },
           { value: '1d', label: '1 day' },
-        ],
-      },
-      {
-        key: 'range',
-        label: 'Range',
-        type: 'select',
-        options: [
-          { value: '1', label: 'Last 24 hours' },
-          { value: '7', label: 'Last 7 days' },
-          { value: '30', label: 'Last 30 days' },
         ],
       },
     ],
@@ -208,12 +186,21 @@ export const WIDGET_REGISTRY: Record<string, WidgetDef> = {
   },
 };
 
+// Back-compat: the chart was split into `time-series-chart` + `history-chart` before they were
+// merged into `chart`. Old stored dashboards still reference those types, so resolve them to `chart`
+// (the unified ChartWidget reads both config shapes). Aliases aren't in WIDGET_REGISTRY, so the
+// "Add widget" menu shows a single "Chart" entry.
+const WIDGET_ALIASES: Record<string, string> = {
+  'time-series-chart': 'chart',
+  'history-chart': 'chart',
+};
+
 export function widgetDef(type: string): WidgetDef | undefined {
-  return WIDGET_REGISTRY[type];
+  return WIDGET_REGISTRY[type] ?? WIDGET_REGISTRY[WIDGET_ALIASES[type]];
 }
 
 /** Distinct widget types in `widgets` that aren't in the registry (for import validation —
  *  unknown types are a warning, not a hard error: they render an "Unknown widget" placeholder). */
 export function unknownWidgetTypes(widgets: { type: string }[]): string[] {
-  return [...new Set(widgets.filter((w) => !(w.type in WIDGET_REGISTRY)).map((w) => w.type))];
+  return [...new Set(widgets.filter((w) => !widgetDef(w.type)).map((w) => w.type))];
 }

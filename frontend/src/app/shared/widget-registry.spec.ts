@@ -9,8 +9,7 @@ const data: DashboardData = {
 describe('WIDGET_REGISTRY', () => {
   it('declares every L06 widget type with complete sizing metadata', () => {
     const expected = [
-      'header', 'energy-flow', 'metric-gauge', 'metric-card', 'stat-card', 'time-series-chart',
-      'history-chart',
+      'header', 'energy-flow', 'metric-gauge', 'metric-card', 'stat-card', 'chart',
     ];
     expect(Object.keys(WIDGET_REGISTRY).sort()).toEqual([...expected].sort());
     for (const def of Object.values(WIDGET_REGISTRY)) {
@@ -53,14 +52,21 @@ describe('WIDGET_REGISTRY', () => {
     expect(inputs['value']).toBeUndefined();
   });
 
-  it('time-series-chart is config-driven (self-fetching container)', () => {
+  it('chart is config-driven (self-fetching container)', () => {
     const cfg = { metric: 'battery_soc_pct', window: 6, window_unit: 'hours' };
-    const inputs = WIDGET_REGISTRY['time-series-chart'].inputs(cfg, data);
+    const inputs = WIDGET_REGISTRY['chart'].inputs(cfg, data);
     expect(inputs['config']).toBe(cfg); // passed straight through; the widget fetches its own data
     // The window unit is a select with minutes/hours/days choices.
-    const unitField = WIDGET_REGISTRY['time-series-chart'].configSchema.find((f) => f.key === 'window_unit');
+    const unitField = WIDGET_REGISTRY['chart'].configSchema.find((f) => f.key === 'window_unit');
     expect(unitField?.type).toBe('select');
     expect(unitField?.options?.map((o) => o.value)).toEqual(['minutes', 'hours', 'days']);
+  });
+
+  it('resolves the legacy chart type aliases to the unified chart def', () => {
+    expect(widgetDef('time-series-chart')).toBe(WIDGET_REGISTRY['chart']);
+    expect(widgetDef('history-chart')).toBe(WIDGET_REGISTRY['chart']);
+    // Aliases are known types, so import validation never flags them as unknown.
+    expect(unknownWidgetTypes([{ type: 'time-series-chart' }, { type: 'history-chart' }])).toEqual([]);
   });
 
   it('header defaults to a full-width 12×1 cell and passes its text through', () => {
