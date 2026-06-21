@@ -57,12 +57,25 @@ def _source(client=None, **cfg):
 
 
 def test_map_measurement_resolves_known_topics_only():
-    assert map_measurement("solar_assistant/inverter_1/pv_power/state", "solar_assistant") == "pv_power_w"
-    assert map_measurement("solar_assistant/total/battery_state_of_charge/state", "solar_assistant") == "battery_soc_pct"
+    # Topics validated against a live Solar Assistant instance (Sunsynk, inverter_1/ + total/).
+    m = lambda t: map_measurement(t, "solar_assistant")
+    assert m("solar_assistant/inverter_1/pv_power/state") == "pv_power_w"
+    assert m("solar_assistant/inverter_1/grid_power/state") == "grid_power_w"
+    assert m("solar_assistant/inverter_1/battery_voltage/state") == "battery_voltage_v"
+    assert m("solar_assistant/total/battery_state_of_charge/state") == "battery_soc_pct"
+    assert m("solar_assistant/total/battery_power/state") == "battery_power_w"
+    assert m("solar_assistant/total/battery_temperature/state") == "battery_temp_c"
+    # Inverter temperature is bare "temperature" under the inverter device segment.
+    assert m("solar_assistant/inverter_1/temperature/state") == "inverter_temp_c"
+    # …but a battery's bare temperature must NOT mis-map to the inverter key.
+    assert m("solar_assistant/battery_1/temperature/state") is None
+    # SA settings topics (work_mode, time_point_*, capacity_point_*, …) are not metrics → None.
+    assert m("solar_assistant/inverter_1/work_mode/state") is None
+    assert m("solar_assistant/inverter_1/load_power_essential/state") is None
     # Wrong base, not a /state topic, or an unmapped measurement → None.
-    assert map_measurement("other/inverter_1/pv_power/state", "solar_assistant") is None
-    assert map_measurement("solar_assistant/inverter_1/pv_power/config", "solar_assistant") is None
-    assert map_measurement("solar_assistant/inverter_1/mystery/state", "solar_assistant") is None
+    assert m("other/inverter_1/pv_power/state") is None
+    assert m("solar_assistant/inverter_1/pv_power/config") is None
+    assert m("solar_assistant/inverter_1/mystery/state") is None
 
 
 @pytest.mark.asyncio

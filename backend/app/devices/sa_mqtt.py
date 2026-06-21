@@ -32,9 +32,14 @@ from ..models import DeviceInfo, MetricValue, Reading
 from .base import TransportError
 
 # Solar Assistant measurement (the topic's second-to-last segment) → canonical metric key.
-# Aliases cover both the device-scoped names (e.g. battery_1/state_of_charge) and the aggregate
-# names (total/battery_state_of_charge). Bare ambiguous names (plain "voltage"/"temperature") are
-# deliberately omitted — only unambiguous measurements are mapped.
+# Validated against a live SA instance (Sunsynk via inverter_1/ + total/): SA publishes one
+# value per measurement topic and matches our sign convention (battery +charge/-discharge,
+# grid +import/-export — confirmed against a discharging snapshot). Aggregate values live under
+# `total/` (battery SoC/power/temp); per-inverter ones under `inverter_1/`. Bare ambiguous names
+# (`voltage`, `current`, `power`) are deliberately omitted; bare `temperature` is disambiguated by
+# device segment in `map_measurement` (inverter temperature is published as `<inverter>/temperature`,
+# while battery temperature is the explicit `battery_temperature`). The non-essential/CT variants
+# (`grid_power_ct`, `load_power_essential`, …) are intentionally left out so one topic owns each key.
 SA_MEASUREMENT_MAP: dict[str, str] = {
     "pv_power": "pv_power_w",
     "pv_power_1": "pv1_power_w",
@@ -54,7 +59,7 @@ SA_MEASUREMENT_MAP: dict[str, str] = {
     "state_of_charge": "battery_soc_pct",
     "battery_temperature": "battery_temp_c",
     "battery_state_of_health": "battery_soh_pct",
-    "inverter_temperature": "inverter_temp_c",
+    "inverter_temperature": "inverter_temp_c",  # alias for SA versions that name it explicitly
 }
 
 
@@ -95,7 +100,15 @@ def map_measurement(topic: str, base_topic: str) -> str | None:
     parts = topic.split("/")
     if len(parts) < 2:
         return None
-    return SA_MEASUREMENT_MAP.get(parts[-2])
+    measurement = parts[-2]
+    key = SA_MEASUREMENT_MAP.get(measurement)
+    if key is None and measurement == "temperature":
+        # Bare "temperature" is the inverter's (battery temp is the explicit measurement). Only
+        # accept it under an inverter device segment so a battery's bare temp can't mis-map.
+        device = parts[-3] if len(parts) >= 3 else ""
+        if device.startswith("inverter"):
+            key = "inverter_temp_c"
+    return key
 
 
 class SaMqttSource:

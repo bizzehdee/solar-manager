@@ -1272,7 +1272,9 @@ pipeline, lighter footprint.
   - **Done:** new device family — `devices/sa_mqtt.py` `SaMqttSource` (paho-mqtt, VERSION2 callbacks)
     subscribes to `<base>/#`, keeps the latest mapped value per topic in memory; `SaMqttProfile`
     synthesises a `Reading` from it (no register blocks, like the dummy). `SA_MEASUREMENT_MAP` maps SA
-    measurement names → canonical keys (seed to verify; signs passed through). Config
+    measurement names → canonical keys, **validated against a live Sunsynk SA instance** (17 metrics
+    incl. inverter temp from the bare `<inverter>/temperature` topic; battery/grid signs confirmed to
+    match our +charge/-discharge, +import/-export convention). Config
     `{host,port=1883,username,password,base_topic,tls}`, injectable client factory. `factory.build_sa_mqtt_device`
     + a `sa_mqtt` branch; validation requires only params.host (no profile). Settings form: `sa_mqtt`
     option (host/port/user/pass/base-topic), profile picker hidden, Test verifies broker connectivity.
