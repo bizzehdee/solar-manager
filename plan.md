@@ -659,6 +659,7 @@ The natural high-value extension once monitoring + forecast + control + tariffs 
 - **Automation engine** that *writes* the work-mode timer automatically from rules: "force grid-charge during the cheapest ToU window", "raise target SoC when tomorrow's forecast is poor", "hold charge for an expected evening peak".
 - **Tariff + forecast optimization** — combine §5 tariffs and §6 forecast into a proposed daily timer plan that minimizes cost / maximizes self-consumption.
 - **User-authored rules too** — beyond the built-in cost-arbitrage planner, condition→action rules the user combines (day-of-week, time/date/season, metric thresholds, tariff window), each rule and action **prioritised** (highest wins a conflicting write) and **armed individually** (both default off; a disabled rule/action is shown as a live preview — "would set X now, if running").
+- **Inverse / else actions.** Each rule carries an optional `else_actions` list alongside its primary `actions`. When the rule's conditions evaluate to **true**, the primary `actions` fire (existing behavior). When they evaluate to **false**, the `else_actions` fire instead — enabling an if-else pattern within a single rule (e.g. "if Monday → target SoC 100%, else → 20%"). Else actions go through the same priority resolution, allow-list checks, and write-safety path as primary actions. In the rule editor, each action slot has an optional "else" value field; if left empty, no else action fires for that slot.
 - **One gate, on writes only.** Building, previewing and arming rules needs **no flag** — automation is always available. Anything that *writes an inverter register* (the planner's apply, a rule's "set setting" action, the background scheduler) runs entirely on the **§12 safeguards** (validate→write→read-back→audit) and is gated by the single **`SOLARVOLT_ENABLE_CONTROL`** flag — the same switch that guards all write-back. There is **no separate automation flag**. **Suggest/preview is always available; apply is opt-in via control.**
 - **Non-write actions are ungated.** Automation actions that touch no register — **send a notification** (`notify` action type, the §15 channel seam: email/Telegram/ntfy/Gotify/Pushover/webhook), **create an in-app alert** (`alert` action type, written to the inbox with ack/snooze/badge) — run whenever their rule/action is armed, even on a monitoring-only deploy with control off. These action types absorb the standalone §15 alert-rule system: one rule engine, one editor, all output types.
 - **Debounce on notify/alert actions.** A `debounce_s` field on each notify/alert action prevents re-firing within the window; the service tracks per-action last-fire time. Without debounce, a matched condition would dispatch on every scheduler tick.
@@ -755,3 +756,116 @@ The Action is the enforcement point — **every one of these is a hard gate that
 5. **No-CDN check** (§8) — a step that greps the built frontend for external URLs and fails if any CDN/font reference leaked in.
 
 Backend and frontend run as separate jobs (matrix where useful); a clone with no hardware must go green, so the dummy default + checked-in fixtures are what CI exercises. Branch protection should require this workflow to pass before merge once the repo is on GitHub.
+
+---
+
+## 22. ML-Based Smart Optimization
+
+### Overview
+After sufficient historical data has accumulated, train a **lightweight ML model** that learns the relationship between system conditions, inverter settings, and outcomes (cost, self-consumption, ROI). At inference time, the model proposes optimal timer-settings for the coming period, fed through the existing automation apply path (§18) and §12 write-safety chain.
+
+Two modes:
+- **Dry-run mode (default)** — the model runs and its suggestions are shown in the UI preview but never automatically applied. The user sees "the model would set X, saving an estimated £Y" and can choose to apply manually.
+- **Live mode (opt-in)** — the model's proposals are automatically applied by the background scheduler (subject to the same §12 safety gates as any automation write: validate → write → read-back → audit). Gated behind a user-facing toggle, separate from the existing `SOLARVOLT_ENABLE_CONTROL` flag (which must also be on for any write to proceed).
+
+### Design principles
+- **Lightweight, Pi-runnable.** No GPU, no heavy framework. Use `scikit-learn` for feature engineering + model training/inference — it's already a common Python ML library, pure-CPU, and runs comfortably on an ARM64 Pi. Avoid TensorFlow/PyTorch unless the problem demands it (unlikely for tabular time-series + settings optimisation).
+- **Feature engineering is the hard part; invest there.** The model is only as good as the features. Design a repeatable pipeline that transforms raw historical data into training examples.
+- **Dummy-first, same as the rest of the app.** Train and validate the full pipeline against the deterministic dummy (which generates realistic, time-of-day-aware synthetic data) before any real-data training run.
+- **Continuous training.** The model retrains on an ongoing basis as new data arrives — every new day of history is another training example. Training runs as a low-priority background task, not on the hot path, but it runs whenever the system is idle rather than on a fixed nightly schedule.
+- **Minimum confidence gate.** The model is not used (neither dry-run nor live) until a minimum threshold of training data is met. Default: **14 days** of continuous history with known settings (configurable). Below the gate, the UI shows "ML: insufficient data". The gate prevents nonsensical suggestions from an undertrained model.
+
+### Feature engineering pipeline
+The pipeline converts raw historical data into labeled training examples. Each example = one time window (a day or a timer-slot period):
+
+#### Features (input vector)
+- **Time-based:** hour of day, day of week (1–7, sin/cos encoded), day of year (sin/cos encoded for seasonality), month, is_weekend, season (categorical: spring/summer/autumn/winter).
+- **Weather / forecast:** forecast PV Wh for the window (from the existing §6 forecast service), actual PV Wh if known (retrospective training).
+- **Historical load:** expected load Wh for the window (from the historical load profile by hour/weekday, §6).
+- **Battery state:** starting SoC (%), battery capacity (Ah/kWh from config).
+- **Tariff:** import rate(s) and export rate(s) active during the window, the cheapest import window in the day, the most expensive (peak) window.
+- **Current settings:** the timer-slot configuration active during that window (start time, target SoC, grid-charge enabled/disabled, power limit).
+- **User-annotated usage labels:** if the user has labelled time windows (e.g. "EV charging", "cooking", "washing"), each label type is one-hot encoded as a feature. This tells the model that certain load signatures are predictable, shiftable loads — improving both the load forecast and the optimisation suggestion.
+
+#### Target (label)
+- **Net cost for the window** (import_cost − export_revenue), derived from the existing tariff + energy accounting (§3/§5). This is the primary optimisation objective.
+- Optionally also predict **self-consumption ratio** or **grid independence %** as secondary objectives (multi-output or separate models).
+
+#### Data sources (all already stored)
+- `samples` + `rollup_5m` / `rollup_1h` — power/SoC/voltage time series.
+- `today_*_wh` daily counters — daily energy totals.
+- `app_config` tariff + site config (§5).
+- Settings audit log (T078) — what settings were active when (for labeling).
+- Forecast cache (§6) — weather + PV prediction for the window.
+- `usage_labels` table (M006) — user-annotated time windows with label types. Joined on overlap with the training window to produce label features.
+
+### Usage annotation
+Users can mark time windows in their historical data with labels describing what was consuming power. This transforms opaque load spikes into structured features the model can learn from.
+
+#### Label taxonomy
+Built-in labels (user-extensible):
+- **EV charging** — high power (~7 kW), sustained 1–8 hours, often overnight
+- **Cooking (hob/oven)** — moderate power (~4 kW), ~1 hour, typically 5–7 pm
+- **Washing/drying** — moderate power (2–3 kW), 1–3 hours, variable timing
+- **Heating (heat pump / resistive)** — sustained seasonal load
+- **Cooling (AC)** — seasonal, daytime
+- **Pool pump** — regular daily schedule, low power
+- **Water heating (immersion)** — high power, short duration
+- **Other** — free-text custom label for anything else
+
+#### Annotation UX
+- On the **History** chart, the user can drag-select a time region and choose a label from the list (or type a custom one). The labelled region is overlaid on the chart with a translucent colour band + label text.
+- Existing labels can be edited (resized, re-labelled, deleted) by clicking on them.
+- The History page already shows time-series lines; annotation overlays extend this with a new `<svg>` / canvas layer aligned to the same time axis.
+
+#### Storage
+A `usage_labels` table (migration M006-1):
+```
+usage_labels(id, device_id, starts_at, ends_at, label, notes, created_at, updated_at)
+```
+Labels reference a device so mixed-brand systems keep annotations scoped. The feature engineering pipeline (M001) joins this table on overlap with each training window to produce the one-hot encoded label features.
+
+#### Model integration
+- During training, each window's overlapping labels become binary features (`has_ev_charging`, `has_cooking`, etc.). The model learns that certain labels correlate with higher load and specific tariff responses.
+- During inference, the user can optionally tell the model "I will charge the EV tomorrow" — setting an expected label for the forecast window via the UI, which the model factors into its suggestion.
+- Over time, the model may also learn to **predict** likely labels from historical patterns (e.g. "every Tuesday at 10pm the EV charges") — a future enhancement.
+
+### Model
+- **Primary model:** `GradientBoostingRegressor` (or `RandomForestRegressor`) from scikit-learn, predicting **net cost per day** given features + candidate settings. These models handle mixed tabular data well, are robust to outliers, and run inference in milliseconds on a Pi.
+- **Alternative:** if the search space is small enough, a **linear model with interaction terms** (e.g. `Ridge` with polynomial features) — simpler, more interpretable, faster to train.
+- **Optimisation at inference:** to propose settings for tomorrow, enumerate a set of plausible timer-slot configurations (discrete options: e.g. target SoC ∈ {20, 40, 60, 80, 100}, grid-charge ∈ {on/off}, slot start ∈ plausible hours), predict cost for each via the trained model, and pick the configuration with the lowest predicted cost. The enumeration space stays manageable by limiting to the user's actual tariff windows and fixing non-optimised slots to the current values.
+- **Fallback:** if no model is trained yet (below the minimum confidence gate on a fresh install), the system degrades gracefully — the existing rule-based automation (L03) continues as before, and the ML preview shows "insufficient data (N of M minimum days)".
+
+### Training pipeline (continuous)
+1. **Trigger:** runs automatically after each persist cycle (new sample data has been written), debounced so rapid successive triggers coalesce into one retrain. Also triggers on-demand via API. Runs as a low-priority background task — never on the hot path.
+2. **Minimum confidence gate:** skip the training run entirely if `count(training_examples) < MIN_TRAINING_DAYS` (default 14, configurable). The model stays in `insufficient_data` status and no inference is attempted.
+3. **Window extraction:** iterate the historical daily rollups + settings audit log to build (features, label) pairs for each complete day where both data and settings are known.
+4. **Incremental or full retrain:** for simplicity, always retrain from scratch on the full history window. Given the small data volume (hundreds to low thousands of days per device), full retrains complete in seconds on a Pi. The previous model is kept as a fallback until the new one passes validation.
+5. **Train/validate split:** hold out the most recent N days (default 7) as a validation set.
+6. **Feature scaling + encoding:** standardise numeric features, one-hot / cyclic-encode time features.
+7. **Train:** fit the regressor.
+8. **Accuracy gate:** after training, check validation-set MAE/R² against the previous model. If the new model is significantly worse (MAE > 1.5× previous), reject the retrain, log a warning, and keep the previous model.
+9. **Persist:** save the trained model + scaler + feature metadata to a versioned file (e.g. `models/v{N}.joblib`), update the active model pointer.
+10. **Accuracy tracking:** record per-version validation metrics (MAE, R², training date, feature count, example count) so the user can see whether the model is improving over retrains.
+
+### Integration with existing automation (§18)
+- The ML model exposes its proposed settings through the same `GET /api/automation/preview` endpoint, alongside rule-based proposals. The preview shows the **ML-suggested** settings, the predicted cost improvement, and a confidence indicator (model validation score).
+- "Apply now" routes through the same existing `POST /api/automation/apply` → `AutomationService.apply()` → `control.apply_settings()` → §12 write-safety path. No new write plumbing.
+- **Dry-run vs. live:** a user-facing toggle (`ml_mode: "dry_run" | "live"`) controls whether the scheduler automatically applies ML proposals. In dry-run mode, ML proposals appear in the preview only; the user must manually trigger apply. In live mode, the scheduler applies them on each tick (alongside any rule-based actions, with priority conflict resolved as documented in §18). Live mode requires `SOLARVOLT_ENABLE_CONTROL` to be on (the existing master write gate) — if control is off, the toggle is forced to dry-run.
+- The user can have both rule-based and ML-based automation enabled; the ML proposal is treated as one additional "rule" (highest priority or a separate slot).
+
+### Dummy-first training
+- The `DummyProfile` already generates realistic, time-of-day-aware synthetic data (§4). Seed a training run against months of dummy data: the pipeline should produce a model that predicts dummy outcomes with reasonable accuracy (the dummy's deterministic behaviour is fully learnable).
+- Tests assert that after training on dummy data, the model's suggestions are at least as good as the default settings (measured by simulated cost).
+- The dummy also accepts writes in-memory, so the full train → suggest → apply → read-back cycle is exercisable without hardware.
+
+### Roadmap
+1. **Data pipeline / feature engineering module** — pure functions to build training examples from storage + settings audit + forecast + usage labels. Includes minimum-confidence gate logic. Testable against deterministic dummy data. (§21 critical — target ≥ 90% coverage.)
+2. **Usage annotation** — `usage_labels` table, REST API, History-chart annotation overlay (drag-select time region → pick label → persist). Backend + frontend + tests.
+3. **Model training (continuous)** — scikit-learn training pipeline, model persistence, versioning, accuracy tracking, accuracy gate (reject regressions), minimum-confidence gate. Triggered on new data and on-demand via API.
+4. **Inference / suggestion engine** — load trained model, enumerate candidate settings, predict best configuration. Respects minimum-confidence gate (no suggestions below threshold). Supports optional "planned usage labels" for the forecast window. Exposed through the existing automation preview endpoint.
+5. **Integration with automation apply path** — dry-run vs. live toggle, ML suggestions appear alongside rule-based proposals with `source: "ml"`; "apply" routes through existing §18/§12 path. Live mode gated behind both the dry-run/live toggle and `SOLARVOLT_ENABLE_CONTROL`.
+5. **Model management UI** — training status, model version, validation metrics, minimum-confidence gate progress bar (e.g. "12 of 14 days"), dry-run/live toggle, and a "train now" trigger in Settings.
+
+---
+
