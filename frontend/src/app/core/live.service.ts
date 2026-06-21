@@ -1,4 +1,5 @@
-import { Injectable, inject, signal } from '@angular/core';
+import { DestroyRef, Injectable, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 import { ApiService } from './api.service';
 import { ConnStatus, Snapshot } from './models';
@@ -9,6 +10,7 @@ import { ConnStatus, Snapshot } from './models';
 @Injectable({ providedIn: 'root' })
 export class LiveService {
   private api = inject(ApiService);
+  private readonly destroyRef = inject(DestroyRef);
 
   readonly snapshot = signal<Snapshot | null>(null);
   readonly status = signal<ConnStatus>('connecting');
@@ -17,6 +19,21 @@ export class LiveService {
   private pollTimer?: ReturnType<typeof setInterval>;
   private reconnectTimer?: ReturnType<typeof setTimeout>;
   private started = false;
+  private destroyed = false;
+
+  constructor() {
+    // Tear down on injector destruction (incl. each TestBed teardown — this is a root service), so a
+    // polling/reconnect timer never fires an HTTP request into a destroyed injection context (NG0205).
+    this.destroyRef.onDestroy(() => {
+      this.destroyed = true;
+      this.stopPolling();
+      if (this.reconnectTimer) {
+        clearTimeout(this.reconnectTimer);
+        this.reconnectTimer = undefined;
+      }
+      this.ws?.close();
+    });
+  }
 
   /** Idempotent — safe to call from multiple components. */
   start(): void {
@@ -54,8 +71,14 @@ export class LiveService {
   }
 
   private startPolling(): void {
-    if (this.pollTimer) return;
-    const poll = () => this.api.getLive().subscribe({ next: (s) => this.snapshot.set(s) });
+    if (this.pollTimer || this.destroyed) return;
+    const poll = () => {
+      if (this.destroyed) return;
+      this.api
+        .getLive()
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe({ next: (s) => this.snapshot.set(s) });
+    };
     poll();
     this.pollTimer = setInterval(poll, 3000);
   }

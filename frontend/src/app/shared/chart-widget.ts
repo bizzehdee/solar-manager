@@ -1,4 +1,5 @@
-import { Component, OnDestroy, OnInit, computed, effect, inject, input, signal } from '@angular/core';
+import { Component, DestroyRef, OnDestroy, OnInit, computed, effect, inject, input, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 import { ApiService } from '../core/api.service';
 import { HistoryPoint } from '../core/models';
@@ -46,6 +47,8 @@ const REFRESH_MS = 30_000;
 })
 export class ChartWidget implements OnInit, OnDestroy {
   private readonly api = inject(ApiService);
+  private readonly destroyRef = inject(DestroyRef);
+  private destroyed = false;
 
   /** Widget config: { metric?, label?, unit?, window?, window_unit?, resolution? }. Also accepts the
    *  legacy history-chart shape ({ resolution, range } in days) for back-compat. */
@@ -101,7 +104,11 @@ export class ChartWidget implements OnInit, OnDestroy {
   readonly windowText = computed(() => `${this.windowValue()} ${this.windowUnit()}`);
 
   constructor() {
-    this.api.getHistoryMetrics().subscribe((res) => this.availableMetrics.set(res.metrics));
+    this.destroyRef.onDestroy(() => (this.destroyed = true));
+    this.api
+      .getHistoryMetrics()
+      .pipe(takeUntilDestroyed())
+      .subscribe((res) => this.availableMetrics.set(res.metrics));
     // Refetch whenever the resolved metric / resolution / window changes (incl. config edits).
     effect(() => this.load());
   }
@@ -115,15 +122,21 @@ export class ChartWidget implements OnInit, OnDestroy {
   }
 
   private load(): void {
+    // Never initiate a request after teardown — a timer/effect firing post-destroy would otherwise
+    // run the HTTP interceptor in a destroyed injection context (NG0205).
+    if (this.destroyed) return;
     const metric = this.metric();
     const resolution = this.resolution();
     const start = Math.floor(Date.now() / 1000) - this.windowSeconds();
     if (!metric) return;
     this.loading.set(true);
-    this.api.getHistory({ metric, resolution, start }).subscribe({
-      next: (res) => (this.points.set(res.points), this.loading.set(false)),
-      error: () => (this.points.set([]), this.loading.set(false)),
-    });
+    this.api
+      .getHistory({ metric, resolution, start })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (res) => (this.points.set(res.points), this.loading.set(false)),
+        error: () => (this.points.set([]), this.loading.set(false)),
+      });
   }
 
   /** Humanise a metric key, e.g. `pv_power_w` → "Pv power". */
