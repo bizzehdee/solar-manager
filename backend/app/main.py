@@ -43,6 +43,7 @@ from .devices.serial_ports import list_serial_ports
 from .devices.yaml_profile import available_profiles
 from .forecast.openmeteo import OpenMeteoClient
 from .forecast.service import ForecastService
+from .derived_stats import DerivedStatsService
 from .persistence import PersistenceService
 from .poller import Poller
 from .stats import StatsService
@@ -114,8 +115,15 @@ async def lifespan(app: FastAPI):
     for device in registry.devices:
         await verify_firmware(device)
 
-    poller = Poller(registry, interval_s=settings.poll_interval_s)
+    # Stats-derived metrics (savings, CO₂, peak PV) — cached off the hot path, merged into each
+    # poll so they appear as canonical metrics (task L16-2). Created before the poller so it can read
+    # the cache; started after so its first refresh has the registry connected.
+    derived_stats = DerivedStatsService(app.state.stats, registry, clock=clock)
+    app.state.derived_stats = derived_stats
+
+    poller = Poller(registry, interval_s=settings.poll_interval_s, derived_provider=derived_stats.values)
     app.state.poller = poller
+    await derived_stats.start()
     await poller.start()
 
     persistence = PersistenceService(
@@ -158,6 +166,7 @@ async def lifespan(app: FastAPI):
         await grid_events.stop()
         await persistence.stop()
         await poller.stop()
+        await derived_stats.stop()
         await registry.close_all()
         await history_repo.close()
 

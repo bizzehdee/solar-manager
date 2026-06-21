@@ -10,19 +10,29 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
+from typing import Callable, Mapping
 
 from .derived import derive_metrics
 from .devices.registry import DeviceRegistry
-from .models import Reading
+from .models import MetricValue, Reading
 
 
 class Poller:
-    def __init__(self, registry: DeviceRegistry, interval_s: float = 3.0) -> None:
+    def __init__(
+        self,
+        registry: DeviceRegistry,
+        interval_s: float = 3.0,
+        *,
+        derived_provider: Callable[[str], Mapping[str, MetricValue]] | None = None,
+    ) -> None:
         self._registry = registry
         self._interval = interval_s
         self._task: asyncio.Task | None = None
         self._latest: dict[str, Reading] = {}
         self._subscribers: set[asyncio.Queue] = set()
+        # Supplies extra derived metrics per device (DB/stats-based; computed off the hot path by
+        # DerivedStatsService — task L16-2). Pure snapshot-derived metrics are added inline below.
+        self._derived_provider = derived_provider
 
     async def start(self) -> None:
         if self._task is None:
@@ -46,8 +56,11 @@ class Poller:
         readings = await self._registry.read_all()
         for r in readings:
             # Augment with derived (calculated) metrics so they flow to both the snapshot and
-            # persistence as ordinary canonical metrics (task L16).
+            # persistence as ordinary canonical metrics (task L16). Pure snapshot-derived ratios
+            # inline; DB/stats-based ones (savings, CO₂, peak) from the cached provider.
             r.metrics.update(derive_metrics(r.metrics))
+            if self._derived_provider is not None:
+                r.metrics.update(self._derived_provider(r.device_id))
             self._latest[r.device_id] = r
         self._broadcast()
         return readings

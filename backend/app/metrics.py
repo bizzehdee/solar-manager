@@ -62,9 +62,14 @@ OPTIONAL_METRICS: frozenset[str] = frozenset(
 # into each Reading by the poller (task L16). Canonical, so charts/cards/gauges treat them uniformly.
 DERIVED_METRICS: frozenset[str] = frozenset(
     {
+        # Snapshot-derived ratios (derived.derive_metrics).
         "self_consumption_pct",
         "self_sufficiency_pct",
         "round_trip_efficiency_pct",
+        # Stats/DB-derived (derived_stats.DerivedStatsService).
+        "savings",
+        "co2_avoided_kg",
+        "peak_pv_w",
     }
 )
 

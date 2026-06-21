@@ -696,7 +696,7 @@ versioned releases.*
     frontend special-casing. They're "running today" values that evolve through the day, so a chart shows
     their intraday build-up. Missing ≠ zero — a derived metric is omitted when its inputs are absent or
     the denominator is 0 (§4).
-  - **L16-1 · Engine: pure energy-ratio metrics** *(no new deps)* — `app/derived.py` `derive_metrics(metrics)`
+  - **L16-1 ✅ done · Engine: pure energy-ratio metrics** *(no new deps)* — `app/derived.py` `derive_metrics(metrics)`
     pure function computing, from the existing `today_*_wh` counters: `self_consumption_pct`
     (= self-consumed PV / PV), `self_sufficiency_pct` (= (load − import) / load), `round_trip_efficiency_pct`
     (= discharge / charge). Reuse `economics.self_consumed_pv_wh`. Add the three keys to
@@ -704,12 +704,17 @@ versioned releases.*
     into each `Reading.metrics` before broadcast/persist. **Done when:** the dummy snapshot and
     `/api/history/metrics` expose the three derived keys, charts plot them, and the pure function is
     unit-tested (ratios, omitted-on-missing-input, zero-denominator). ≥ 90% coverage on `derived.py`.
-  - **L16-2 · Engine: economics + stateful metrics** · Deps: L16-1 — add `savings` and `co2_avoided_kg`
-    (via `economics.compute_economics` on today's energy + the `app_config` tariff/economics config — so
-    the poller/derive step gains access to that config) and `peak_pv_w` (running daily max of
-    `pv_power_w`, reset at local midnight — stateful, kept in the derive layer). **Done when:** these
-    appear as metrics, savings/CO₂ match `/api/stats/daily` for the same day, peak resets daily; tested.
-  - **L16-3 · Frontend: unit hints + retire the bespoke widget** · Deps: L16-1 — `core/metric-units.ts`
+  - **L16-2 ✅ done · Engine: economics + stateful metrics** · Deps: L16-1 — adds `savings`,
+    `co2_avoided_kg`, `peak_pv_w`. Implemented via `app/derived_stats.py` `DerivedStatsService`: a
+    periodic task that reuses `StatsService.daily` (so savings/CO₂ are **TOU-accurate and match
+    `/api/stats/daily`**, and peak = the day's rollup max), caches today's values per device, and the
+    poller merges the cache into each `Reading` off the hot path (`Poller(derived_provider=…)`). Wired
+    into the lifespan (start before poll, stop on shutdown). Keys added to `metrics.DERIVED_METRICS`.
+    Verified end-to-end in `/api/live`. Tests: `test_derived_stats.py` (cache rounding, peak-omitted,
+    poller merge). *(Peak comes from the daily rollup rather than a separate running-max, so it's
+    consistent with stats and survives restarts.)*
+  - **L16-3 · Frontend: unit hints + retire the bespoke widget** · Deps: L16-1 — *(unit hints ✅ done;
+    widget split + `daily-kpis` removal pending)* — `core/metric-units.ts`
     `metricUnit(key)` (suffix heuristic: `_w`→W, `_pct`→%, `_kg`→kg, …) used as the **default unit** in the
     metric-card/gauge/stat-card registry adapters and as the **placeholder** in the editor's unit field, so
     a picked metric carries a sensible unit without typing one (covers existing metrics too). Then **split
