@@ -9,7 +9,7 @@ PY     := $(CURDIR)/$(VENV)/bin/python
 PIP    := $(CURDIR)/$(VENV)/bin/pip
 
 .PHONY: help install install-backend install-frontend dev backend-dev frontend-dev \
-        build test test-backend test-frontend e2e clean
+        build test test-backend test-frontend e2e clean install-service uninstall-service
 
 help:
 	@echo "make install        - venv + backend deps + frontend deps"
@@ -17,6 +17,8 @@ help:
 	@echo "make test           - backend (pytest+cov) + frontend (vitest)"
 	@echo "make build          - production frontend build (served by the backend)"
 	@echo "make e2e            - Playwright end-to-end suite (needs 'make build' first)"
+	@echo "make install-service   - native install: systemd service on this host (needs sudo)"
+	@echo "make uninstall-service - remove the systemd service (needs sudo)"
 
 install: install-backend install-frontend
 
@@ -60,3 +62,11 @@ e2e:
 clean:
 	rm -rf frontend/dist backend/.pytest_cache .pytest_cache backend/.coverage
 	find backend -name __pycache__ -type d -prune -exec rm -rf {} +
+
+# Native production install on this host (Raspberry Pi / Ubuntu) — systemd service that
+# serves the built UI + API on :8000 and survives reboots. See plan.md §13.
+install-service:
+	sudo ./install.sh
+
+uninstall-service:
+	sudo ./uninstall.sh

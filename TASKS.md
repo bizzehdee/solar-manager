@@ -387,10 +387,27 @@ deferred — tracked under "Later — Integrations & notifications" below.*
 relocated here from Phase 0. These matter once running unattended on a Pi or cutting
 versioned releases.*
 
-- [ ] **T019 · Native install path** · Deps: T010, T011
+- [x] **T019 · Native install path** · Deps: T010, T011
   - `systemd` unit (`solarvolt.service`), `install.sh` (venv, frontend build, unit install,
     `dialout` group, udev rule pinning the USB-RS485 adapter), `EnvironmentFile` config,
     `Makefile`. FastAPI serves the built Angular static files (one process/port). *Refs: §13.*
+  - **Done:** in-place installer so `git pull && sudo ./install.sh` upgrades (the venv + frontend
+    build live in the working copy and the unit points back at it). `install.sh` (root) creates the
+    venv + installs `backend/requirements.txt`, builds the frontend, makes `/var/lib/solarvolt` (DB),
+    seeds `/etc/solarvolt/solarvolt.env` from the example (never overwriting it on upgrade), adds the
+    service user to `dialout`, auto-pins a lone USB-serial adapter to `/dev/solarvolt-rs485` via a
+    udev rule, renders + installs the systemd unit, then `enable --now`. Flags: `--user`, `--port`,
+    `--enable-control`, `--no-build` (release bundle), `--check` (root-less dry run), `--help`.
+    `uninstall.sh` removes the service (keeps data/config; `--purge` wipes). Templates under
+    `packaging/` (`systemd/solarvolt.service.tmpl` with light hardening — `NoNewPrivileges`,
+    `ProtectSystem=full`, `ReadWritePaths`; `env/solarvolt.env.example`; `udev/…rules.example`).
+    `make install-service` / `make uninstall-service`. The unit runs `uvicorn app.main:app` from
+    `backend/`, env-file-configured; FastAPI serves `frontend/dist/solarvolt/browser`. Tests:
+    `backend/tests/test_packaging.py` (10) — `bash -n` + shellcheck-when-present, `--help`/`--check`
+    run root-less and change nothing, unknown-flag rejected, systemd/env/udev templates carry the
+    required directives/keys, and **every `@PLACEHOLDER@` in the unit template is substituted by
+    install.sh** (guards against a broken unit shipping literal tokens). README gains a Pi/Ubuntu
+    install section. *Refs: §13.*
 - [-] **T020 · Docker/Compose path (optional)** · Deps: T010, T011
   - Multi-stage `Dockerfile` + `docker-compose.yml`, multi-arch (arm64+amd64), serial
     passthrough, named volume for the DB, same env flags. *Refs: §13.*

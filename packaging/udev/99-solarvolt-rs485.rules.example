@@ -1,0 +1,17 @@
+# Pin the USB-RS485 adapter to a stable device path so it's always
+# /dev/solarvolt-rs485 — not ttyUSB0 on one boot and ttyUSB1 the next.
+#
+# install.sh writes this rule automatically when exactly one USB-serial adapter
+# is plugged in at install time. To do it by hand, find your adapter's IDs:
+#
+#   udevadm info -a -n /dev/ttyUSB0 | grep -E 'idVendor|idProduct|serial'
+#
+# fill them in below, drop this file (without .example) into
+# /etc/udev/rules.d/, then reload:
+#
+#   sudo udevadm control --reload && sudo udevadm trigger
+#
+# If you have several identical adapters, also match ATTRS{serial}=="..." to
+# tell them apart.
+
+SUBSYSTEM=="tty", ATTRS{idVendor}=="@IDVENDOR@", ATTRS{idProduct}=="@IDPRODUCT@", SYMLINK+="solarvolt-rs485", GROUP="dialout", MODE="0660"

@@ -103,6 +103,37 @@ With `SOLARVOLT_MODBUS_PORT` set, the app reads your real inverter instead of th
 dummy. Control/write-back stays **off** unless you explicitly enable it
 (`SOLARVOLT_ENABLE_CONTROL=true`) — the app is monitoring-only by default.
 
+## Install it for good (Raspberry Pi / Ubuntu)
+
+To run SolarVolt unattended — starting on boot and restarting on failure — install it as a
+system service. From a clone on the Pi (fresh Ubuntu is fine):
+
+```sh
+sudo ./install.sh
+```
+
+That one script sets everything up **in place**: a Python virtualenv, a one-time frontend
+build, a `solarvolt` **systemd service** serving the UI + API on **port 8000**, a database
+under `/var/lib/solarvolt/`, serial access (adds you to the `dialout` group) and — if a
+USB-RS485 adapter is plugged in — a **stable `/dev/solarvolt-rs485`** device path so it
+doesn't move between reboots. Prefer to look before you leap? `./install.sh --check` prints
+exactly what it will do and changes nothing.
+
+Then open `http://<your-pi>:8000/`. Settings live in **`/etc/solarvolt/solarvolt.env`** —
+edit it (serial port, control flag, tariff cadence…) and `sudo systemctl restart solarvolt`.
+Your config and database are kept across upgrades.
+
+```sh
+journalctl -u solarvolt -f          # follow the logs
+sudo systemctl restart solarvolt    # after editing the config
+git pull && sudo ./install.sh       # update to a newer version
+sudo ./uninstall.sh                 # remove the service (keeps your data; --purge wipes it)
+```
+
+To turn on inverter write-back, either run `sudo ./install.sh --enable-control` or set
+`SOLARVOLT_ENABLE_CONTROL=true` in the env file and restart. (Docker is a maintained
+alternative — see `plan.md` §13.)
+
 ## Project status
 
 **Early development.** The app is fully usable today on the built-in **dummy** inverter
@@ -117,9 +148,9 @@ default, with validation → confirm → read-back-verify → audit) and the **a
 inbox + Prometheus endpoint** (Phase 7) are all in. **Rule-based automation** (combine
 day/time/metric/tariff conditions to drive inverter settings, with a rule editor and a live "what
 it would do now" panel) is in — preview always, and **opt-in apply** (an "Apply now" button plus a
-background scheduler) once control is enabled. Notification/webhook automation actions, the
-remaining integrations (MQTT/Home Assistant, PVOutput) and extra notification channels are on the
-roadmap (`TASKS.md`).
+background scheduler) once control is enabled. A **native systemd install** for Raspberry Pi /
+Ubuntu (`./install.sh`) is in. Notification/webhook automation actions, the remaining integrations
+(MQTT/Home Assistant, PVOutput) and extra notification channels are on the roadmap (`TASKS.md`).
 
 The forecast fetches weather from Open-Meteo's free public API — the **only** outbound
 request the app makes, and only when the Forecast view/config is used. Everything else
