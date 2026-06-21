@@ -126,8 +126,9 @@ If the deliverable changes what users can do or how they run/install the app, **
     client factory + sleep ⇒ fully unit-tested with no hardware (`test_modbus_rtu.py`, 100%).
 - [x] **T031 · `SunsynkProfile` reading real data** · Deps: T013, T030, T002
   - Drive the SG05LP1 from `sunsynk-8k-sg05lp1.yaml` over RTU; decode the full canonical set. *Refs: §4.*
-  - **Done:** `app/devices/factory.py` pairs `ModbusRtuSource` + `ModbusYamlProfile`;
-    env-driven (`SOLARVOLT_MODBUS_PORT` ⇒ real device, else dummy — see `config.py`).
+  - **Done:** `app/devices/factory.py` pairs `ModbusRtuSource` + `ModbusYamlProfile`. *(Device
+    selection was originally env-driven via `SOLARVOLT_MODBUS_PORT`; superseded by the config-DB +
+    web UI in T047 — that env path has since been removed, fresh DBs seed the dummy.)*
     Canonical `pv_power_w` derived from the per-MPPT powers in `ModbusYamlProfile`.
     Signs now resolved (T002): battery normalized to +charge/−discharge, grid +import/−export.
 - [x] **T032 · Firmware-pin mismatch warning at connect** · Deps: T031

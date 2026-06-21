@@ -95,16 +95,13 @@ inverter. No inverter, no config, no cloud.
 
 ## Connecting a real inverter
 
-Plug a USB-RS485 adapter into the inverter's RS485 port and point the app at it:
+Add your device in the app — **Settings › Devices › Add device**. Pick a connection type
+(Modbus RTU over a USB-RS485 adapter, Modbus TCP, a SolarmanV5 logger, or a Solar Assistant
+MQTT bridge), choose the serial port/host and the model profile, then **Test connection** to
+confirm it responds before saving. Devices are stored in the app's database, so they persist
+and you can add/edit/remove as many as you like — no config files or env vars to set.
 
-```sh
-export SOLARVOLT_MODBUS_PORT=/dev/ttyUSB0   # your adapter
-# optional: SOLARVOLT_MODBUS_BAUD=9600  SOLARVOLT_MODBUS_SLAVE_ID=1
-make dev
-```
-
-With `SOLARVOLT_MODBUS_PORT` set, the app reads your real inverter instead of the
-dummy. Control/write-back stays **off** unless you explicitly enable it
+Control/write-back stays **off** unless you explicitly enable it
 (`SOLARVOLT_ENABLE_CONTROL=true`) — the app is monitoring-only by default.
 
 ## Install it for good (Raspberry Pi / Ubuntu)

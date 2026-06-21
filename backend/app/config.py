@@ -40,19 +40,12 @@ class Settings:
     # changes aren't time-critical and each apply re-reads/writes the inverter, so this is slow.
     automation_interval_s: float = 300.0
 
-    # Real-hardware device (Phase 1). When `modbus_port` is set, the default registry
-    # serves this real inverter over RTU instead of the dummy. Unset ⇒ dummy default,
-    # so a fresh clone still runs with zero hardware (plan.md §13). The full per-device
-    # config DB arrives in Phase 2 (T047); this env path bridges until then.
-    modbus_port: str | None = None
-    modbus_baudrate: int = 9600
-    modbus_slave_id: int = 1
-    modbus_profile: str = "sunsynk-8k-sg05lp1"
-    modbus_device_id: str = "sunsynk"
+    # NOTE: devices (transport, port, profile, …) are configured in the web UI and stored in the
+    # config DB — there is no device env var. A fresh DB seeds the dummy simulator; real devices are
+    # added under Settings › Devices (plan.md §6/§13).
 
     @classmethod
     def from_env(cls) -> "Settings":
-        port = os.environ.get("SOLARVOLT_MODBUS_PORT") or None
         return cls(
             enable_control=_env_bool("SOLARVOLT_ENABLE_CONTROL", False),
             poll_interval_s=float(os.environ.get("SOLARVOLT_POLL_INTERVAL_S", "3.0")),
@@ -62,9 +55,4 @@ class Settings:
             history_retention_days=float(os.environ.get("SOLARVOLT_RETENTION_DAYS", "14.0")),
             alert_interval_s=float(os.environ.get("SOLARVOLT_ALERT_INTERVAL_S", "30.0")),
             automation_interval_s=float(os.environ.get("SOLARVOLT_AUTOMATION_INTERVAL_S", "300.0")),
-            modbus_port=port,
-            modbus_baudrate=int(os.environ.get("SOLARVOLT_MODBUS_BAUD", "9600")),
-            modbus_slave_id=int(os.environ.get("SOLARVOLT_MODBUS_SLAVE_ID", "1")),
-            modbus_profile=os.environ.get("SOLARVOLT_MODBUS_PROFILE", "sunsynk-8k-sg05lp1"),
-            modbus_device_id=os.environ.get("SOLARVOLT_MODBUS_DEVICE_ID", "sunsynk"),
         )

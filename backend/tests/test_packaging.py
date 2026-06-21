@@ -104,9 +104,10 @@ def test_env_example_documents_core_config_keys():
         "SOLARVOLT_ENABLE_CONTROL",
         "SOLARVOLT_DB_PATH",
         "SOLARVOLT_POLL_INTERVAL_S",
-        "SOLARVOLT_MODBUS_PORT",
     ):
         assert key in text, f"env example missing {key}"
+    # Devices are configured in the UI now — no device env vars in the example.
+    assert "SOLARVOLT_MODBUS" not in text
     # Safe defaults: control off, DB outside the app dir.
     assert "SOLARVOLT_ENABLE_CONTROL=false" in text
     assert "/var/lib/solarvolt" in text

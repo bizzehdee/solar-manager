@@ -124,12 +124,10 @@ def _parse_time(value: str | None, default: float) -> float:
     return dt.timestamp()
 
 
-async def _seed_and_build_registry(
-    config_repo: DeviceConfigRepository, settings: Settings, clock
-) -> DeviceRegistry:
-    """Build the registry from the config DB, seeding it with defaults on first run."""
+async def _seed_and_build_registry(config_repo: DeviceConfigRepository, clock) -> DeviceRegistry:
+    """Build the registry from the config DB, seeding it with the dummy on first run."""
     if await config_repo.count() == 0:
-        for row in default_device_configs(settings):
+        for row in default_device_configs():
             await config_repo.create(row)
     rows = await config_repo.list()
     return build_registry_from_configs(rows, clock=clock)
@@ -154,7 +152,7 @@ async def lifespan(app: FastAPI):
     app.state.forecast = ForecastService(history_repo, app_config, weather)
 
     if app.state.registry is None:
-        app.state.registry = await _seed_and_build_registry(config_repo, settings, clock)
+        app.state.registry = await _seed_and_build_registry(config_repo, clock)
     registry: DeviceRegistry = app.state.registry
 
     await registry.connect_all()

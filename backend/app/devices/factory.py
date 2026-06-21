@@ -1,10 +1,9 @@
-"""Building real devices from configuration (plan.md §4; tasks T030/T031).
+"""Building devices from configuration (plan.md §4; tasks T030/T031/T047).
 
-Phase 1 has no device-config DB yet (that lands in Phase 2, T047), so a real inverter
-is wired from environment variables: set `SOLARVOLT_MODBUS_PORT` and the default
-registry serves a real Sunsynk over RTU instead of the dummy. With nothing set, the
-dummy remains the default — a fresh clone still gives a live synthetic dashboard with
-zero hardware (plan.md §13).
+Devices live in the config DB and are managed in the web UI (Settings › Devices). On first run
+the DB is seeded with the **dummy** simulator, so a fresh clone gives a live synthetic dashboard
+with zero hardware (plan.md §13); real devices (Modbus RTU/TCP, SolarmanV5, Solar Assistant MQTT)
+are then added through the UI. `build_device_from_config` turns one stored row into a `Device`.
 """
 
 from __future__ import annotations
@@ -72,46 +71,9 @@ def build_dummy_device(device_id: str = "dummy", *, clock=system_clock) -> Devic
     return Device(device_id, NullTransport(), DummyProfile(clock=clock), clock=clock)
 
 
-def build_registry_from_settings(settings, *, clock=system_clock) -> DeviceRegistry:
-    """The default registry: a real RTU device when a Modbus port is configured,
-    otherwise the dummy inverter (plan.md §4/§13)."""
-    registry = DeviceRegistry()
-    if getattr(settings, "modbus_port", None):
-        registry.add(
-            build_modbus_device(
-                settings.modbus_device_id,
-                settings.modbus_profile,
-                ModbusRtuConfig(
-                    port=settings.modbus_port,
-                    baudrate=settings.modbus_baudrate,
-                    slave_id=settings.modbus_slave_id,
-                ),
-                clock=clock,
-            )
-        )
-    else:
-        registry.add(build_dummy_device(clock=clock))
-    return registry
-
-
-def default_device_configs(settings) -> list[dict]:
-    """The rows to seed an empty config DB with — mirrors `build_registry_from_settings`:
-    a real RTU device when a Modbus port is set, else the dummy (plan.md §4/§13/§47)."""
-    if getattr(settings, "modbus_port", None):
-        return [{
-            "id": settings.modbus_device_id,
-            "name": f"{settings.modbus_profile}",
-            "vendor": "sunsynk",
-            "profile": settings.modbus_profile,
-            "transport": "modbus_rtu",
-            "params": {
-                "port": settings.modbus_port,
-                "baudrate": settings.modbus_baudrate,
-                "slave_id": settings.modbus_slave_id,
-            },
-            "bms_topology": "inverter",
-            "enabled": True,
-        }]
+def default_device_configs() -> list[dict]:
+    """The rows to seed an empty config DB with: the dummy simulator, so a fresh install gives a
+    live synthetic dashboard with zero hardware. Real devices are added via the UI (plan.md §6/§13)."""
     return [{
         "id": "dummy", "name": "Simulated Inverter", "vendor": "dummy",
         "profile": "", "transport": "dummy", "params": {},
