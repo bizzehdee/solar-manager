@@ -101,6 +101,7 @@ export class TimeSeriesChart {
         borderColor: c,
         backgroundColor: this.kind() === 'bar' || stacked ? (stacked ? this.alpha(c) : c) : this.alpha(c),
         pointRadius: 0,
+        pointHoverRadius: 4, // a marker appears under the cursor on hover
         borderWidth: 2,
         fill: stacked,
         tension: 0.2,
@@ -125,6 +126,7 @@ export class TimeSeriesChart {
         borderColor: c,
         backgroundColor: this.kind() === 'bar' ? c : this.alpha(c),
         pointRadius: 0,
+        pointHoverRadius: 4,
         borderWidth: 2,
         fill: this.kind() === 'line',
         tension: 0.2,
@@ -161,6 +163,9 @@ export class TimeSeriesChart {
       responsive: true,
       maintainAspectRatio: false,
       animation: false,
+      // Hover anywhere along the x to read the value(s) at that point — the lines have no visible
+      // dots, so the default "must hover exactly on a point" interaction would rarely trigger.
+      interaction: { mode: 'index', intersect: false },
       plugins: {
         legend: { display: showLegend },
         tooltip: {

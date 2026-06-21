@@ -116,6 +116,17 @@ describe('TimeSeriesChart', () => {
     expect((fixture.componentInstance.data().datasets[0] as { fill?: boolean }).fill).toBe(true);
   });
 
+  it('uses index-mode interaction so hovering anywhere on the line shows the value', () => {
+    const fixture = TestBed.createComponent(TimeSeriesChart);
+    fixture.componentRef.setInput('points', [{ ts: 1, value: 100 }] as HistoryPoint[]);
+    fixture.componentRef.setInput('label', 'PV power');
+    fixture.detectChanges();
+    const opts = fixture.componentInstance.options() as { interaction?: { mode?: string; intersect?: boolean } };
+    expect(opts.interaction).toEqual({ mode: 'index', intersect: false });
+    // A hover marker is shown even though the line has no static points.
+    expect((fixture.componentInstance.data().datasets[0] as { pointHoverRadius?: number }).pointHoverRadius).toBe(4);
+  });
+
   it('renders a single dataset and no y1 axis without an overlay', () => {
     const fixture = TestBed.createComponent(TimeSeriesChart);
     fixture.componentRef.setInput('points', [{ ts: 1, value: 100 }] as HistoryPoint[]);
