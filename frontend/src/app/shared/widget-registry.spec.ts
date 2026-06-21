@@ -10,7 +10,7 @@ describe('WIDGET_REGISTRY', () => {
   it('declares every L06 widget type with complete sizing metadata', () => {
     const expected = [
       'header', 'energy-flow', 'metric-gauge', 'metric-card', 'stat-card', 'time-series-chart',
-      'daily-kpis', 'history-chart',
+      'history-chart',
     ];
     expect(Object.keys(WIDGET_REGISTRY).sort()).toEqual([...expected].sort());
     for (const def of Object.values(WIDGET_REGISTRY)) {

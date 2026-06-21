@@ -56,7 +56,14 @@ _HISTORY: dict[str, Any] = {
     "name": "History",
     "builtin": True,
     "widgets": [
-        _widget("daily-kpis", 0, 0, 12, 2),
+        # Today's derived KPIs as individual metric-cards (the KPIs are first-class metrics now —
+        # task L16). Units auto-fill from the metric suffix; savings has none (currency varies).
+        _widget("metric-card", 0, 0, 2, 2, {"metric": "self_consumption_pct", "label": "Self-consumption", "icon": "bi-pie-chart", "role": "success"}),
+        _widget("metric-card", 2, 0, 2, 2, {"metric": "self_sufficiency_pct", "label": "Self-sufficiency", "icon": "bi-house-check", "role": "primary"}),
+        _widget("metric-card", 4, 0, 2, 2, {"metric": "savings", "label": "Savings today", "icon": "bi-piggy-bank", "role": "success"}),
+        _widget("metric-card", 6, 0, 2, 2, {"metric": "co2_avoided_kg", "label": "CO₂ avoided", "icon": "bi-leaf", "role": "success"}),
+        _widget("metric-card", 8, 0, 2, 2, {"metric": "peak_pv_w", "label": "Peak PV", "icon": "bi-sun", "role": "warning"}),
+        _widget("metric-card", 10, 0, 2, 2, {"metric": "round_trip_efficiency_pct", "label": "Round-trip eff.", "icon": "bi-arrow-repeat", "role": "info"}),
         _widget("history-chart", 0, 2, 12, 6, {"metric": "pv_power_w", "resolution": "1h", "range": 1}),
     ],
 }

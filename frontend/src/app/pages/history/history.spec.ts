@@ -10,12 +10,12 @@ const historyConfig: DashboardConfig = {
   name: 'History',
   builtin: true,
   widgets: [
-    { type: 'daily-kpis', x: 0, y: 0, w: 12, h: 2, config: {} },
+    { type: 'metric-card', x: 0, y: 0, w: 2, h: 2, config: { metric: 'self_consumption_pct', label: 'Self-consumption' } },
     { type: 'history-chart', x: 0, y: 2, w: 12, h: 6, config: { metric: 'pv_power_w', resolution: '1h', range: 1 } },
   ],
 };
 
-// The host instantiates the real child widgets (daily-kpis, history-chart), so stub the API calls
+// The host instantiates the real child widgets (metric-card, history-chart), so stub the API calls
 // they make. The history-chart is config-driven (its config has a metric), so it also fetches
 // history on init.
 const fakeApi = {

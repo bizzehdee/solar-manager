@@ -1,6 +1,7 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 
 import { ApiService } from '../../core/api.service';
+import { DashboardDataService } from '../../core/dashboard-data.service';
 import { DashboardConfig } from '../../core/models';
 import { DashboardHost } from '../../shared/dashboard-host';
 
@@ -12,7 +13,8 @@ import { DashboardHost } from '../../shared/dashboard-host';
   imports: [DashboardHost],
   template: `
     @if (dashboard(); as d) {
-      <app-dashboard-host [dashboard]="d" [canReset]="true" (reset)="reset()" (layoutSaved)="onSaved(d, $event)">
+      <app-dashboard-host [dashboard]="d" [data]="data.data()" [canReset]="true"
+                          (reset)="reset()" (layoutSaved)="onSaved(d, $event)">
         <h4 dashTitle class="mb-0"><i class="bi bi-graph-up"></i> History</h4>
       </app-dashboard-host>
     } @else {
@@ -22,6 +24,7 @@ import { DashboardHost } from '../../shared/dashboard-host';
 })
 export class HistoryPage implements OnInit {
   private readonly api = inject(ApiService);
+  protected readonly data = inject(DashboardDataService);
 
   /** The "history" built-in dashboard layout, loaded from the API. */
   readonly dashboard = signal<DashboardConfig | null>(null);

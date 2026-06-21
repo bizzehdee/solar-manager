@@ -686,7 +686,7 @@ versioned releases.*
     *Gotcha logged:* Angular's per-property style bindings (`[style.offset-path]`, `[style.--ep]`)
     silently no-op on these SVG `<path>` nodes — the offset-path must be written via `[attr.style]`.
 
-- [ ] **L16 · Derived (calculated) metrics as first-class canonical metrics** · Deps: T043, T051
+- [x] **L16 · Derived (calculated) metrics as first-class canonical metrics** · Deps: T043, T051
   - **Why:** the daily KPIs (self-consumption %, self-sufficiency %, round-trip efficiency, savings,
     CO₂ avoided, peak PV) should be usable *anywhere a metric is* — metric-cards, gauges, and
     time-series charts — not locked inside the bespoke `daily-kpis` widget. The clean way (chosen over a
@@ -713,8 +713,7 @@ versioned releases.*
     Verified end-to-end in `/api/live`. Tests: `test_derived_stats.py` (cache rounding, peak-omitted,
     poller merge). *(Peak comes from the daily rollup rather than a separate running-max, so it's
     consistent with stats and survives restarts.)*
-  - **L16-3 · Frontend: unit hints + retire the bespoke widget** · Deps: L16-1 — *(unit hints ✅ done;
-    widget split + `daily-kpis` removal pending)* — `core/metric-units.ts`
+  - **L16-3 ✅ done · Frontend: unit hints + retire the bespoke widget** · Deps: L16-1 — `core/metric-units.ts`
     `metricUnit(key)` (suffix heuristic: `_w`→W, `_pct`→%, `_kg`→kg, …) used as the **default unit** in the
     metric-card/gauge/stat-card registry adapters and as the **placeholder** in the editor's unit field, so
     a picked metric carries a sensible unit without typing one (covers existing metrics too). Then **split

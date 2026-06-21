@@ -94,7 +94,11 @@ def test_get_builtin_history_layout():
         hist = client.get("/api/dashboards/history").json()
         assert hist["builtin"] is True
         types = [w["type"] for w in hist["widgets"]]
-        assert types == ["daily-kpis", "history-chart"]
+        # Individual KPI metric-cards (L16) above the history chart.
+        assert types[-1] == "history-chart"
+        assert types.count("metric-card") == 6
+        metrics = {w["config"].get("metric") for w in hist["widgets"]}
+        assert {"self_consumption_pct", "savings", "peak_pv_w", "round_trip_efficiency_pct"} <= metrics
 
 
 def test_get_unknown_is_404():
