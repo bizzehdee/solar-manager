@@ -408,9 +408,24 @@ versioned releases.*
     required directives/keys, and **every `@PLACEHOLDER@` in the unit template is substituted by
     install.sh** (guards against a broken unit shipping literal tokens). README gains a Pi/Ubuntu
     install section. *Refs: §13.*
-- [-] **T020 · Docker/Compose path (optional)** · Deps: T010, T011
+- [x] **T020 · Docker/Compose path (optional)** · Deps: T010, T011
   - Multi-stage `Dockerfile` + `docker-compose.yml`, multi-arch (arm64+amd64), serial
     passthrough, named volume for the DB, same env flags. *Refs: §13.*
+  - **Done:** multi-stage `Dockerfile` — `node:22` builds the Angular UI, `python:3.12-slim` runs
+    it; on-disk layout mirrors the repo (`/app/backend`, `/app/profiles`,
+    `/app/frontend/dist/solarvolt/browser`) so `main.py`/`yaml_profile.py` path resolution works
+    unchanged. Runs as a non-root `solarvolt` user, `EXPOSE 8000`, stdlib `HEALTHCHECK` on
+    `/api/health`, `CMD uvicorn app.main:app`. Both base images are multi-arch → `docker buildx
+    --platform linux/amd64,linux/arm64` (the release workflow T022 will push to GHCR). `docker-compose.yml`:
+    one `solarvolt` service (build or pull `ghcr.io/bizzehdee/solarvolt`), `8000:8000`, named
+    `solarvolt-data:/data` volume for the SQLite DB, `SOLARVOLT_DB_PATH=/data/solarvolt.db`,
+    control off by default, commented serial-passthrough (`devices:` + `group_add: dialout`) and
+    `env_file` options — same env config surface as the native install. `.dockerignore` keeps the
+    build context lean. **Verified by an actual build + run**: image builds, container goes healthy,
+    `/` serves the SPA, `/api/live` streams dummy data, `/api/profiles` resolves. Tests:
+    `test_packaging.py` extended (Dockerfile multi-stage + layout + non-root + healthcheck; compose
+    service/volume/port/env; `docker compose config` validates when Docker is present; hadolint
+    when present). README gains a Docker note. *Refs: §13.*
 - [ ] **T022 · Tag-triggered release workflow → GitHub Releases** · Deps: T021, T019
   - `.github/workflows/release.yml` triggers on `push` of tags matching **`version/*`**
     (e.g. `version/1.0`). Parses **`x.y`** from the tag as the single source of truth.

@@ -131,8 +131,21 @@ sudo ./uninstall.sh                 # remove the service (keeps your data; --pur
 ```
 
 To turn on inverter write-back, either run `sudo ./install.sh --enable-control` or set
-`SOLARVOLT_ENABLE_CONTROL=true` in the env file and restart. (Docker is a maintained
-alternative — see `plan.md` §13.)
+`SOLARVOLT_ENABLE_CONTROL=true` in the env file and restart.
+
+### Prefer Docker?
+
+A maintained Compose path is included:
+
+```sh
+docker compose up -d            # build + run on :8000
+docker compose logs -f
+```
+
+The single container serves the UI + API; the database persists in a named volume. Edit the
+environment in `docker-compose.yml` (same `SOLARVOLT_*` variables), and uncomment the `devices:` /
+`group_add:` lines to pass a USB-RS485 adapter through to a real inverter. The image is multi-arch
+(arm64 + amd64), so it runs on a Pi or an x86 box.
 
 ## Project status
 
@@ -148,9 +161,10 @@ default, with validation → confirm → read-back-verify → audit) and the **a
 inbox + Prometheus endpoint** (Phase 7) are all in. **Rule-based automation** (combine
 day/time/metric/tariff conditions to drive inverter settings, with a rule editor and a live "what
 it would do now" panel) is in — preview always, and **opt-in apply** (an "Apply now" button plus a
-background scheduler) once control is enabled. A **native systemd install** for Raspberry Pi /
-Ubuntu (`./install.sh`) is in. Notification/webhook automation actions, the remaining integrations
-(MQTT/Home Assistant, PVOutput) and extra notification channels are on the roadmap (`TASKS.md`).
+background scheduler) once control is enabled. Both deployment paths are in — a **native systemd
+install** for Raspberry Pi / Ubuntu (`./install.sh`) and a **Docker/Compose** path. Notification/webhook
+automation actions, the remaining integrations (MQTT/Home Assistant, PVOutput) and extra notification
+channels are on the roadmap (`TASKS.md`).
 
 The forecast fetches weather from Open-Meteo's free public API — the **only** outbound
 request the app makes, and only when the Forecast view/config is used. Everything else

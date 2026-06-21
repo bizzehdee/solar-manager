@@ -1,0 +1,43 @@
+# SolarVolt — Docker Compose (plan.md §13, task T020). The maintained alternative to the
+# native install. Same single container serves API + UI on :8000, same env config surface.
+#
+#   docker compose up -d            # build + run in the background
+#   docker compose logs -f          # follow logs
+#   docker compose pull && up -d    # update (when using the published GHCR image)
+#
+# Data lives in the named volume `solarvolt-data` (the SQLite DB), so it survives rebuilds.
+
+services:
+  solarvolt:
+    build: .
+    # Or skip the build and pull the published multi-arch image instead:
+    image: ghcr.io/bizzehdee/solarvolt:latest
+    container_name: solarvolt
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - solarvolt-data:/data
+    environment:
+      # One config surface, identical to the native install's EnvironmentFile.
+      SOLARVOLT_DB_PATH: /data/solarvolt.db
+      SOLARVOLT_ENABLE_CONTROL: "false"   # write-back off by default (monitoring only)
+      # Point at a real inverter (uncomment, and pass the device through below):
+      # SOLARVOLT_MODBUS_PORT: /dev/ttyUSB0
+      # SOLARVOLT_MODBUS_BAUD: "9600"
+      # SOLARVOLT_MODBUS_SLAVE_ID: "1"
+      # SOLARVOLT_MODBUS_PROFILE: sunsynk-8k-sg05lp1
+    # Prefer a file? Drop a copy of packaging/env/solarvolt.env.example next to this file as
+    # `.env` and uncomment:
+    # env_file: .env
+
+    # ── Real inverter over USB-RS485 ──────────────────────────────────────────
+    # Pass the serial adapter through and give the container access to it. `dialout` is gid 20
+    # on Debian/Ubuntu hosts; check yours with `getent group dialout` and adjust if different.
+    # devices:
+    #   - "/dev/ttyUSB0:/dev/ttyUSB0"
+    # group_add:
+    #   - "20"
+
+volumes:
+  solarvolt-data:

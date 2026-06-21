@@ -1,0 +1,27 @@
+# Keep the build context small + reproducible — let the image build deps itself.
+.git
+.github
+.venv
+**/node_modules
+**/dist
+**/__pycache__
+**/*.py[cod]
+.pytest_cache
+**/.pytest_cache
+.coverage
+htmlcov
+
+# Runtime data / local DBs (never bake these into an image)
+*.db
+*.db-wal
+*.db-shm
+
+# Tests / dev-only trees not needed at runtime
+e2e
+backend/tests
+tools/regscan-output
+
+# Editor / OS
+.vscode
+.claude
+.DS_Store
