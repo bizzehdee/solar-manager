@@ -35,7 +35,7 @@ word_order: low_first
 # raw registers -> normalized canonical metrics (plan.md §4).
 metrics:
   # ── battery (reported via the inverter's BMS link) ──
-  battery_soc_pct:          { addr: 184, type: u16 }
+  battery_soc_pct:          { addr: 184, type: u16 }  # Sunsynk API labels this "BatteryEnergy(Ah)" but value is % (tracks bms_soc_pct [316] and DeyeBat [10005]; 44% ≠ 44 Ah on a 312 Ah bank)
   battery_voltage_v:        { addr: 183, type: u16, scale: 0.01 }
   battery_current_a:        { addr: 191, type: s16, scale: -0.01 }  # +charge/-discharge (raw is s16 +discharge; negated to normalize)
   battery_power_w:          { addr: 190, type: s16, scale: -1 }      # +charge/-discharge (raw is s16 +discharge; negated to normalize)
@@ -69,11 +69,15 @@ metrics:
   grid_connected:           { addr: 194, type: u16 }              # 1 = on-grid
   # Canonical run-state derived from the grid-connection register (plan.md §4/§16).
   run_state:                { addr: 194, type: enum, values: { 0: off_grid, 1: on_grid } }
+  alternator_status:        { addr: 195, type: u16 }              # gen/alternator; observed 16 when not connected
 
   # ── faults / alarms (plan.md §16) ──
   # 4×16-bit fault bitfield -> Sunsynk F01..F64 codes (active bits, low word first).
   # The F-number convention is standard; the per-bit meaning is verified against the screen.
   inverter_fault_codes:     { addr: [103, 104, 105, 106], type: bits, bit_prefix: "F" }
+  # 2×16-bit warning bitfield at 101-102; mirrors fault layout but for advisory warnings.
+  # Bit-to-message mapping is firmware-dependent; all active bits are surfaced as W01..W32.
+  inverter_warning_codes:   { addr: [101, 102], type: bits, bit_prefix: "W" }
 
   # ── BMS link (registers 312–319, from manufacturer table) ──
   # 314 is confirmed accessible on SYNK-8K-SG05LP1 (CAN BMS). Observed to taper
@@ -87,6 +91,259 @@ metrics:
   bms_battery_voltage_v:     { addr: 317, type: u16, scale: 0.01 }   # BMS reported pack voltage (confirmed 54.60 V, 2026-06-20)
   bms_battery_current_a:     { addr: 318, type: s16, scale: 0.1 }    # BMS reported current (sign TBC — read 0 A while idle)
   bms_battery_temp_c:        { addr: 319, type: u16, scale: 0.1, offset: -100 }  # BMS temp (confirmed 25.0°C, 2026-06-20)
+
+  # ── Deye BMS CAN link — aggregate (registers 10000–10022) ──
+  # The inverter's CAN-bus view of the whole battery bank, reported by the BMS.
+  # Scale assumptions are inferred from decoded API values — ALL marked TBC until
+  # verified against a raw scan. Use:
+  #   regscan.py dump --profile profiles/deye-base.yaml --port /dev/ttyUSB0 \
+  #     --section bms_can --interval 10 --out bms-raw.csv
+  bms_pack_count:             { addr: 10002, type: u16 }                        # number of installed packs (observed 3)
+  bms_can_voltage_v:          { addr: 10003, type: u16, scale: 0.1 }            # TBC: 531 raw -> 53.1 V?
+  bms_can_current_a:          { addr: 10004, type: s16 }                        # TBC: -19 raw -> -19 A (int amps)?
+  bms_can_soc_pct:            { addr: 10005, type: u16 }                        # observed 44; scale 1 assumed
+  bms_can_soh_pct:            { addr: 10006, type: u16 }                        # observed 100; scale 1 assumed
+  bms_can_temp_c:             { addr: 10008, type: s16, scale: 0.1 }            # TBC: 270 raw -> 27.0°C? (direct, no +100 offset)
+  bms_can_charge_voltage_v:   { addr: 10009, type: u16, scale: 0.1 }            # TBC: 584 raw -> 58.4 V?
+  bms_can_charge_limit_a:     { addr: 10013, type: u16 }                        # TBC: 300 raw -> 300 A?
+  bms_can_discharge_limit_a:  { addr: 10014, type: u16 }
+  bms_can_fault1:             { addr: 10019, type: u16 }
+  bms_can_fault2:             { addr: 10020, type: u16 }
+  bms_can_alarm1:             { addr: 10021, type: u16 }
+  bms_can_alarm2:             { addr: 10022, type: u16 }
+
+  # ── Deye BMS CAN link — per-pack (stride 38; up to 22 packs) ──
+  # base_addr = 10032 + (pack_number - 1) × 38
+  # Offsets within each block:  +8 voltage  +9 current  +10 temp_avg
+  #   +15 soc  +16 soh  +22 max_cell  +23 min_cell  +24 cycle_count
+  # Scale assumptions (TBC vs raw scan — use `regscan.py dump --profile ...`):
+  #   voltage    u16 × 0.1   (531  → 53.1 V)
+  #   current    s16 × 0.1   (-66  → -6.6 A)   sign TBC
+  #   temp       s16 × 0.1   (275  → 27.5 °C)  direct °C, NOT the +100 offset
+  #   soc/soh    u16 × 0.1   (436  → 43.6 %)
+  #   cell_v     u16 × 0.001 (3327 → 3.327 V)
+  #   cycles     u16         (21   → 21)
+  # Inactive packs (> bms_pack_count) return 0 / -100°C; poller skips them.
+
+  # Pack 1  (serial 10032–10039)
+  pack1_voltage_v:            { addr: 10040, type: u16, scale: 0.1 }
+  pack1_current_a:            { addr: 10041, type: s16, scale: 0.1 }
+  pack1_temp_c:               { addr: 10042, type: s16, scale: 0.1 }
+  pack1_soc_pct:              { addr: 10047, type: u16, scale: 0.1 }
+  pack1_soh_pct:              { addr: 10048, type: u16, scale: 0.1 }
+  pack1_max_cell_v:           { addr: 10054, type: u16, scale: 0.001 }
+  pack1_min_cell_v:           { addr: 10055, type: u16, scale: 0.001 }
+  pack1_cycle_count:          { addr: 10056, type: u16 }
+
+  # Pack 2  (serial 10070–10077)
+  pack2_voltage_v:            { addr: 10078, type: u16, scale: 0.1 }
+  pack2_current_a:            { addr: 10079, type: s16, scale: 0.1 }
+  pack2_temp_c:               { addr: 10080, type: s16, scale: 0.1 }
+  pack2_soc_pct:              { addr: 10085, type: u16, scale: 0.1 }
+  pack2_soh_pct:              { addr: 10086, type: u16, scale: 0.1 }
+  pack2_max_cell_v:           { addr: 10092, type: u16, scale: 0.001 }
+  pack2_min_cell_v:           { addr: 10093, type: u16, scale: 0.001 }
+  pack2_cycle_count:          { addr: 10094, type: u16 }
+
+  # Pack 3  (serial 10108–10115)
+  pack3_voltage_v:            { addr: 10116, type: u16, scale: 0.1 }
+  pack3_current_a:            { addr: 10117, type: s16, scale: 0.1 }
+  pack3_temp_c:               { addr: 10118, type: s16, scale: 0.1 }
+  pack3_soc_pct:              { addr: 10123, type: u16, scale: 0.1 }
+  pack3_soh_pct:              { addr: 10124, type: u16, scale: 0.1 }
+  pack3_max_cell_v:           { addr: 10130, type: u16, scale: 0.001 }
+  pack3_min_cell_v:           { addr: 10131, type: u16, scale: 0.001 }
+  pack3_cycle_count:          { addr: 10132, type: u16 }
+
+  # Pack 4  (serial 10146–10153)
+  pack4_voltage_v:            { addr: 10154, type: u16, scale: 0.1 }
+  pack4_current_a:            { addr: 10155, type: s16, scale: 0.1 }
+  pack4_temp_c:               { addr: 10156, type: s16, scale: 0.1 }
+  pack4_soc_pct:              { addr: 10161, type: u16, scale: 0.1 }
+  pack4_soh_pct:              { addr: 10162, type: u16, scale: 0.1 }
+  pack4_max_cell_v:           { addr: 10168, type: u16, scale: 0.001 }
+  pack4_min_cell_v:           { addr: 10169, type: u16, scale: 0.001 }
+  pack4_cycle_count:          { addr: 10170, type: u16 }
+
+  # Pack 5  (serial 10184–10191)
+  pack5_voltage_v:            { addr: 10192, type: u16, scale: 0.1 }
+  pack5_current_a:            { addr: 10193, type: s16, scale: 0.1 }
+  pack5_temp_c:               { addr: 10194, type: s16, scale: 0.1 }
+  pack5_soc_pct:              { addr: 10199, type: u16, scale: 0.1 }
+  pack5_soh_pct:              { addr: 10200, type: u16, scale: 0.1 }
+  pack5_max_cell_v:           { addr: 10206, type: u16, scale: 0.001 }
+  pack5_min_cell_v:           { addr: 10207, type: u16, scale: 0.001 }
+  pack5_cycle_count:          { addr: 10208, type: u16 }
+
+  # Pack 6  (serial 10222–10229)
+  pack6_voltage_v:            { addr: 10230, type: u16, scale: 0.1 }
+  pack6_current_a:            { addr: 10231, type: s16, scale: 0.1 }
+  pack6_temp_c:               { addr: 10232, type: s16, scale: 0.1 }
+  pack6_soc_pct:              { addr: 10237, type: u16, scale: 0.1 }
+  pack6_soh_pct:              { addr: 10238, type: u16, scale: 0.1 }
+  pack6_max_cell_v:           { addr: 10244, type: u16, scale: 0.001 }
+  pack6_min_cell_v:           { addr: 10245, type: u16, scale: 0.001 }
+  pack6_cycle_count:          { addr: 10246, type: u16 }
+
+  # Pack 7  (serial 10260–10267)
+  pack7_voltage_v:            { addr: 10268, type: u16, scale: 0.1 }
+  pack7_current_a:            { addr: 10269, type: s16, scale: 0.1 }
+  pack7_temp_c:               { addr: 10270, type: s16, scale: 0.1 }
+  pack7_soc_pct:              { addr: 10275, type: u16, scale: 0.1 }
+  pack7_soh_pct:              { addr: 10276, type: u16, scale: 0.1 }
+  pack7_max_cell_v:           { addr: 10282, type: u16, scale: 0.001 }
+  pack7_min_cell_v:           { addr: 10283, type: u16, scale: 0.001 }
+  pack7_cycle_count:          { addr: 10284, type: u16 }
+
+  # Pack 8  (serial 10298–10305)
+  pack8_voltage_v:            { addr: 10306, type: u16, scale: 0.1 }
+  pack8_current_a:            { addr: 10307, type: s16, scale: 0.1 }
+  pack8_temp_c:               { addr: 10308, type: s16, scale: 0.1 }
+  pack8_soc_pct:              { addr: 10313, type: u16, scale: 0.1 }
+  pack8_soh_pct:              { addr: 10314, type: u16, scale: 0.1 }
+  pack8_max_cell_v:           { addr: 10320, type: u16, scale: 0.001 }
+  pack8_min_cell_v:           { addr: 10321, type: u16, scale: 0.001 }
+  pack8_cycle_count:          { addr: 10322, type: u16 }
+
+  # Pack 9  (serial 10336–10343)
+  pack9_voltage_v:            { addr: 10344, type: u16, scale: 0.1 }
+  pack9_current_a:            { addr: 10345, type: s16, scale: 0.1 }
+  pack9_temp_c:               { addr: 10346, type: s16, scale: 0.1 }
+  pack9_soc_pct:              { addr: 10351, type: u16, scale: 0.1 }
+  pack9_soh_pct:              { addr: 10352, type: u16, scale: 0.1 }
+  pack9_max_cell_v:           { addr: 10358, type: u16, scale: 0.001 }
+  pack9_min_cell_v:           { addr: 10359, type: u16, scale: 0.001 }
+  pack9_cycle_count:          { addr: 10360, type: u16 }
+
+  # Pack 10  (serial 10374–10381)
+  pack10_voltage_v:           { addr: 10382, type: u16, scale: 0.1 }
+  pack10_current_a:           { addr: 10383, type: s16, scale: 0.1 }
+  pack10_temp_c:              { addr: 10384, type: s16, scale: 0.1 }
+  pack10_soc_pct:             { addr: 10389, type: u16, scale: 0.1 }
+  pack10_soh_pct:             { addr: 10390, type: u16, scale: 0.1 }
+  pack10_max_cell_v:          { addr: 10396, type: u16, scale: 0.001 }
+  pack10_min_cell_v:          { addr: 10397, type: u16, scale: 0.001 }
+  pack10_cycle_count:         { addr: 10398, type: u16 }
+
+  # Pack 11  (serial 10412–10419)
+  pack11_voltage_v:           { addr: 10420, type: u16, scale: 0.1 }
+  pack11_current_a:           { addr: 10421, type: s16, scale: 0.1 }
+  pack11_temp_c:              { addr: 10422, type: s16, scale: 0.1 }
+  pack11_soc_pct:             { addr: 10427, type: u16, scale: 0.1 }
+  pack11_soh_pct:             { addr: 10428, type: u16, scale: 0.1 }
+  pack11_max_cell_v:          { addr: 10434, type: u16, scale: 0.001 }
+  pack11_min_cell_v:          { addr: 10435, type: u16, scale: 0.001 }
+  pack11_cycle_count:         { addr: 10436, type: u16 }
+
+  # Pack 12  (serial 10450–10457)
+  pack12_voltage_v:           { addr: 10458, type: u16, scale: 0.1 }
+  pack12_current_a:           { addr: 10459, type: s16, scale: 0.1 }
+  pack12_temp_c:              { addr: 10460, type: s16, scale: 0.1 }
+  pack12_soc_pct:             { addr: 10465, type: u16, scale: 0.1 }
+  pack12_soh_pct:             { addr: 10466, type: u16, scale: 0.1 }
+  pack12_max_cell_v:          { addr: 10472, type: u16, scale: 0.001 }
+  pack12_min_cell_v:          { addr: 10473, type: u16, scale: 0.001 }
+  pack12_cycle_count:         { addr: 10474, type: u16 }
+
+  # Pack 13  (serial 10488–10495)
+  pack13_voltage_v:           { addr: 10496, type: u16, scale: 0.1 }
+  pack13_current_a:           { addr: 10497, type: s16, scale: 0.1 }
+  pack13_temp_c:              { addr: 10498, type: s16, scale: 0.1 }
+  pack13_soc_pct:             { addr: 10503, type: u16, scale: 0.1 }
+  pack13_soh_pct:             { addr: 10504, type: u16, scale: 0.1 }
+  pack13_max_cell_v:          { addr: 10510, type: u16, scale: 0.001 }
+  pack13_min_cell_v:          { addr: 10511, type: u16, scale: 0.001 }
+  pack13_cycle_count:         { addr: 10512, type: u16 }
+
+  # Pack 14  (serial 10526–10533)
+  pack14_voltage_v:           { addr: 10534, type: u16, scale: 0.1 }
+  pack14_current_a:           { addr: 10535, type: s16, scale: 0.1 }
+  pack14_temp_c:              { addr: 10536, type: s16, scale: 0.1 }
+  pack14_soc_pct:             { addr: 10541, type: u16, scale: 0.1 }
+  pack14_soh_pct:             { addr: 10542, type: u16, scale: 0.1 }
+  pack14_max_cell_v:          { addr: 10548, type: u16, scale: 0.001 }
+  pack14_min_cell_v:          { addr: 10549, type: u16, scale: 0.001 }
+  pack14_cycle_count:         { addr: 10550, type: u16 }
+
+  # Pack 15  (serial 10564–10571)
+  pack15_voltage_v:           { addr: 10572, type: u16, scale: 0.1 }
+  pack15_current_a:           { addr: 10573, type: s16, scale: 0.1 }
+  pack15_temp_c:              { addr: 10574, type: s16, scale: 0.1 }
+  pack15_soc_pct:             { addr: 10579, type: u16, scale: 0.1 }
+  pack15_soh_pct:             { addr: 10580, type: u16, scale: 0.1 }
+  pack15_max_cell_v:          { addr: 10586, type: u16, scale: 0.001 }
+  pack15_min_cell_v:          { addr: 10587, type: u16, scale: 0.001 }
+  pack15_cycle_count:         { addr: 10588, type: u16 }
+
+  # Pack 16  (serial 10602–10609)
+  pack16_voltage_v:           { addr: 10610, type: u16, scale: 0.1 }
+  pack16_current_a:           { addr: 10611, type: s16, scale: 0.1 }
+  pack16_temp_c:              { addr: 10612, type: s16, scale: 0.1 }
+  pack16_soc_pct:             { addr: 10617, type: u16, scale: 0.1 }
+  pack16_soh_pct:             { addr: 10618, type: u16, scale: 0.1 }
+  pack16_max_cell_v:          { addr: 10624, type: u16, scale: 0.001 }
+  pack16_min_cell_v:          { addr: 10625, type: u16, scale: 0.001 }
+  pack16_cycle_count:         { addr: 10626, type: u16 }
+
+  # Pack 17  (serial 10640–10647)
+  pack17_voltage_v:           { addr: 10648, type: u16, scale: 0.1 }
+  pack17_current_a:           { addr: 10649, type: s16, scale: 0.1 }
+  pack17_temp_c:              { addr: 10650, type: s16, scale: 0.1 }
+  pack17_soc_pct:             { addr: 10655, type: u16, scale: 0.1 }
+  pack17_soh_pct:             { addr: 10656, type: u16, scale: 0.1 }
+  pack17_max_cell_v:          { addr: 10662, type: u16, scale: 0.001 }
+  pack17_min_cell_v:          { addr: 10663, type: u16, scale: 0.001 }
+  pack17_cycle_count:         { addr: 10664, type: u16 }
+
+  # Pack 18  (serial 10678–10685)
+  pack18_voltage_v:           { addr: 10686, type: u16, scale: 0.1 }
+  pack18_current_a:           { addr: 10687, type: s16, scale: 0.1 }
+  pack18_temp_c:              { addr: 10688, type: s16, scale: 0.1 }
+  pack18_soc_pct:             { addr: 10693, type: u16, scale: 0.1 }
+  pack18_soh_pct:             { addr: 10694, type: u16, scale: 0.1 }
+  pack18_max_cell_v:          { addr: 10700, type: u16, scale: 0.001 }
+  pack18_min_cell_v:          { addr: 10701, type: u16, scale: 0.001 }
+  pack18_cycle_count:         { addr: 10702, type: u16 }
+
+  # Pack 19  (serial 10716–10723)
+  pack19_voltage_v:           { addr: 10724, type: u16, scale: 0.1 }
+  pack19_current_a:           { addr: 10725, type: s16, scale: 0.1 }
+  pack19_temp_c:              { addr: 10726, type: s16, scale: 0.1 }
+  pack19_soc_pct:             { addr: 10731, type: u16, scale: 0.1 }
+  pack19_soh_pct:             { addr: 10732, type: u16, scale: 0.1 }
+  pack19_max_cell_v:          { addr: 10738, type: u16, scale: 0.001 }
+  pack19_min_cell_v:          { addr: 10739, type: u16, scale: 0.001 }
+  pack19_cycle_count:         { addr: 10740, type: u16 }
+
+  # Pack 20  (serial 10754–10761)
+  pack20_voltage_v:           { addr: 10762, type: u16, scale: 0.1 }
+  pack20_current_a:           { addr: 10763, type: s16, scale: 0.1 }
+  pack20_temp_c:              { addr: 10764, type: s16, scale: 0.1 }
+  pack20_soc_pct:             { addr: 10769, type: u16, scale: 0.1 }
+  pack20_soh_pct:             { addr: 10770, type: u16, scale: 0.1 }
+  pack20_max_cell_v:          { addr: 10776, type: u16, scale: 0.001 }
+  pack20_min_cell_v:          { addr: 10777, type: u16, scale: 0.001 }
+  pack20_cycle_count:         { addr: 10778, type: u16 }
+
+  # Pack 21  (serial 10792–10799)
+  pack21_voltage_v:           { addr: 10800, type: u16, scale: 0.1 }
+  pack21_current_a:           { addr: 10801, type: s16, scale: 0.1 }
+  pack21_temp_c:              { addr: 10802, type: s16, scale: 0.1 }
+  pack21_soc_pct:             { addr: 10807, type: u16, scale: 0.1 }
+  pack21_soh_pct:             { addr: 10808, type: u16, scale: 0.1 }
+  pack21_max_cell_v:          { addr: 10814, type: u16, scale: 0.001 }
+  pack21_min_cell_v:          { addr: 10815, type: u16, scale: 0.001 }
+  pack21_cycle_count:         { addr: 10816, type: u16 }
+
+  # Pack 22  (serial 10830–10837)
+  pack22_voltage_v:           { addr: 10838, type: u16, scale: 0.1 }
+  pack22_current_a:           { addr: 10839, type: s16, scale: 0.1 }
+  pack22_temp_c:              { addr: 10840, type: s16, scale: 0.1 }
+  pack22_soc_pct:             { addr: 10845, type: u16, scale: 0.1 }
+  pack22_soh_pct:             { addr: 10846, type: u16, scale: 0.1 }
+  pack22_max_cell_v:          { addr: 10852, type: u16, scale: 0.001 }
+  pack22_min_cell_v:          { addr: 10853, type: u16, scale: 0.001 }
+  pack22_cycle_count:         { addr: 10854, type: u16 }
 
   # ── daily energy counters (raw is kWh ×0.1; ×100 -> Wh per canonical keys) ──
   # All six screen-confirmed 2026-06-20 against the inverter's own daily totals: PV 22.3,

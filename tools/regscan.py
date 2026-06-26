@@ -66,7 +66,7 @@ import time
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 
-TOOL_VERSION = "1.2"  # 1.2: cell offset/division (temps); 1.1: --map scan/verify/report
+TOOL_VERSION = "1.3"  # 1.3: dump --profile (profile-driven continuous dump); 1.2: cell offset/division; 1.1: --map scan/verify/report
 DEFAULT_OUT = "regscan-output"
 
 # Verbose trace — set from --verbose in main(). Traces go to stderr so they
@@ -1462,6 +1462,252 @@ def _verify_markdown(args, variant, src, rows, collisions, n_ok, n_missing) -> s
 
 
 # --------------------------------------------------------------------------- #
+# Dump — profile-driven continuous register poll with named metrics.
+# Reads exactly the addresses a profile YAML defines, decodes them with the
+# profile's own scale/offset/type, and writes timestamped CSV rows so you can
+# cross-reference raw values against decoded API readings to verify scale factors.
+#
+# Usage:
+#   # one-shot: print to stdout (no --out)
+#   regscan.py dump --profile profiles/deye-base.yaml --mock
+#
+#   # continuous poll every 10 s, append to CSV
+#   regscan.py dump --profile profiles/deye-base.yaml \
+#     --port /dev/ttyUSB0 --interval 10 --out bms-raw.csv
+#
+#   # filter to a metric name prefix (e.g. BMS CAN and per-pack only)
+#   regscan.py dump --profile profiles/deye-base.yaml --filter bms,pack \
+#     --port /dev/ttyUSB0 --interval 30 --out packs.csv
+#
+# PyYAML is required:  pip install pyyaml
+# --------------------------------------------------------------------------- #
+
+
+def _load_yaml_safe(path: str) -> dict:
+    try:
+        import yaml  # type: ignore[import]
+    except ImportError:
+        sys.exit(
+            "ERROR: PyYAML is required for the dump command.\n"
+            "  pip install pyyaml"
+        )
+    with open(path) as f:
+        return yaml.safe_load(f) or {}
+
+
+def _resolve_profile_chain(primary_path: str) -> list[dict]:
+    """Load a profile and its parent chain (via 'extends'), base-first."""
+    profiles_dir = os.path.dirname(os.path.abspath(primary_path))
+    chain: list[dict] = []
+    seen: set[str] = set()
+    path = primary_path
+    while path:
+        abs_path = os.path.abspath(path)
+        if abs_path in seen:
+            break
+        seen.add(abs_path)
+        data = _load_yaml_safe(abs_path)
+        chain.append(data)
+        extends = data.get("extends")
+        if extends:
+            # look for the parent in the same directory as the child
+            parent_path = os.path.join(profiles_dir, f"{extends}.yaml")
+            if not os.path.exists(parent_path):
+                vlog(f"dump: parent profile {parent_path!r} not found, stopping chain")
+                break
+            path = parent_path
+        else:
+            break
+    chain.reverse()  # base first
+    return chain
+
+
+def _collect_profile_metrics(profiles: list[dict], filters: list[str]) -> list[dict]:
+    """Merge metric definitions from one or more profiles (base first = child wins).
+
+    Returns a list of dicts:
+      {name, addrs: [int], type, scale, offset, values (enum map)}
+    Only metrics whose addr(s) are fully specified are included.
+    `filters` is a list of name-prefix strings; if non-empty only matching metrics pass.
+    """
+    merged: dict[str, dict] = {}
+    for data in profiles:
+        for name, spec in (data.get("metrics") or {}).items():
+            if not isinstance(spec, dict):
+                continue
+            addr = spec.get("addr")
+            if addr is None:
+                continue
+            addrs = addr if isinstance(addr, list) else [addr]
+            merged[name] = {
+                "name": name,
+                "addrs": [int(a) for a in addrs],
+                "type": spec.get("type", "u16"),
+                "scale": float(spec.get("scale", 1.0)),
+                "offset": float(spec.get("offset", 0.0)),
+                "values": spec.get("values") or {},     # enum map
+                "bit_prefix": spec.get("bit_prefix", "B"),
+            }
+    result = list(merged.values())
+    if filters:
+        result = [m for m in result if any(m["name"].startswith(f) for f in filters)]
+    result.sort(key=lambda m: (m["addrs"][0], m["name"]))
+    return result
+
+
+def _decode_metric_value(spec: dict, raw_map: dict[int, int]) -> tuple[str, str]:
+    """Decode a metric using its profile spec. Returns (decoded_str, raw_str).
+
+    Returns ('?', '?') if any required register was unreadable.
+    """
+    addrs = spec["addrs"]
+    vals = [raw_map.get(a) for a in addrs]
+    if any(v is None for v in vals):
+        missing = [a for a, v in zip(addrs, vals) if v is None]
+        return "?", f"unreadable@{missing}"
+
+    mtype = spec["type"]
+    scale = spec["scale"]
+    offset = spec["offset"]
+    enum_map = spec["values"]
+    raw_str = ",".join(str(v) for v in vals)
+
+    if mtype == "u16":
+        decoded = round(u16(vals[0]) * scale + offset, 4)
+        return str(decoded), raw_str
+
+    if mtype == "s16":
+        decoded = round(s16(vals[0]) * scale + offset, 4)
+        return str(decoded), raw_str
+
+    if mtype == "u32" and len(vals) >= 2:
+        # low-word-first: addr[0] = low word, addr[1] = high word
+        v = u32(vals[1], vals[0])
+        decoded = round(v * scale + offset, 4)
+        return str(decoded), raw_str
+
+    if mtype == "s32" and len(vals) >= 2:
+        v = s32(vals[1], vals[0])
+        decoded = round(v * scale + offset, 4)
+        return str(decoded), raw_str
+
+    if mtype == "enum":
+        v = u16(vals[0])
+        label = enum_map.get(v, str(v))
+        return str(label), raw_str
+
+    if mtype == "bits":
+        # combine all words into one bitfield (low register = low bits)
+        combined = 0
+        for i, val in enumerate(vals):
+            combined |= u16(val) << (16 * i)
+        prefix = spec.get("bit_prefix", "B")
+        active = [f"{prefix}{i + 1:02d}" for i in range(len(addrs) * 16)
+                  if combined & (1 << i)]
+        return (",".join(active) if active else "none"), raw_str
+
+    if mtype == "time_hhmm":
+        # raw integer encodes HHMM as h*100 + m (e.g. 555 = 05:55)
+        raw_v = u16(vals[0])
+        hh, mm = divmod(raw_v, 100)
+        return f"{hh:02d}:{mm:02d}", raw_str
+
+    # fallback: show u16
+    return str(u16(vals[0])), raw_str
+
+
+def do_dump(args) -> None:
+    """Profile-driven continuous register dump for scale/sign verification."""
+    # Resolve profile chain (handles 'extends')
+    profile_chains: list[list[dict]] = []
+    for p in args.profiles:
+        profile_chains.append(_resolve_profile_chain(p))
+
+    # Merge all chains together (flatten, base first)
+    all_profiles: list[dict] = []
+    for chain in profile_chains:
+        all_profiles.extend(chain)
+
+    filters = [f.strip() for f in args.filter.split(",") if f.strip()] if args.filter else []
+    metrics = _collect_profile_metrics(all_profiles, filters)
+
+    if not metrics:
+        sys.exit("No metrics found in the profile(s). "
+                 "Check --profile and --filter are correct.")
+
+    # Gather all addresses needed
+    needed_addrs: set[int] = set()
+    for m in metrics:
+        needed_addrs.update(m["addrs"])
+    vlog(f"dump: {len(metrics)} metric(s) covering {len(needed_addrs)} address(es)")
+
+    reader: ModbusReader = MockReader() if args.mock else PymodbusReader(args)
+
+    use_stdout = not args.out
+    out_file = None
+    writer = None
+
+    try:
+        if not use_stdout:
+            write_header = not os.path.exists(args.out) or args.overwrite
+            out_file = open(args.out, "a" if not args.overwrite else "w", newline="")
+            writer = csv.writer(out_file)
+            if write_header:
+                writer.writerow(["timestamp_utc", "metric", "addr", "raw", "decoded"])
+        else:
+            # pretty-print header to stdout
+            print(f"{'timestamp_utc':26}  {'metric':40}  {'addr':10}  {'raw':12}  decoded")
+            print("-" * 110)
+
+        iteration = 0
+        try:
+            while True:
+                ts = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+                raw_map: dict[int, int] = {}
+                values, _unread = read_targeted(
+                    reader, args.table, needed_addrs, args.gap, args.mock,
+                    max_gap=args.cluster_gap, max_block=args.block_size,
+                )
+                raw_map.update(values)
+
+                for m in metrics:
+                    decoded, raw_str = _decode_metric_value(m, raw_map)
+                    addr_str = ",".join(str(a) for a in m["addrs"])
+                    if writer:
+                        writer.writerow([ts, m["name"], addr_str, raw_str, decoded])
+                    else:
+                        print(f"{ts:26}  {m['name']:40}  {addr_str:10}  {raw_str:12}  {decoded}")
+
+                if out_file:
+                    out_file.flush()
+
+                iteration += 1
+                n_ok = sum(1 for m in metrics
+                           if all(a in raw_map for a in m["addrs"]))
+                status = f"[iter {iteration}] {n_ok}/{len(metrics)} metrics read"
+                if not use_stdout:
+                    print(f"\r{ts}  {status}", end="", flush=True)
+                else:
+                    print(f"--- {status} ---")
+
+                if args.count and iteration >= args.count:
+                    break
+                if args.interval > 0:
+                    time.sleep(args.interval)
+                else:
+                    break  # single-shot
+
+        except KeyboardInterrupt:
+            print(f"\nStopped after {iteration} iteration(s).")
+
+    finally:
+        reader.close()
+        if out_file:
+            out_file.close()
+            print(f"\nWrote {args.out}")
+
+
+# --------------------------------------------------------------------------- #
 # CLI
 # --------------------------------------------------------------------------- #
 def build_parser() -> argparse.ArgumentParser:
@@ -1567,6 +1813,49 @@ def build_parser() -> argparse.ArgumentParser:
     v.add_argument("-v", "--verbose", action="store_true",
                    help="trace map parsing and the verification read to stderr")
     v.set_defaults(func=do_verify)
+
+    d = sub.add_parser(
+        "dump",
+        help="profile-driven continuous register dump — reads only what the profile defines, "
+             "decodes with the profile's scale/type, outputs named CSV rows for scale verification",
+    )
+    d.add_argument("--profile", dest="profiles", action="append", required=True,
+                   metavar="PROFILE.yaml",
+                   help="profile YAML to read metrics from (repeatable; parent profiles "
+                        "are resolved automatically via 'extends')")
+    d.add_argument("--filter", default="",
+                   help="comma-separated metric name prefixes to include, e.g. "
+                        "'bms_can,pack1,pack2' — omit to dump all metrics")
+    # connection
+    d.add_argument("--port", help="serial device, e.g. /dev/ttyUSB0")
+    d.add_argument("--baud", type=int, default=9600)
+    d.add_argument("--slave", type=int, default=1)
+    d.add_argument("--parity", default="N", choices=["N", "E", "O"])
+    d.add_argument("--stopbits", type=int, default=1)
+    d.add_argument("--bytesize", type=int, default=8)
+    d.add_argument("--timeout", type=float, default=1.0)
+    d.add_argument("--mock", action="store_true", help="synthetic device, no hardware")
+    d.add_argument("--table", default="holding", choices=["holding", "input"])
+    d.add_argument("--block-size", type=int, default=32)
+    d.add_argument("--cluster-gap", type=int, default=16,
+                   help="addresses within this gap share one Modbus read (default 16; "
+                        "higher = fewer reads across the 10000-block gap)")
+    d.add_argument("--gap", type=float, default=0.05,
+                   help="seconds between consecutive block reads (default 0.05)")
+    d.add_argument("--retries", type=int, default=2)
+    d.add_argument("--backoff", type=float, default=0.2)
+    # output
+    d.add_argument("--out", default="",
+                   help="CSV output path; omit to pretty-print to stdout")
+    d.add_argument("--overwrite", action="store_true",
+                   help="overwrite --out instead of appending")
+    d.add_argument("--interval", type=float, default=0,
+                   help="seconds between polls; 0 = single shot (default)")
+    d.add_argument("--count", type=int, default=0,
+                   help="stop after N iterations; 0 = run until Ctrl-C (default)")
+    d.add_argument("-v", "--verbose", action="store_true")
+    d.set_defaults(func=do_dump)
+
     return p
 
 
@@ -1579,6 +1868,8 @@ def main(argv=None):
     if args.cmd == "verify" and not (args.from_snapshot or args.mock or args.port):
         sys.exit("ERROR: verify needs a value source: --from SNAPSHOT.json, "
                  "--mock, or --port.")
+    if args.cmd == "dump" and not args.mock and not args.port:
+        sys.exit("ERROR: --port is required for a real dump (or use --mock).")
     args.func(args)
 
 

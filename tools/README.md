@@ -186,6 +186,39 @@ winning column row-by-row against the screen — plus `verify-matrix.md`. (Scann
 the full `0..708` range matters here: addresses you never scan show as
 `not-scanned`, which carries no signal — only *rejected* does.)
 
+### Verify scale factors against the API — `dump`
+
+Once you have a profile, use `dump` to continuously read its registers by name so
+you can cross-reference raw values against decoded values from another source (e.g.
+the Sunsynk cloud API) to confirm scale/sign assumptions:
+
+```bash
+# Single shot — print all metrics to stdout (no hardware: --mock)
+./regscan.py dump --profile profiles/deye-base.yaml --mock
+
+# Poll every 10 s, append named rows to CSV for later analysis
+./regscan.py dump --profile profiles/deye-base.yaml \
+    --port /dev/ttyUSB0 --interval 10 --out deye-raw.csv
+
+# Only the BMS CAN aggregate and per-pack metrics (TBC scales)
+./regscan.py dump --profile profiles/deye-base.yaml \
+    --port /dev/ttyUSB0 --interval 30 --out bms-packs.csv \
+    --filter bms_can,pack1,pack2,pack3
+
+# Child profile — extends: deye-base is resolved automatically
+./regscan.py dump --profile profiles/sunsynk-8k-sg05lp1.yaml \
+    --port /dev/ttyUSB0 --interval 10 --out dump.csv
+```
+
+The CSV has columns: `timestamp_utc`, `metric`, `addr`, `raw`, `decoded`.
+Open it alongside the cloud API's decoded values and the `raw` column lets you
+work out the exact scale factor for any metric marked TBC in the profile.
+
+`--filter` accepts comma-separated name **prefixes** — `--filter pack` matches all
+`pack1_*`, `pack2_*`, etc. Omit to dump every metric.
+
+Requires `pyyaml`: `pip install pyyaml`.
+
 ## Key options (`scan`)
 
 | Option | Meaning |
